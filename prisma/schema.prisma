@@ -1,0 +1,163 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model PlatformUser {
+  id            String         @id @default(uuid())
+
+  email         String         @unique
+  passwordHash  String
+
+  firstName     String
+  lastName      String?
+
+  status        UserStatus     @default(ACTIVE)
+
+  roles         UserRole[]
+  refreshTokens RefreshToken[]
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("platform_users")
+}
+
+model RefreshToken {
+  id         String       @id @default(uuid())
+
+  token      String
+
+  expiresAt  DateTime
+
+  userId     String
+  user       PlatformUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime     @default(now())
+
+  @@map("refresh_tokens")
+}
+
+model Role {
+  id          String           @id @default(uuid())
+
+  name        String           @unique
+
+  description String?
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+
+  resource    String
+  action      String
+
+  roles       RolePermission[]
+
+  createdAt   DateTime         @default(now())
+
+  @@unique([resource, action])
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId String
+  roleId String
+
+  user   PlatformUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+
+  @@map("role_permissions")
+}
+
+
+model Module {
+  id          String   @id @default(uuid())
+
+  name        String
+  code        String   @unique
+
+  route       String?
+  icon        String?
+
+  sortOrder   Int      @default(0)
+
+  isActive    Boolean  @default(true)
+
+  parentId    String?
+
+  parent       Module?  @relation("ModuleHierarchy",fields: [parentId],references: [id])
+
+  children     Module[] @relation( "ModuleHierarchy")
+
+  features     ModuleFeature[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("modules")
+}
+
+model Feature {
+  id           String   @id @default(uuid())
+
+  name         String
+
+  code         String   @unique
+
+  description  String?
+
+  modules      ModuleFeature[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("features")
+}
+
+model ModuleFeature {
+  moduleId   String
+
+  featureId  String
+
+  module      Module  @relation(fields: [moduleId], references: [id],onDelete: Cascade)
+
+  feature     Feature @relation(fields: [featureId],references: [id],onDelete: Cascade)
+
+  @@id([moduleId, featureId])
+
+  @@map("module_features")
+}
