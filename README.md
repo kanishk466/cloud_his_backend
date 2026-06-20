@@ -1,98 +1,478 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# HIS SaaS Platform Foundation
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+## Overview
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+This project is the Platform Foundation for a multi-tenant Healthcare Information System (HIS).
 
-## Description
+The platform allows a Super Admin to onboard hospitals into the SaaS ecosystem.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Current onboarding flow:
 
-## Project setup
-
-```bash
-$ npm install
+```text
+Super Admin Login
+        ↓
+Create Hospital
+        ↓
+Assign Package
+        ↓
+Activate Hospital
 ```
 
-## Compile and run the project
+Future phases will introduce:
 
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+```text
+Generate Hospital Admin
+        ↓
+Send Credentials
+        ↓
+Hospital User Management
+        ↓
+Tenant Isolation
+        ↓
+Hospital HIS Modules
 ```
 
-## Run tests
+---
 
-```bash
-# unit tests
-$ npm run test
+# Tech Stack
 
-# e2e tests
-$ npm run test:e2e
+## Backend
 
-# test coverage
-$ npm run test:cov
+* NestJS
+* Prisma ORM
+* PostgreSQL
+* JWT Authentication
+* Passport JWT
+* bcrypt
+
+## Architecture
+
+* Modular Monolith
+* Domain Driven Module Separation
+* Repository Pattern
+* Service Layer Business Rules
+
+---
+
+# Project Structure
+
+```text
+src
+│
+├── shared
+│
+├── system
+│
+├── platform
+│
+│   ├── identity
+│   │
+│   ├── catalog
+│   │
+│   ├── package
+│   │
+│   ├── tenant
+│   │
+│   └── rbac
+│
+├── app.module.ts
+└── main.ts
 ```
 
-## Deployment
+---
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+# Modules
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Shared Module
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+Contains common infrastructure.
+
+Responsibilities:
+
+* Prisma Service
+* Shared DTOs
+* Decorators
+* Guards
+* Exceptions
+* Constants
+
+---
+
+## Identity Module
+
+Responsible for authentication.
+
+Features:
+
+* Login
+* JWT Access Token
+* Refresh Token
+* Logout
+
+Endpoints:
+
+```http
+POST /auth/login
+
+POST /auth/refresh
+
+POST /auth/logout
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+---
 
-## Resources
+## Catalog Module
 
-Check out a few resources that may come in handy when working with NestJS:
+Catalog defines what functionality exists in the HIS.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+### Module
 
-## Support
+Represents a page/menu.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Examples:
 
-## Stay in touch
+```text
+Dashboard
+Patients
+Appointments
+Care Management
+Care Plan
+Goals
+Interventions
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### Feature
 
-## License
+Represents functionality inside a module.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Examples:
+
+```text
+Notes
+Devices
+Attachments
+Reminders
+```
+
+Relationship:
+
+```text
+Module
+    |
+    +---- ModuleFeature
+                  |
+                  Feature
+```
+
+Endpoints:
+
+```http
+POST /catalog/modules
+
+GET /catalog/modules
+
+POST /catalog/features
+
+POST /catalog/modules/:moduleId/features/:featureId
+```
+
+---
+
+## Package Module
+
+Package defines what functionality a hospital receives.
+
+Examples:
+
+```text
+Starter Package
+
+Premium Package
+
+Enterprise Package
+```
+
+Relationship:
+
+```text
+Package
+     |
+     +---- PackageModule
+                    |
+                    Module
+```
+
+Endpoints:
+
+```http
+POST /packages
+
+GET /packages
+
+GET /packages/:id
+
+POST /packages/:packageId/modules/:moduleId
+```
+
+---
+
+## Tenant Module
+
+Represents hospitals onboarded into the SaaS.
+
+### Hospital Lifecycle
+
+```text
+DRAFT
+   ↓
+ACTIVE
+   ↓
+SUSPENDED
+```
+
+### Package Assignment
+
+A hospital subscribes to a package.
+
+Relationship:
+
+```text
+Hospital
+      |
+      +---- AssignedPackage
+                     |
+                     Package
+```
+
+Endpoints:
+
+```http
+POST /hospitals
+
+GET /hospitals
+
+GET /hospitals/:id
+
+POST /hospitals/:id/packages
+
+POST /hospitals/:id/activate
+```
+
+---
+
+# Database Design
+
+## Identity
+
+```text
+PlatformUser
+
+RefreshToken
+
+Role
+
+Permission
+
+UserRole
+
+RolePermission
+```
+
+---
+
+## Catalog
+
+```text
+Module
+
+Feature
+
+ModuleFeature
+```
+
+---
+
+## Package
+
+```text
+Package
+
+PackageModule
+```
+
+---
+
+## Tenant
+
+```text
+Hospital
+
+AssignedPackage
+```
+
+---
+
+# Current Business Flow
+
+## Create Catalog
+
+```text
+Create Module
+       ↓
+Create Feature
+       ↓
+Attach Feature To Module
+```
+
+---
+
+## Create Package
+
+```text
+Create Package
+       ↓
+Attach Modules
+```
+
+---
+
+## Onboard Hospital
+
+```text
+Create Hospital
+       ↓
+Assign Package
+       ↓
+Activate Hospital
+```
+
+---
+
+# Authentication
+
+All Platform APIs are protected using JWT.
+
+Example:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+Currently the platform supports a single platform user:
+
+```text
+SUPER_ADMIN
+```
+
+RBAC implementation is intentionally postponed because only one platform role exists.
+
+---
+
+# Future Roadmap
+
+## Sprint 2
+
+Hospital Admin Provisioning
+
+```text
+Activate Hospital
+       ↓
+Create Hospital Admin
+       ↓
+Generate Password
+       ↓
+Send Credentials
+```
+
+---
+
+## Sprint 3
+
+Tenant Isolation
+
+```text
+Hospital Login
+
+Hospital Users
+
+Hospital Roles
+
+Hospital Permissions
+```
+
+---
+
+## Sprint 4
+
+HIS Business Modules
+
+```text
+Patient Management
+
+OPD
+
+IPD
+
+Appointments
+
+Billing
+
+Laboratory
+
+Pharmacy
+
+Radiology
+
+EMR
+```
+
+---
+
+# Development Guidelines
+
+## Controller
+
+Responsibilities:
+
+* Receive Request
+* Validate DTO
+* Call Service
+
+No business logic.
+
+---
+
+## Service
+
+Responsibilities:
+
+* Business Rules
+* Validation
+* Use Case Execution
+
+---
+
+## Repository
+
+Responsibilities:
+
+* Database Access
+* Prisma Queries
+
+No business logic.
+
+---
+
+## Flow
+
+```text
+Controller
+    ↓
+Service
+    ↓
+Repository
+    ↓
+Prisma
+    ↓
+PostgreSQL
+```

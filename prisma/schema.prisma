@@ -11,6 +11,17 @@ enum UserStatus {
   ACTIVE
   INACTIVE
 }
+enum HospitalStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+}
+
+enum PackageAssignmentStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
 
 model PlatformUser {
   id            String         @id @default(uuid())
@@ -127,7 +138,7 @@ model Module {
 
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-
+  packageModules PackageModule[]
   @@map("modules")
 }
 
@@ -160,4 +171,81 @@ model ModuleFeature {
   @@id([moduleId, featureId])
 
   @@map("module_features")
+}
+
+
+
+model Package {
+  id          String   @id @default(uuid())
+
+  name        String   @unique
+
+  description String?
+
+  isActive    Boolean  @default(true)
+
+  modules     PackageModule[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assignedPackages AssignedPackage[]
+
+  @@map("packages")
+}
+
+
+model PackageModule {
+  packageId String
+  moduleId  String
+
+  package Package @relation(fields: [packageId],references: [id],onDelete: Cascade)
+
+  module Module @relation(fields: [moduleId],references: [id],onDelete: Cascade)
+
+  @@id([packageId, moduleId])
+
+  @@map("package_modules")
+}
+
+model Hospital {
+  id          String   @id @default(uuid())
+
+  code        String   @unique
+
+  name        String
+
+  email       String   @unique
+
+  phone       String?
+
+  status      HospitalStatus @default(DRAFT)
+
+  packages    AssignedPackage[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("hospitals")
+}
+
+
+model AssignedPackage {
+  id String @id @default(uuid())
+
+  hospitalId String
+  packageId  String
+
+  startDate DateTime
+  endDate   DateTime?
+
+  status PackageAssignmentStatus @default(ACTIVE)
+
+  hospital Hospital @relation(fields: [hospitalId],references: [id],onDelete: Cascade)
+
+  package Package @relation(fields: [packageId],references: [id],onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@map("assigned_packages")
 }
