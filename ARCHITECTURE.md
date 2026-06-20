@@ -1,5 +1,3 @@
-# ARCHITECTURE.md
-
 # HIS SaaS Platform Architecture
 
 ## Purpose
