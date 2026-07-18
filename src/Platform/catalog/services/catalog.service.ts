@@ -117,4 +117,10 @@ async getModules() {
   return this.moduleRepository.findAll();
 }
 
+
+
+async getModuleById(id: string) {
+  return this.moduleRepository.findById(id); // with your updated includes
+}
+
 }

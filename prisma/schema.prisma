@@ -3,14 +3,18 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
+
+// ---------- ENUMS ----------
 
 enum UserStatus {
   ACTIVE
   INACTIVE
 }
+
 enum HospitalStatus {
   DRAFT
   ACTIVE
@@ -23,18 +27,40 @@ enum PackageAssignmentStatus {
   CANCELLED
 }
 
+enum HospitalUserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum HospitalUserType {
+  SUPER_ADMIN
+  REGULAR_USER
+}
+
+enum LoginType {
+  PASSWORD
+  OTP
+  BOTH
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+// ============================================
+// PLATFORM SIDE (Minimal Admin Only)
+// ============================================
+
 model PlatformUser {
   id            String         @id @default(uuid())
-
   email         String         @unique
   passwordHash  String
-
   firstName     String
   lastName      String?
-
   status        UserStatus     @default(ACTIVE)
-
-  roles         UserRole[]
+  
   refreshTokens RefreshToken[]
 
   createdAt     DateTime       @default(now())
@@ -44,208 +70,371 @@ model PlatformUser {
 }
 
 model RefreshToken {
-  id         String       @id @default(uuid())
-
-  token      String
-
-  expiresAt  DateTime
-
-  userId     String
-  user       PlatformUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  createdAt  DateTime     @default(now())
+  id        String       @id @default(uuid())
+  token     String
+  expiresAt DateTime
+  userId    String
+  user      PlatformUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
 
   @@map("refresh_tokens")
 }
 
-model Role {
-  id          String           @id @default(uuid())
-
-  name        String           @unique
-
-  description String?
-
-  users       UserRole[]
-  permissions RolePermission[]
-
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-
-  @@map("roles")
-}
-
-model Permission {
-  id          String           @id @default(uuid())
-
-  resource    String
-  action      String
-
-  roles       RolePermission[]
-
-  createdAt   DateTime         @default(now())
-
-  @@unique([resource, action])
-
-  @@map("permissions")
-}
-
-model UserRole {
-  userId String
-  roleId String
-
-  user   PlatformUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role   Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
-
-  @@id([userId, roleId])
-
-  @@map("user_roles")
-}
-
-model RolePermission {
-  roleId       String
-  permissionId String
-
-  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-
-  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-
-  @@id([roleId, permissionId])
-
-  @@map("role_permissions")
-}
-
+// ============================================
+// SAAS CORE (Modules, Features, Packages)
+// ============================================
 
 model Module {
-  id          String   @id @default(uuid())
-
-  name        String
-  code        String   @unique
-
-  route       String?
-  icon        String?
-
-  sortOrder   Int      @default(0)
-
-  isActive    Boolean  @default(true)
-
-  parentId    String?
-
-  parent       Module?  @relation("ModuleHierarchy",fields: [parentId],references: [id])
-
-  children     Module[] @relation( "ModuleHierarchy")
-
-  features     ModuleFeature[]
-
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String          @id @default(uuid())
+  name           String
+  code           String          @unique
+  route          String?
+  icon           String?
+  sortOrder      Int             @default(0)
+  isActive       Boolean         @default(true)
+  parentId       String?
+  parent         Module?         @relation("ModuleHierarchy", fields: [parentId], references: [id])
+  children       Module[]        @relation("ModuleHierarchy")
+  
+  features       ModuleFeature[]
   packageModules PackageModule[]
+  
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
   @@map("modules")
 }
 
 model Feature {
-  id           String   @id @default(uuid())
-
-  name         String
-
-  code         String   @unique
-
-  description  String?
-
-  modules      ModuleFeature[]
-
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String          @id @default(uuid())
+  name        String
+  code        String          @unique
+  description String?
+  
+  modules     ModuleFeature[]
+  
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
   @@map("features")
 }
 
 model ModuleFeature {
-  moduleId   String
-
-  featureId  String
-
-  module      Module  @relation(fields: [moduleId], references: [id],onDelete: Cascade)
-
-  feature     Feature @relation(fields: [featureId],references: [id],onDelete: Cascade)
+  moduleId        String
+  featureId       String
+  module          Module                        @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  feature         Feature                       @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  
+  rolePermissions HospitalRolePermission[]
+  userPermissions UserModuleFeaturePermission[]
 
   @@id([moduleId, featureId])
-
   @@map("module_features")
 }
 
-
-
 model Package {
-  id          String   @id @default(uuid())
-
-  name        String   @unique
-
-  description String?
-
-  isActive    Boolean  @default(true)
-
-  modules     PackageModule[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
+  id               String            @id @default(uuid())
+  name             String            @unique
+  description      String?
+  isActive         Boolean           @default(true)
+  
+  modules          PackageModule[]
   assignedPackages AssignedPackage[]
+  
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@map("packages")
 }
 
-
 model PackageModule {
   packageId String
   moduleId  String
-
-  package Package @relation(fields: [packageId],references: [id],onDelete: Cascade)
-
-  module Module @relation(fields: [moduleId],references: [id],onDelete: Cascade)
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  module    Module  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
 
   @@id([packageId, moduleId])
-
   @@map("package_modules")
 }
 
+// ============================================
+// TENANT / HOSPITAL
+// ============================================
+
 model Hospital {
-  id          String   @id @default(uuid())
-
-  code        String   @unique
-
+  id          String         @id @default(uuid())
+  code        String         @unique
   name        String
-
-  email       String   @unique
-
+  email       String         @unique
   phone       String?
-
   status      HospitalStatus @default(DRAFT)
+  activatedAt DateTime?
 
-  packages    AssignedPackage[]
+  packages           AssignedPackage[]
+  users              HospitalUser[]
+  hospitalRoles      HospitalRole[]
+  departments        Department[]
+  shifts             ShiftMaster[]
+  roleNamesCreated   RoleName[]
+  permissionCopyLogs PermissionCopyLog[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("hospitals")
 }
 
-
 model AssignedPackage {
-  id String @id @default(uuid())
-
+  id         String                  @id @default(uuid())
   hospitalId String
   packageId  String
+  startDate  DateTime
+  endDate    DateTime?
+  status     PackageAssignmentStatus @default(ACTIVE)
+  
+  hospital   Hospital                @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  package    Package                 @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  
+  createdAt  DateTime                @default(now())
 
-  startDate DateTime
-  endDate   DateTime?
+  @@map("assigned_packages")
+}
 
-  status PackageAssignmentStatus @default(ACTIVE)
+// ============================================
+// HIMS - USER & ROLE MANAGEMENT (Hospital Side)
+// ============================================
 
-  hospital Hospital @relation(fields: [hospitalId],references: [id],onDelete: Cascade)
+model RoleName {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  description String?
+  isSystem    Boolean  @default(false)
 
-  package Package @relation(fields: [packageId],references: [id],onDelete: Restrict)
+  createdByHospitalId String?
+  createdByHospital   Hospital?      @relation(fields: [createdByHospitalId], references: [id])
+  hospitalRoles       HospitalRole[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("role_names")
+}
+
+model HospitalRole {
+  id          String   @id @default(uuid())
+  hospitalId  String
+  hospital    Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  
+  roleNameId  String
+  roleName    RoleName @relation(fields: [roleNameId], references: [id], onDelete: Restrict)
+  
+  description String?
+  isSystem    Boolean  @default(false)
+  isActive    Boolean  @default(true)
+
+  permissions HospitalRolePermission[]
+  users       UserRoleAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([hospitalId, roleNameId])
+  @@index([hospitalId])
+  @@map("hospital_roles")
+}
+
+model HospitalRolePermission {
+  id             String        @id @default(uuid())
+  hospitalRoleId String
+  hospitalRole   HospitalRole  @relation(fields: [hospitalRoleId], references: [id], onDelete: Cascade)
+  
+  moduleId       String
+  featureId      String
+  moduleFeature  ModuleFeature @relation(fields: [moduleId, featureId], references: [moduleId, featureId], onDelete: Cascade)
+  
+  createdAt      DateTime      @default(now())
+
+  @@unique([hospitalRoleId, moduleId, featureId])
+  @@map("hospital_role_permissions")
+}
+
+model Department {
+  id         String   @id @default(uuid())
+  hospitalId String
+  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  name       String
+  code       String?
+  isActive   Boolean  @default(true)
+  
+  users      UserDepartmentMapping[]
+  
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([hospitalId, name])
+  @@index([hospitalId])
+  @@map("departments")
+}
+
+model ShiftMaster {
+  id         String   @id @default(uuid())
+  hospitalId String
+  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  name       String
+  startTime  String?
+  endTime    String?
+  isActive   Boolean  @default(true)
+
+  staffProfiles StaffProfile[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([hospitalId, name])
+  @@index([hospitalId])
+  @@map("shift_masters")
+}
+
+model HospitalUser {
+  id         String           @id @default(uuid())
+  hospitalId String
+  hospital   Hospital         @relation(fields: [hospitalId], references: [id], onDelete: Restrict)
+  userType   HospitalUserType @default(REGULAR_USER)
+
+  firstName       String
+  lastName        String?
+  email           String
+  mobile          String?
+  alternateMobile String?
+
+  username                String
+  passwordHash            String
+  loginType               LoginType          @default(PASSWORD)
+  status                  HospitalUserStatus @default(ACTIVE)
+  isTemporaryPassword     Boolean            @default(true)
+  forcePasswordChange     Boolean            @default(true)
+  twoFactorEnabled        Boolean            @default(false)
+  sendCredentialsViaSms   Boolean            @default(false)
+  sendCredentialsViaEmail Boolean            @default(false)
+  accountValidTill        DateTime?
+  refreshTokenHash        String?
+  lastLoginAt             DateTime?
+
+  staffProfile  StaffProfile?
+  roles         UserRoleAssignment[]
+  departments   UserDepartmentMapping[]
+  permissions   UserModuleFeaturePermission[]
+  managedStaff  StaffProfile[]              @relation("ReportingManager")
+
+  performedCopyLogs PermissionCopyLog[] @relation("PermissionCopyPerformedBy")
+  sourceCopyLogs    PermissionCopyLog[] @relation("PermissionCopySource")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([hospitalId, email])
+  @@unique([hospitalId, username])
+  @@index([hospitalId])
+  @@map("hospital_users")
+}
+
+model StaffProfile {
+  id         String       @id @default(uuid())
+  userId     String       @unique
+  user       HospitalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hospitalId String
+  employeeId String
+
+  title       String?
+  dateOfBirth DateTime?
+  gender      Gender?
+  bloodGroup  String?
+
+  designation   String?
+  dateOfJoining DateTime?
+
+  shiftId String?
+  shift   ShiftMaster? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+
+  reportingManagerId String?
+  reportingManager   HospitalUser? @relation("ReportingManager", fields: [reportingManagerId], references: [id], onDelete: SetNull)
+
+  aadhaarNumber  String?
+  panNumber      String?
+  medicalRegNo   String?
+  qualification  String?
+  specialization String?
+
+  address          String?
+  city             String?
+  state            String?
+  pincode          String?
+  emergencyContact String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([hospitalId, employeeId])
+  @@index([hospitalId])
+  @@map("staff_profiles")
+}
+
+model UserRoleAssignment {
+  userId         String
+  hospitalRoleId String
+  isPrimary      Boolean  @default(false)
+  assignedAt     DateTime @default(now())
+
+  user         HospitalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hospitalRole HospitalRole @relation(fields: [hospitalRoleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, hospitalRoleId])
+  @@index([hospitalRoleId])
+  @@map("user_role_assignments")
+}
+
+model UserDepartmentMapping {
+  userId       String
+  departmentId String
+  user         HospitalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department   Department   @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@id([userId, departmentId])
+  @@index([departmentId])
+  @@map("user_department_mappings")
+}
+
+model UserModuleFeaturePermission {
+  id            String        @id @default(uuid())
+  userId        String
+  user          HospitalUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moduleId      String
+  featureId     String
+  moduleFeature ModuleFeature @relation(fields: [moduleId, featureId], references: [moduleId, featureId], onDelete: Cascade)
+  grantedAt     DateTime      @default(now())
+
+  @@unique([userId, moduleId, featureId])
+  @@index([userId])
+  @@map("user_module_feature_permissions")
+}
+
+model PermissionCopyLog {
+  id         String   @id @default(uuid())
+  hospitalId String
+  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+
+  performedByUserId String
+  performedByUser   HospitalUser @relation("PermissionCopyPerformedBy", fields: [performedByUserId], references: [id], onDelete: Restrict)
+
+  sourceUserId String
+  sourceUser   HospitalUser @relation("PermissionCopySource", fields: [sourceUserId], references: [id], onDelete: Restrict)
+
+  targetUserIds       String[]
+  targetDepartmentIds String[]
 
   createdAt DateTime @default(now())
 
-  @@map("assigned_packages")
+  @@index([hospitalId])
+  @@map("permission_copy_logs")
 }

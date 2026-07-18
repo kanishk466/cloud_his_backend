@@ -20,20 +20,28 @@ export class ModuleRepository {
     });
   }
 
-  findById(id: string) {
-    return this.prisma.module.findUnique({
-      where: { id },
-
-      include: {
-        children: true,
-        features: {
-          include: {
-            feature: true,
+findById(id: string) {
+  return this.prisma.module.findUnique({
+    where: { id },
+    include: {
+      features: {
+        include: {
+          feature: true,
+        },
+      },
+      children: {
+        orderBy: { sortOrder: 'asc' },
+        include: {
+          features: {
+            include: {
+              feature: true,
+            },
           },
         },
       },
-    });
-  }
+    },
+  });
+}
 
   findByCode(code: string) {
     return this.prisma.module.findUnique({
@@ -41,17 +49,40 @@ export class ModuleRepository {
     });
   }
 
-  findAll() {
-    return this.prisma.module.findMany({
-      orderBy: {
-        sortOrder: 'asc',
-      },
+  // findAll() {
+  //   return this.prisma.module.findMany({
+  //     orderBy: {
+  //       sortOrder: 'asc',
+  //     },
 
-      include: {
-        children: true,
+  //     include: {
+  //       children: true,
+  //     },
+  //   });
+  // }
+
+  findAll() {
+  return this.prisma.module.findMany({
+    orderBy: { sortOrder: 'asc' },
+    include: {
+      features: {
+        include: {
+          feature: true,
+        },
       },
-    });
-  }
+      children: {
+        orderBy: { sortOrder: 'asc' },
+        include: {
+          features: {
+            include: {
+              feature: true,
+            },
+          },
+        },
+      },
+    },
+  });
+}
 
   update(
     id: string,
