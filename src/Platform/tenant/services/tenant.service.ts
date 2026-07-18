@@ -12,6 +12,7 @@ import { PackageRepository } from '../../package/repositories/package.repository
 
 import { CreateHospitalDto } from '../dto/create-hospital.dto';
 import { AssignPackageDto } from '../dto/assign-package.dto';
+import { HospitalAdminProvisioningService } from './hospital-admin-provisioning.service';
 
 @Injectable()
 export class TenantService {
@@ -23,6 +24,8 @@ export class TenantService {
 
     private readonly packageRepository:
       PackageRepository,
+
+       private readonly hospitalAdminProvisioningService: HospitalAdminProvisioningService,
   ) {}
 
   async createHospital(
@@ -133,35 +136,40 @@ async assignPackage(
 }
 
 
-async activateHospital(
-  hospitalId: string,
-) {
-  const hospital =
-    await this.hospitalRepository.findById(
-      hospitalId,
-    );
+async activateHospital(hospitalId: string) {
+  const hospital = await this.hospitalRepository.findById(hospitalId);
 
   if (!hospital) {
-    throw new NotFoundException(
-      'Hospital not found',
-    );
+    throw new NotFoundException('Hospital not found');
   }
 
   const activePackage =
-    await this.assignedPackageRepository
-      .findActiveByHospital(
-        hospitalId,
-      );
+    await this.assignedPackageRepository.findActiveByHospital(hospitalId);
 
   if (!activePackage) {
-    throw new BadRequestException(
-      'Assign a package before activation',
-    );
+    throw new BadRequestException('Assign a package before activation');
   }
 
-  return this.hospitalRepository.updateStatus(
+  // Activate hospital
+  const updatedHospital = await this.hospitalRepository.updateStatus(
     hospitalId,
     'ACTIVE',
   );
+
+  // Provision hospital admin (email = hospital.email)
+const provisionResult =
+  await this.hospitalAdminProvisioningService.provisionIfNotExists({
+    hospitalId,
+    email: hospital.email,
+    hospitalName: hospital.name,
+  });
+  // Normal API response
+  return {
+    hospital: updatedHospital,
+    ...provisionResult, // { created, admin }
+  };
 }
+
+
+
 }

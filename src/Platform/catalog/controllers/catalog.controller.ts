@@ -35,6 +35,13 @@ export class CatalogController {
     return this.catalogService.getModules();
   }
 
+
+
+    @Get('modules/:id')
+  getModuleById(@Param('id') id: string) {
+    return this.catalogService.getModuleById(id);
+  }
+
   @Post('features')
   createFeature(
     @Body() dto: CreateFeatureDto,

@@ -1,33 +1,30 @@
 import { Module } from '@nestjs/common';
 
-import { HospitalRepository }
-from './repositories/hospital.repository';
-
-import { AssignedPackageRepository }
-from './repositories/assigned-package.repository';
+import { HospitalRepository } from './repositories/hospital.repository';
+import { AssignedPackageRepository } from './repositories/assigned-package.repository';
+import { HospitalUserRepository } from './repositories/hospital-user.repository';
 
 import { TenantService } from './services/tenant.service';
+import { HospitalAdminProvisioningService } from './services/hospital-admin-provisioning.service';
+
 import { PackageModule } from '../package/package.module';
-import {TenantController} from "./controllers/tenant.controller";
+import { TenantController } from './controllers/tenant.controller';
 
 @Module({
+  imports: [PackageModule],
 
-  imports: [
-    PackageModule
-  ],
-
-  controllers: [
-    TenantController
-  ],
+  controllers: [TenantController],
 
   providers: [
     TenantService,
     HospitalRepository,
     AssignedPackageRepository,
+
+    // NEW
+    HospitalUserRepository,
+    HospitalAdminProvisioningService,
   ],
 
-  exports: [
-   TenantService
-  ],
+  exports: [TenantService],
 })
 export class TenantModule {}

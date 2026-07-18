@@ -8,15 +8,10 @@ export class UserRepository {
   ) {}
 
   findByEmail(email: string) {
+    // PlatformUser table se sirf email ke basis par fetch karein
+    // Kyunki roles table ab exist nahi karti
     return this.prisma.platformUser.findUnique({
       where: { email },
-      include: {
-        roles: {
-          include: {
-            role: true,
-          },
-        },
-      },
     });
   }
 

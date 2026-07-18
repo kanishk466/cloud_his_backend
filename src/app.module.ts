@@ -6,6 +6,9 @@ import { IdentityModule } from './Platform/identity/identity.module';
 import { CatalogModule } from './Platform/catalog/catalog.module';
 import { PackageModule } from './Platform/package/package.module';
 import { TenantModule } from './Platform/tenant/tenant.module';
+import { HospitalModule } from './hospital/hospital.module';
+
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -19,6 +22,7 @@ import { TenantModule } from './Platform/tenant/tenant.module';
     CatalogModule,
 PackageModule,
     TenantModule,
+    HospitalModule,
   ],
 })
 export class AppModule {}
