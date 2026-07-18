@@ -13,14 +13,47 @@ export class HospitalAuthService {
     private readonly hospitalAuthUserRepository: HospitalAuthUserRepository,
   ) {}
 
-  async login(hospitalCode: string, email: string, password: string) {
-    const hospital = await this.hospitalLookupRepository.findByCode(hospitalCode);
-    if (!hospital) throw new UnauthorizedException('Invalid credentials');
-    if (hospital.status !== 'ACTIVE') throw new UnauthorizedException('Hospital is not active');
+  // async login(hospitalCode: string, email: string, password: string) {
+  //   const hospital = await this.hospitalLookupRepository.findByCode(hospitalCode);
+  //   if (!hospital) throw new UnauthorizedException('Invalid credentials');
+  //   if (hospital.status !== 'ACTIVE') throw new UnauthorizedException('Hospital is not active');
 
-    const user = await this.hospitalAuthUserRepository.findByHospitalAndEmail(hospital.id, email);
+  //   const user = await this.hospitalAuthUserRepository.findByHospitalAndEmail(hospital.id, email);
+  //   if (!user) throw new UnauthorizedException('Invalid credentials');
+  //   if (user.status !== 'ACTIVE') throw new UnauthorizedException('User is inactive');
+  //   if (user.accountValidTill && user.accountValidTill.getTime() < Date.now()) {
+  //     throw new UnauthorizedException('Account expired');
+  //   }
+
+  //   const ok = await bcrypt.compare(password, user.passwordHash);
+  //   if (!ok) throw new UnauthorizedException('Invalid credentials');
+
+  //   const tokens = await this.generateTokens({
+  //     userId: user.id,
+  //     hospitalId: hospital.id,
+  //     email: user.email,
+  //     userType: user.userType,
+  //   });
+
+  //   // store refreshTokenHash (single session approach)
+  //   const refreshHash = await bcrypt.hash(tokens.refreshToken, 10);
+  //   await this.hospitalAuthUserRepository.setRefreshTokenHash(user.id, refreshHash);
+
+  //   return {
+  //     accessToken: tokens.accessToken,
+  //     refreshToken: tokens.refreshToken,
+  //     forcePasswordChange: user.forcePasswordChange,
+  //   };
+  // }
+
+
+
+    async login(email: string, password: string) {
+    const user = await this.hospitalAuthUserRepository.findByEmailWithHospital(email);
     if (!user) throw new UnauthorizedException('Invalid credentials');
+
     if (user.status !== 'ACTIVE') throw new UnauthorizedException('User is inactive');
+    if (user.hospital.status !== 'ACTIVE') throw new UnauthorizedException('Hospital is not active');
     if (user.accountValidTill && user.accountValidTill.getTime() < Date.now()) {
       throw new UnauthorizedException('Account expired');
     }
@@ -30,12 +63,11 @@ export class HospitalAuthService {
 
     const tokens = await this.generateTokens({
       userId: user.id,
-      hospitalId: hospital.id,
+      hospitalId: user.hospitalId,
       email: user.email,
       userType: user.userType,
     });
 
-    // store refreshTokenHash (single session approach)
     const refreshHash = await bcrypt.hash(tokens.refreshToken, 10);
     await this.hospitalAuthUserRepository.setRefreshTokenHash(user.id, refreshHash);
 
@@ -43,6 +75,18 @@ export class HospitalAuthService {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       forcePasswordChange: user.forcePasswordChange,
+      hospital: {
+        id: user.hospital.id,
+        code: user.hospital.code,
+        name: user.hospital.name,
+      },
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        userType: user.userType, // SUPER_ADMIN | REGULAR_USER — used by frontend for basic RBAC bypass/full menu
+      },
     };
   }
 

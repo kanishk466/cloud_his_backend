@@ -35,9 +35,8 @@ export class HospitalUserService {
     }
 
     // Email uniqueness check
-    const existingEmail = await this.userRepo.findByEmail(
-      hospitalId,
-      dto.userInfo.email,
+    const existingEmail = await this.userRepo.findByEmailWithHospital(
+      dto.userInfo.email
     );
     if (existingEmail) {
       throw new ConflictException('Email already exists in this hospital');
@@ -175,8 +174,7 @@ async updateProfile(
 
   // Email uniqueness if changing email
   if (dto.userInfo?.email && dto.userInfo.email !== user.email) {
-    const existing = await this.userRepo.findByEmail(
-      hospitalId,
+    const existing = await this.userRepo.findByEmailWithHospital(
       dto.userInfo.email,
     );
     if (existing) {
