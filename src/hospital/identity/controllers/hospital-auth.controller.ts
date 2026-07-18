@@ -9,10 +9,10 @@ import { HospitalChangePasswordDto } from '../dto/hospital-change-password.dto/h
 export class HospitalAuthController {
   constructor(private readonly authService: HospitalAuthService) {}
 
-  @Post('login')
-  login(@Body() dto: HospitalLoginDto) {
-    return this.authService.login(dto.hospitalCode, dto.email, dto.password);
-  }
+@Post('login')
+login(@Body() dto: HospitalLoginDto) {
+  return this.authService.login(dto.email, dto.password);
+}
 
   @Post('refresh')
   refresh(@Body() dto: HospitalRefreshDto) {

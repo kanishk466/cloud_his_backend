@@ -26,11 +26,23 @@ export class HospitalUserRepository {
   }
 
   // ---- Find ----
-  findByEmail(hospitalId: string, email: string) {
-    return this.prisma.hospitalUser.findUnique({
-      where: { hospitalId_email: { hospitalId, email } },
-    });
-  }
+  // findByEmailWithHospital(hospitalId: string, email: string) {
+  //   return this.prisma.hospitalUser.findUnique({
+  //     where: { hospitalId_email: { hospitalId, email } },
+  //   });
+  // }
+
+
+  findByEmailWithHospital(email: string) {
+  return this.prisma.hospitalUser.findUnique({
+    where: { email } as any , // ✅ Just email — it's globally unique now
+    include: {
+      hospital: {
+        select: { id: true, code: true, name: true, status: true },
+      },
+    },
+  });
+}
 
   findByUsername(hospitalId: string, username: string) {
     return this.prisma.hospitalUser.findUnique({
