@@ -1,14 +1,3 @@
-// import { NestFactory } from '@nestjs/core';
-// import { AppModule } from './app.module';
-
-// async function bootstrap() {
-//   const app = await NestFactory.create(AppModule);
-//   await app.listen(process.env.PORT ?? 3000);
-// }
-// bootstrap();
-
-
-
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -16,6 +5,13 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // ✅ Enable CORS
+  app.enableCors({
+    origin: ['http://localhost:8080'], // frontend URL (or use '*' for all origins)
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true, // allow cookies / authorization headers
+  });
 
   // Global validation pipe
   app.useGlobalPipes(
@@ -38,7 +34,7 @@ async function bootstrap() {
         bearerFormat: 'JWT',
         description: 'Enter your JWT token',
       },
-      'access-token', // reference name used in @ApiBearerAuth('access-token')
+      'access-token',
     )
     .build();
 
@@ -46,9 +42,9 @@ async function bootstrap() {
 
   SwaggerModule.setup('api/docs', app, document, {
     swaggerOptions: {
-      persistAuthorization: true,    // keeps token after page refresh
-      tagsSorter: 'alpha',           // sorts tags alphabetically
-      operationsSorter: 'alpha',     // sorts endpoints alphabetically
+      persistAuthorization: true,
+      tagsSorter: 'alpha',
+      operationsSorter: 'alpha',
     },
     customSiteTitle: 'My API Docs',
   });
