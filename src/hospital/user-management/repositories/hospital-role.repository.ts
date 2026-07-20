@@ -24,25 +24,33 @@ export class HospitalRoleRepository {
     });
   }
 
-  findAll(hospitalId: string) {
-    return this.prisma.hospitalRole.findMany({
-      where: { hospitalId },
-      include: {
-        roleName: true,
-        permissions: {
-          include: {
-            moduleFeature: {
-              include: {
-                module: true,
-                feature: true,
-              },
-            },
-          },
+
+
+  // hospital-role.repository.ts
+
+findAll(hospitalId: string) {
+  return this.prisma.hospitalRole.findMany({
+    where: { hospitalId },
+    select: {
+      id: true,
+      description: true,
+      isSystem: true,
+      isActive: true,
+      createdAt: true,
+      roleName: {
+        select: {
+          name: true,         // ← only field dropdown + table needs
         },
       },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
+      _count: {
+        select: {
+          permissions: true,  // ← count only, no join on permissions table
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}
 
   findById(id: string) {
     return this.prisma.hospitalRole.findUnique({
