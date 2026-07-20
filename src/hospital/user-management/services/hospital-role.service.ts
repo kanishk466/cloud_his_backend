@@ -43,9 +43,25 @@ export class HospitalRoleService {
   // -------------------------
   // List Roles
   // -------------------------
-  findAll(hospitalId: string) {
-    return this.roleRepo.findAll(hospitalId);
-  }
+  // findAll(hospitalId: string) {
+  //   return this.roleRepo.findAll(hospitalId);
+  // }
+
+  // hospital-role.service.ts
+
+async findAll(hospitalId: string) {
+  const roles = await this.roleRepo.findAll(hospitalId);
+
+  return roles.map((role) => ({
+    id: role.id,
+    name: role.roleName.name,
+    description: role.description,
+    isSystem: role.isSystem,
+    isActive: role.isActive,
+    permissionCount: role._count.permissions,
+    createdAt: role.createdAt,
+  }));
+}
 
   // -------------------------
   // Get Role by Id
