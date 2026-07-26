@@ -304,7 +304,7 @@ model HospitalUser {
 
   firstName       String
   lastName        String?
-  email           String @unique
+  email           String 
   mobile          String?
   alternateMobile String?
 
@@ -335,6 +335,7 @@ model HospitalUser {
 
   
   @@unique([hospitalId, username])
+  @@unique([hospitalId,email])
   @@index([hospitalId])
   @@map("hospital_users")
 }
