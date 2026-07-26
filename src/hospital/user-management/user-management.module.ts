@@ -8,6 +8,7 @@ import { HospitalUserController } from './controllers/hospital-user.controller';
 import { RoleNameService } from './services/role-name.service';
 import { HospitalRoleService } from './services/hospital-role.service';
 import { HospitalUserService } from './services/hospital-user.service';
+import { TenantValidationService } from './services/tenant-validation.service';
 
 import { RoleNameRepository } from './repositories/role-name.repository';
 import { HospitalRoleRepository } from './repositories/hospital-role.repository';
@@ -32,6 +33,7 @@ import { EntitlementRepository } from './repositories/entitlement.repository';
     HospitalUserService,
     HospitalUserRepository,
 
+    TenantValidationService,
     EntitlementRepository,
   ],
   exports: [
