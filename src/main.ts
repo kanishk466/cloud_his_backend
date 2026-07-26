@@ -2,10 +2,12 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-
+  app.setGlobalPrefix('api');
+  
   // ✅ Enable CORS
   app.enableCors({
     origin: ['http://localhost:8080'], // frontend URL (or use '*' for all origins)
@@ -21,6 +23,9 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  // Global exception filter — consistent error envelope on every route
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   // Swagger configuration
   const config = new DocumentBuilder()
@@ -49,7 +54,7 @@ async function bootstrap() {
     customSiteTitle: 'My API Docs',
   });
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 
   console.log(`Application is running on: ${await app.getUrl()}`);
   console.log(`Swagger docs available at: ${await app.getUrl()}/api/docs`);

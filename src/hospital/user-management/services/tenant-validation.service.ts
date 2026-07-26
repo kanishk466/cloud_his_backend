@@ -2,10 +2,12 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 
 export interface TenantRefs {
-  primaryRoleId?: string;
-  additionalRoleIds?: string[];
-  departmentIds?: string[];
-  shiftId?: string;
+  primaryRoleId?: number;
+  additionalRoleIds?: number[];
+  departmentIds?: number[];
+  shiftId?: number;
+  // HospitalUser.id is still a uuid string — only the Int-migrated
+  // masters (roles, departments, shifts) take numeric ids.
   reportingManagerId?: string;
 }
 
@@ -13,14 +15,14 @@ export interface TenantRefs {
 export class TenantValidationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async validateReferences(hospitalId: string, refs: TenantRefs): Promise<void> {
-    const errors: Array<{ field: string; ids: string[] }> = [];
+  async validateReferences(hospitalId: number, refs: TenantRefs): Promise<void> {
+    const errors: Array<{ field: string; ids: Array<string | number> }> = [];
 
-    const additionalRoleIds = refs.additionalRoleIds?.filter((id): id is string => Boolean(id)) ?? [];
+    const additionalRoleIds = refs.additionalRoleIds?.filter((id): id is number => Boolean(id)) ?? [];
     const roleIds = [refs.primaryRoleId, ...additionalRoleIds].filter(
-      (id): id is string => Boolean(id),
+      (id): id is number => Boolean(id),
     );
-    const departmentIds = refs.departmentIds?.filter((id): id is string => Boolean(id)) ?? [];
+    const departmentIds = refs.departmentIds?.filter((id): id is number => Boolean(id)) ?? [];
     const shiftId = refs.shiftId ? [refs.shiftId] : [];
     const reportingManagerId = refs.reportingManagerId ? [refs.reportingManagerId] : [];
 

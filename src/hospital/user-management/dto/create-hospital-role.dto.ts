@@ -1,16 +1,16 @@
 import { Transform } from 'class-transformer';
 import {
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUUID,
   MaxLength,
 } from 'class-validator';
 
 export class CreateHospitalRoleDto {
-  @IsUUID()
+  @IsInt()
   @IsNotEmpty()
-  roleNameId!: string;
+  roleNameId!: number;
 
   @IsOptional()
   @IsString()

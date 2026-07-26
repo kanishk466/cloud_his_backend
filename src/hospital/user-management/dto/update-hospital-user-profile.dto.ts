@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   IsEmail,
   IsEnum,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
@@ -63,8 +64,8 @@ export class UpdateStaffProfileDto {
   dateOfJoining?: string;
 
   @IsOptional()
-  @IsUUID()
-  shiftId?: string;
+  @IsInt()
+  shiftId?: number;
 
   @IsOptional()
   @IsUUID()

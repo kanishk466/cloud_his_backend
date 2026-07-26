@@ -343,7 +343,7 @@ export class HospitalUserService {
 
   // ─── Create User ────────────────────────────────────────────────────────────
 
-  async create(hospitalId: string, dto: CreateHospitalUserDto) {
+  async create(hospitalId: number, dto: CreateHospitalUserDto) {
     // Block SUPER_ADMIN creation
     if (dto.userInfo.userType === HospitalUserType.SUPER_ADMIN) {
       throw new ForbiddenException(
@@ -369,6 +369,8 @@ export class HospitalUserService {
       throw new ConflictException('Username already exists in this hospital');
     }
 
+    // Primary role existence + tenant ownership is covered by
+    // tenantValidationService.validateReferences() below (primaryRoleId).
     const additionalRoleIds = dto.roles.additionalRoleIds ?? [];
 
     // Tenant validation for roles, departments, shift, manager
@@ -380,27 +382,21 @@ export class HospitalUserService {
       reportingManagerId: dto.staffProfile.reportingManagerId,
     });
 
-    // Entitlement validation for permissions
     const entitledModuleIds =
       await this.entitlementRepo.getEntitledModuleIds(hospitalId);
 
     const invalidModules = dto.permissions.filter(
       (p) => !entitledModuleIds.includes(p.moduleId),
     );
-
     if (invalidModules.length > 0) {
       throw new BadRequestException(
         `Modules not available in hospital package: ${invalidModules.map((m) => m.moduleId).join(', ')}`,
       );
     }
 
-    // Generate employee ID
     const employeeId = await this.userRepo.generateEmployeeId(hospitalId);
-
-    // Hash password
     const passwordHash = await bcrypt.hash(dto.credentials.password, 10);
 
-    // Create user (full transaction)
     const user = await this.userRepo.createFull({
       hospitalId,
       userInfo: {
@@ -458,7 +454,7 @@ export class HospitalUserService {
 
   // ─── List Users ─────────────────────────────────────────────────────────────
 
-  findAll(hospitalId: string, filters: ListUsersDto) {
+  findAll(hospitalId: number, filters: ListUsersDto) {
     return this.userRepo.findAll(hospitalId, filters);
   }
 
@@ -466,13 +462,12 @@ export class HospitalUserService {
   //
   // Single scoped query. No in-memory ownership check.
 
-  async findByIdOrThrow(hospitalId: string, id: string) {
+  async findByIdOrThrow(hospitalId: number, id: string) {
     const user = await this.userRepo.findById(id, hospitalId);
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
-
     return user;
   }
 
@@ -482,7 +477,7 @@ export class HospitalUserService {
   // No pre-fetch ownership check needed.
 
   async updateProfile(
-    hospitalId: string,
+    hospitalId: number,
     id: string,
     dto: UpdateHospitalUserProfileDto,
   ) {
@@ -540,7 +535,7 @@ export class HospitalUserService {
   // Ownership check inside repo transaction.
 
   async setPermissions(
-    hospitalId: string,
+    hospitalId: number,
     userId: string,
     dto: SetUserPermissionsDto,
   ) {
@@ -551,7 +546,6 @@ export class HospitalUserService {
     const invalid = dto.permissions.filter(
       (p) => !entitledModuleIds.includes(p.moduleId),
     );
-
     if (invalid.length > 0) {
       throw new BadRequestException(
         `Modules not available in hospital package: ${invalid.map((m) => m.moduleId).join(', ')}`,
@@ -575,7 +569,7 @@ export class HospitalUserService {
   // Prevent deactivating last active SUPER_ADMIN.
   // Uses dedicated count method instead of loading all users.
 
-  async deactivate(hospitalId: string, userId: string) {
+  async deactivate(hospitalId: number, userId: string) {
     // Fetch user to check userType
     const user = await this.userRepo.findById(userId, hospitalId);
 
@@ -607,7 +601,7 @@ export class HospitalUserService {
 
   // ─── Activate ───────────────────────────────────────────────────────────────
 
-  async activate(hospitalId: string, userId: string) {
+  async activate(hospitalId: number, userId: string) {
     try {
       return await this.userRepo.updateStatus(userId, hospitalId, 'ACTIVE');
     } catch (err: unknown) {
@@ -622,7 +616,7 @@ export class HospitalUserService {
   //
   // FIXED: Uses crypto.randomBytes (CSPRNG) instead of Math.random()
 
-  async resetPassword(hospitalId: string, userId: string) {
+  async resetPassword(hospitalId: number, userId: string) {
     const tempPassword = this.generateTempPassword();
     const passwordHash = await bcrypt.hash(tempPassword, 10);
 

@@ -6,14 +6,14 @@ import { HospitalUserType, HospitalUserStatus, LoginType } from '@prisma/client'
 export class HospitalUserRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findSuperAdminByHospital(hospitalId: string) {
+  findSuperAdminByHospital(hospitalId: number) {
     return this.prisma.hospitalUser.findFirst({
       where: { hospitalId, userType: HospitalUserType.SUPER_ADMIN },
     });
   }
 
   createSuperAdmin(data: {
-    hospitalId: string;
+    hospitalId: number;
     email: string;
     username: string;
     passwordHash: string;
@@ -26,17 +26,13 @@ export class HospitalUserRepository {
         email: data.email,
         username: data.username,
         passwordHash: data.passwordHash,
-
-        firstName: data.firstName,        // ✅ REQUIRED
+        firstName: data.firstName,
         lastName: data.lastName ?? null,
-
         userType: HospitalUserType.SUPER_ADMIN,
         status: HospitalUserStatus.ACTIVE,
-
         loginType: LoginType.PASSWORD,
         isTemporaryPassword: true,
         forcePasswordChange: true,
-
         twoFactorEnabled: false,
         sendCredentialsViaSms: false,
         sendCredentialsViaEmail: false,

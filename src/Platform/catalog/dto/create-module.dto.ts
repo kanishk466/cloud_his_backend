@@ -1,8 +1,4 @@
-import {
-  IsOptional,
-  IsString,
-  IsNumber,
-} from 'class-validator';
+import { IsInt, IsOptional, IsString } from 'class-validator';
 
 export class CreateModuleDto {
   @IsString()
@@ -20,10 +16,10 @@ export class CreateModuleDto {
   icon?: string;
 
   @IsOptional()
-  @IsString()
-  parentId?: string;
+  @IsInt()
+  parentId?: number;
 
   @IsOptional()
-  @IsNumber()
+  @IsInt()
   sortOrder?: number;
 }

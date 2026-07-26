@@ -172,41 +172,30 @@ export class HospitalRoleRepository {
   // ─── Create ────────────────────────────────────────────────────────────────
 
   create(data: {
-    hospitalId: string;
-    roleNameId: string;
+    hospitalId: number;
+    roleNameId: number;
     description?: string;
   }) {
     return this.prisma.hospitalRole.create({
-      data: {
-        hospitalId: data.hospitalId,
-        roleNameId: data.roleNameId,
-        description: data.description,
-        isSystem: false,
-        isActive: true,
-      },
+      data,
       include: {
         roleName: true,
+        _count: { select: { permissions: true } },
       },
     });
   }
 
   // ─── Find All ───────────────────────────────────────────────────────────────
+  //
+  // Returns the full roleName relation plus the permission count, so both the
+  // dropdown/table view and any consumer needing the whole role record are served.
 
-  findAll(hospitalId: string) {
+  findAll(hospitalId: number) {
     return this.prisma.hospitalRole.findMany({
       where: { hospitalId },
-      select: {
-        id: true,
-        description: true,
-        isSystem: true,
-        isActive: true,
-        createdAt: true,
-        roleName: {
-          select: { name: true },
-        },
-        _count: {
-          select: { permissions: true },
-        },
+      include: {
+        roleName: true,
+        _count: { select: { permissions: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -218,7 +207,7 @@ export class HospitalRoleRepository {
   // If the role does not belong to this hospital, Prisma returns null.
   // The service treats null as NotFoundException — no in-memory ownership check needed.
 
-  findById(id: string, hospitalId: string) {
+  findById(id: number, hospitalId: number) {
     return this.prisma.hospitalRole.findUnique({
       where: {
         id,
@@ -226,13 +215,11 @@ export class HospitalRoleRepository {
       },
       include: {
         roleName: true,
+        _count: { select: { permissions: true } },
         permissions: {
           include: {
             moduleFeature: {
-              include: {
-                module: true,
-                feature: true,
-              },
+              include: { module: true, feature: true },
             },
           },
         },
@@ -242,7 +229,7 @@ export class HospitalRoleRepository {
 
   // ─── Find By Hospital + RoleName (duplicate check) ──────────────────────────
 
-  findByHospitalAndRoleName(hospitalId: string, roleNameId: string) {
+  findByHospitalAndRoleName(hospitalId: number, roleNameId: number) {
     return this.prisma.hospitalRole.findUnique({
       where: {
         hospitalId_roleNameId: { hospitalId, roleNameId },
@@ -256,20 +243,19 @@ export class HospitalRoleRepository {
   // If the role belongs to a different hospital, Prisma throws RecordNotFound.
   // We catch that in the service and surface it as NotFoundException.
 
-  update(id: string, hospitalId: string, data: { description?: string }) {
+  update(id: number, hospitalId: number, data: { description?: string }) {
     return this.prisma.hospitalRole.update({
       where: {
         id,
         hospitalId, // ← tenant scope enforced at query level
       },
       data,
-      include: { roleName: true },
     });
   }
 
   // ─── Toggle Active ──────────────────────────────────────────────────────────
 
-  toggle(id: string, hospitalId: string, isActive: boolean) {
+  toggle(id: number, hospitalId: number, isActive: boolean) {
     return this.prisma.hospitalRole.update({
       where: {
         id,
@@ -286,9 +272,9 @@ export class HospitalRoleRepository {
   // This means the check and the mutation are atomic — no two-trip race.
 
   async setPermissions(
-    roleId: string,
-    hospitalId: string,
-    moduleFeatures: { moduleId: string; featureId: string }[],
+    roleId: number,
+    hospitalId: number,
+    moduleFeatures: { moduleId: number; featureId: number }[],
   ) {
     return this.prisma.$transaction(async (tx) => {
       // Step 1 — ownership check inside the transaction (atomic with writes)
@@ -345,7 +331,7 @@ export class HospitalRoleRepository {
   // Scoped via hospitalRole relation — only returns permissions
   // for roles that belong to this hospital.
 
-  getPermissions(roleId: string, hospitalId: string) {
+  getPermissions(roleId: number, hospitalId: number) {
     return this.prisma.hospitalRolePermission.findMany({
       where: {
         hospitalRoleId: roleId,
@@ -355,10 +341,7 @@ export class HospitalRoleRepository {
       },
       include: {
         moduleFeature: {
-          include: {
-            module: true,
-            feature: true,
-          },
+          include: { module: true, feature: true },
         },
       },
     });
@@ -368,7 +351,7 @@ export class HospitalRoleRepository {
   //
   // Scoped via hospitalRole relation to prevent cross-tenant counts.
 
-  hasAssignedUsers(roleId: string, hospitalId: string) {
+  hasAssignedUsers(roleId: number, hospitalId: number) {
     return this.prisma.userRoleAssignment.count({
       where: {
         hospitalRoleId: roleId,

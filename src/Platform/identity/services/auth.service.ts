@@ -50,6 +50,9 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       roles: roles,
+      // Real column now exists on PlatformUser; added alongside the legacy
+      // hardcoded `roles` claim so existing consumers keep working.
+      role: user.role ?? 'PLATFORM_ADMIN',
       userType: 'platform', // Ye future mein Hospital User se distinguish karne mein kaam aayega
     };
 

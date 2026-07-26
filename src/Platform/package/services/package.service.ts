@@ -4,111 +4,127 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-
-import { PackageRepository }
-from '../repositories/package.repository';
-
-import { ModuleRepository }
-from '../../catalog/repositories/module.repository';
-
-import {CreatePackageDto} from '../dto/create-package.dto';
+import { PackageRepository } from '../repositories/package.repository';
+import { ModuleRepository } from '../../catalog/repositories/module.repository';
+import { CreatePackageDto } from '../dto/create-package.dto';
+import { UpdatePackageDto } from '../dto/update-package.dto';
+import { AuditService } from '../../audit/audit.service';
+import { AuditActor } from '../../audit/audit-actor';
 
 @Injectable()
 export class PackageService {
   constructor(
-    private readonly packageRepository:
-      PackageRepository,
-
-    private readonly moduleRepository:
-      ModuleRepository,
+    private readonly packageRepository: PackageRepository,
+    private readonly moduleRepository: ModuleRepository,
+    private readonly auditService: AuditService,
   ) {}
 
-  async createPackage(
-  dto: CreatePackageDto,
-) {
-  const existingPackage =
-    await this.packageRepository
-      .findByName(dto.name);
+  async createPackage(dto: CreatePackageDto, actor?: AuditActor) {
+    const existingPackage = await this.packageRepository.findByName(dto.name);
+    if (existingPackage) {
+      throw new ConflictException('Package name already exists');
+    }
 
-  if (existingPackage) {
-    throw new ConflictException(
-      'Package name already exists',
-    );
+    const pkg = await this.packageRepository.create(dto);
+
+    if (actor) {
+      await this.auditService.log({
+        ...actor,
+        action: 'PACKAGE_CREATED',
+        targetType: 'Package',
+        targetName: pkg.name,
+        detail: `Package created at ${pkg.monthlyPrice}/month`,
+      });
+    }
+
+    return pkg;
   }
 
-  return this.packageRepository.create(dto);
-}
-
-
-async getPackages() {
-  return this.packageRepository.findAll();
-}
-
-async getPackageById(
-  id: string,
-) {
-  const pkg =
-    await this.packageRepository.findById(
-      id,
-    );
-
-  if (!pkg) {
-    throw new NotFoundException(
-      'Package not found',
-    );
+  async getPackages() {
+    return this.packageRepository.findAll();
   }
 
-  return pkg;
-}   
-
-
-async attachModule(
-  packageId: string,
-  moduleId: string,
-) {
-  const pkg =
-    await this.packageRepository.findById(
-      packageId,
-    );
-
-  if (!pkg) {
-    throw new NotFoundException(
-      'Package not found',
-    );
+  async getPackageById(id: number) {
+    const pkg = await this.packageRepository.findById(id);
+    if (!pkg) {
+      throw new NotFoundException('Package not found');
+    }
+    return pkg;
   }
 
-  const module =
-    await this.moduleRepository.findById(
-      moduleId,
-    );
+  async updatePackage(id: number, dto: UpdatePackageDto, actor?: AuditActor) {
+    await this.getPackageById(id);
 
-  if (!module) {
-    throw new NotFoundException(
-      'Module not found',
-    );
+    if (dto.name) {
+      const clash = await this.packageRepository.findByName(dto.name);
+      if (clash && clash.id !== id) {
+        throw new ConflictException('Package name already exists');
+      }
+    }
+
+    const updated = await this.packageRepository.update(id, dto);
+
+    if (actor) {
+      await this.auditService.log({
+        ...actor,
+        action: 'PACKAGE_UPDATED',
+        targetType: 'Package',
+        targetName: updated.name,
+        detail: `Fields updated: ${Object.keys(dto).join(', ') || 'none'}`,
+      });
+    }
+
+    return updated;
   }
 
-  if (!module.isActive) {
-    throw new BadRequestException(
-      'Module is inactive',
-    );
+  async removePackage(id: number, actor?: AuditActor) {
+    const pkg = await this.getPackageById(id);
+
+    // AssignedPackage -> Package uses onDelete: Restrict, so surface a clean
+    // 409 instead of letting the FK violation bubble up as a 500.
+    if (pkg._count.assignedPackages > 0) {
+      throw new ConflictException(
+        'Package is assigned to one or more hospitals and cannot be deleted',
+      );
+    }
+
+    await this.packageRepository.remove(id);
+
+    if (actor) {
+      await this.auditService.log({
+        ...actor,
+        action: 'PACKAGE_DELETED',
+        targetType: 'Package',
+        targetName: pkg.name,
+        detail: `Package #${id} deleted`,
+      });
+    }
+
+    return { message: 'Package deleted successfully' };
   }
 
-  const alreadyAttached =
-    pkg.modules.some(
-      item => item.moduleId === moduleId,
-    );
+  async attachModule(packageId: number, moduleId: number) {
+    const pkg = await this.packageRepository.findById(packageId);
+    if (!pkg) {
+      throw new NotFoundException('Package not found');
+    }
 
-  if (alreadyAttached) {
-    throw new ConflictException(
-      'Module already attached',
+    const module = await this.moduleRepository.findById(moduleId);
+    if (!module) {
+      throw new NotFoundException('Module not found');
+    }
+
+    if (!module.isActive) {
+      throw new BadRequestException('Module is inactive');
+    }
+
+    const alreadyAttached = pkg.modules.some(
+      (item) => item.moduleId === moduleId,
     );
+    if (alreadyAttached) {
+      throw new ConflictException('Module already attached');
+    }
+
+    return this.packageRepository.attachModule(packageId, moduleId);
   }
-
-  return this.packageRepository.attachModule(
-    packageId,
-    moduleId,
-  );
-}
-
 }

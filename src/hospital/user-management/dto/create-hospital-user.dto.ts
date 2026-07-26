@@ -5,6 +5,7 @@ import {
   IsDateString,
   IsEmail,
   IsEnum,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -74,8 +75,8 @@ export class StaffProfileDto {
   dateOfJoining?: string;
 
   @IsOptional()
-  @IsUUID()
-  shiftId?: string;
+  @IsInt()
+  shiftId?: number;
 
   @IsOptional()
   @IsUUID()
@@ -148,7 +149,6 @@ export class CredentialsDto {
   @IsBoolean()
   forcePasswordChange!: boolean;
 
-
   @IsBoolean()
   twoFactorEnabled!: boolean;
 
@@ -160,22 +160,22 @@ export class CredentialsDto {
 }
 
 export class RolesDto {
-  @IsUUID()
+  @IsInt()
   @IsNotEmpty()
-  primaryRoleId!: string;
+  primaryRoleId!: number;
 
   @IsOptional()
   @IsArray()
-  @IsUUID('4', { each: true })
-  additionalRoleIds?: string[];
+  @IsInt({ each: true })
+  additionalRoleIds?: number[];
 }
 
 export class ModuleFeaturePairDto {
-  @IsUUID()
-  moduleId!: string;
+  @IsInt()
+  moduleId!: number;
 
-  @IsUUID()
-  featureId!: string;
+  @IsInt()
+  featureId!: number;
 }
 
 export class CreateHospitalUserDto {
@@ -197,8 +197,8 @@ export class CreateHospitalUserDto {
 
   @IsOptional()
   @IsArray()
-  @IsUUID('4', { each: true })
-  departmentIds?: string[];
+  @IsInt({ each: true })
+  departmentIds?: number[];
 
   @IsArray()
   @ValidateNested({ each: true })

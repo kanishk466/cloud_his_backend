@@ -4,11 +4,13 @@ import { PackageService } from './services/package.service';
 import { PackageRepository } from './repositories/package.repository';
 
 import { CatalogModule } from '../catalog/catalog.module';
+import { AuditModule } from '../audit/audit.module';
 import { PackageController } from './controllers/package.controller';
 
 @Module({
   imports: [
     CatalogModule,
+    AuditModule,
   ],
 
   controllers: [

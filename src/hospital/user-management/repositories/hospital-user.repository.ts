@@ -396,7 +396,7 @@ export class HospitalUserRepository {
   // Two simultaneous creates can get the same ID.
   // Fix later with DB sequence or SELECT FOR UPDATE inside transaction.
 
-  async generateEmployeeId(hospitalId: string): Promise<string> {
+  async generateEmployeeId(hospitalId: number): Promise<string> {
     const last = await this.prisma.staffProfile.findFirst({
       where: { hospitalId },
       orderBy: { employeeId: 'desc' },
@@ -404,10 +404,8 @@ export class HospitalUserRepository {
     });
 
     if (!last) return 'EMP-0001';
-
     const num = parseInt(last.employeeId.replace('EMP-', ''), 10);
-    const next = num + 1;
-    return `EMP-${String(next).padStart(4, '0')}`;
+    return `EMP-${String(num + 1).padStart(4, '0')}`;
   }
 
   // ─── Find By Email (tenant-scoped) ──────────────────────────────────────────
@@ -416,10 +414,10 @@ export class HospitalUserRepository {
   // Email is unique per hospital, not globally unique.
   // Composite unique constraint: (hospitalId, email)
 
-  findByEmailWithHospital(hospitalId: string, email: string) {
+  findByEmailWithHospital(hospitalId: number, email: string) {
     return this.prisma.hospitalUser.findUnique({
       where: {
-        hospitalId_username: { hospitalId, username:email }, // ← tenant scope enforced
+        hospitalId_email: { hospitalId, email }, // ← tenant scope enforced
       },
       include: {
         hospital: {
@@ -431,7 +429,7 @@ export class HospitalUserRepository {
 
   // ─── Find By Username ───────────────────────────────────────────────────────
 
-  findByUsername(hospitalId: string, username: string) {
+  findByUsername(hospitalId: number, username: string) {
     return this.prisma.hospitalUser.findUnique({
       where: { hospitalId_username: { hospitalId, username } },
     });
@@ -442,7 +440,7 @@ export class HospitalUserRepository {
   // hospitalId is included in WHERE clause.
   // If user does not belong to this hospital, Prisma returns null.
 
-  findById(id: string, hospitalId: string) {
+  findById(id: string, hospitalId: number) {
     return this.prisma.hospitalUser.findUnique({
       where: {
         id,
@@ -470,10 +468,10 @@ export class HospitalUserRepository {
   // ─── Find All (list with filters) ───────────────────────────────────────────
 
   findAll(
-    hospitalId: string,
+    hospitalId: number,
     filters: {
-      departmentId?: string;
-      roleId?: string;
+      departmentId?: number;
+      roleId?: number;
       status?: HospitalUserStatus;
       search?: string;
     },
@@ -492,32 +490,18 @@ export class HospitalUserRepository {
             }
           : {}),
         ...(filters.departmentId
-          ? {
-              departments: {
-                some: { departmentId: filters.departmentId },
-              },
-            }
+          ? { departments: { some: { departmentId: filters.departmentId } } }
           : {}),
         ...(filters.roleId
-          ? {
-              roles: {
-                some: { hospitalRoleId: filters.roleId },
-              },
-            }
+          ? { roles: { some: { hospitalRoleId: filters.roleId } } }
           : {}),
       },
       include: {
         staffProfile: {
-          select: {
-            employeeId: true,
-            designation: true,
-            title: true,
-          },
+          select: { employeeId: true, designation: true, title: true },
         },
         roles: {
-          include: {
-            hospitalRole: { include: { roleName: true } },
-          },
+          include: { hospitalRole: { include: { roleName: true } } },
         },
         departments: {
           include: { department: { select: { id: true, name: true } } },
@@ -530,7 +514,7 @@ export class HospitalUserRepository {
   // ─── Create Full (6-step transaction) ───────────────────────────────────────
 
   async createFull(data: {
-    hospitalId: string;
+    hospitalId: number;
     userInfo: {
       firstName: string;
       lastName?: string;
@@ -556,7 +540,7 @@ export class HospitalUserRepository {
       bloodGroup?: string;
       designation?: string;
       dateOfJoining?: Date;
-      shiftId?: string;
+      shiftId?: number;
       reportingManagerId?: string;
       aadhaarNumber?: string;
       panNumber?: string;
@@ -569,13 +553,12 @@ export class HospitalUserRepository {
       pincode?: string;
       emergencyContact?: string;
     };
-    primaryRoleId: string;
-    additionalRoleIds: string[];
-    departmentIds: string[];
-    permissions: { moduleId: string; featureId: string }[];
+    primaryRoleId: number;
+    additionalRoleIds: number[];
+    departmentIds: number[];
+    permissions: { moduleId: number; featureId: number }[];
   }) {
     return this.prisma.$transaction(async (tx) => {
-      // 1. Create HospitalUser
       const user = await tx.hospitalUser.create({
         data: {
           hospitalId: data.hospitalId,
@@ -598,7 +581,6 @@ export class HospitalUserRepository {
         },
       });
 
-      // 2. Create StaffProfile
       await tx.staffProfile.create({
         data: {
           userId: user.id,
@@ -625,7 +607,6 @@ export class HospitalUserRepository {
         },
       });
 
-      // 3. Assign primary role
       await tx.userRoleAssignment.create({
         data: {
           userId: user.id,
@@ -634,7 +615,6 @@ export class HospitalUserRepository {
         },
       });
 
-      // 4. Assign additional roles
       if (data.additionalRoleIds.length > 0) {
         await tx.userRoleAssignment.createMany({
           data: data.additionalRoleIds.map((roleId) => ({
@@ -646,7 +626,6 @@ export class HospitalUserRepository {
         });
       }
 
-      // 5. Map departments
       if (data.departmentIds.length > 0) {
         await tx.userDepartmentMapping.createMany({
           data: data.departmentIds.map((deptId) => ({
@@ -657,7 +636,6 @@ export class HospitalUserRepository {
         });
       }
 
-      // 6. Save final permissions
       if (data.permissions.length > 0) {
         await tx.userModuleFeaturePermission.createMany({
           data: data.permissions.map((p) => ({
@@ -683,7 +661,7 @@ export class HospitalUserRepository {
 
   async updateProfile(
     id: string,
-    hospitalId: string,
+    hospitalId: number,
     userInfo: Partial<{
       firstName: string;
       lastName: string;
@@ -698,7 +676,7 @@ export class HospitalUserRepository {
       bloodGroup: string;
       designation: string;
       dateOfJoining: Date;
-      shiftId: string;
+      shiftId: number;
       reportingManagerId: string;
       aadhaarNumber: string;
       panNumber: string;
@@ -722,10 +700,7 @@ export class HospitalUserRepository {
         data: {
           ...(userInfo.firstName && { firstName: userInfo.firstName }),
           ...(userInfo.lastName !== undefined && { lastName: userInfo.lastName }),
-          ...(userInfo.email && {
-            email: userInfo.email,
-            username: userInfo.email,
-          }),
+          ...(userInfo.email && { email: userInfo.email, username: userInfo.email }),
           ...(userInfo.mobile !== undefined && { mobile: userInfo.mobile }),
           ...(userInfo.alternateMobile !== undefined && {
             alternateMobile: userInfo.alternateMobile,
@@ -753,8 +728,8 @@ export class HospitalUserRepository {
 
   async setPermissions(
     userId: string,
-    hospitalId: string,
-    permissions: { moduleId: string; featureId: string }[],
+    hospitalId: number,
+    permissions: { moduleId: number; featureId: number }[],
   ) {
     return this.prisma.$transaction(async (tx) => {
       // Step 1 — ownership check (atomic with writes)
@@ -790,7 +765,7 @@ export class HospitalUserRepository {
 
   // ─── Update Status ──────────────────────────────────────────────────────────
 
-  updateStatus(id: string, hospitalId: string, status: HospitalUserStatus) {
+  updateStatus(id: string, hospitalId: number, status: HospitalUserStatus) {
     return this.prisma.hospitalUser.update({
       where: {
         id,
@@ -802,7 +777,7 @@ export class HospitalUserRepository {
 
   // ─── Reset Password ─────────────────────────────────────────────────────────
 
-  resetPassword(id: string, hospitalId: string, passwordHash: string) {
+  resetPassword(id: string, hospitalId: number, passwordHash: string) {
     return this.prisma.hospitalUser.update({
       where: {
         id,
@@ -821,7 +796,7 @@ export class HospitalUserRepository {
   // NEW: Dedicated count method instead of loading all users into memory.
   // Used to prevent deactivating the last active admin.
 
-  countActiveSuperAdmins(hospitalId: string): Promise<number> {
+  countActiveSuperAdmins(hospitalId: number): Promise<number> {
     return this.prisma.hospitalUser.count({
       where: {
         hospitalId,

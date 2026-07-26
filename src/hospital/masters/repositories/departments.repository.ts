@@ -5,17 +5,13 @@ import { PrismaService } from '../../../shared/prisma/prisma.service';
 export class DepartmentsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(hospitalId: string, data: { name: string; code?: string }) {
+  create(hospitalId: number, data: { name: string; code?: string }) {
     return this.prisma.department.create({
-      data: {
-        hospitalId,
-        name: data.name,
-        code: data.code,
-      },
+      data: { hospitalId, name: data.name, code: data.code },
     });
   }
 
-  findAll(hospitalId: string, active?: boolean) {
+  findAll(hospitalId: number, active?: boolean) {
     return this.prisma.department.findMany({
       where: {
         hospitalId,
@@ -25,22 +21,15 @@ export class DepartmentsRepository {
     });
   }
 
-  findById(id: string) {
-    return this.prisma.department.findUnique({
-      where: { id },
-    });
+  findById(id: number) {
+    return this.prisma.department.findUnique({ where: { id } });
   }
 
-  findByHospitalAndName(hospitalId: string, name: string) {
-    return this.prisma.department.findFirst({
-      where: { hospitalId, name },
-    });
+  findByHospitalAndName(hospitalId: number, name: string) {
+    return this.prisma.department.findFirst({ where: { hospitalId, name } });
   }
 
-  update(id: string, data: { name?: string; code?: string; isActive?: boolean }) {
-    return this.prisma.department.update({
-      where: { id },
-      data,
-    });
+  update(id: number, data: { name?: string; code?: string; isActive?: boolean }) {
+    return this.prisma.department.update({ where: { id }, data });
   }
 }
