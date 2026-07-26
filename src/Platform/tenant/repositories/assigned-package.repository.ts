@@ -1,64 +1,38 @@
 import { Injectable } from '@nestjs/common';
-
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 
 @Injectable()
 export class AssignedPackageRepository {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   create(data: {
-    hospitalId: string;
-    packageId: string;
+    hospitalId: number;
+    packageId: number;
     startDate: Date;
     endDate?: Date;
   }) {
-    return this.prisma.assignedPackage.create({
-      data,
-    });
+    return this.prisma.assignedPackage.create({ data });
   }
 
-  findActiveByHospital(
-    hospitalId: string,
-  ) {
+  findActiveByHospital(hospitalId: number) {
     return this.prisma.assignedPackage.findFirst({
-      where: {
-        hospitalId,
-        status: 'ACTIVE',
-      },
-
-      include: {
-        package: true,
-      },
+      where: { hospitalId, status: 'ACTIVE' },
+      include: { package: true },
     });
   }
 
-  findByHospital(
-    hospitalId: string,
-  ) {
+  findByHospital(hospitalId: number) {
     return this.prisma.assignedPackage.findMany({
-      where: {
-        hospitalId,
-      },
-
-      include: {
-        package: true,
-      },
-
-      orderBy: {
-        createdAt: 'desc',
-      },
+      where: { hospitalId },
+      include: { package: true },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  deactivate(id: string) {
+  deactivate(id: number) {
     return this.prisma.assignedPackage.update({
       where: { id },
-
-      data: {
-        status: 'CANCELLED',
-      },
+      data: { status: 'CANCELLED' },
     });
   }
 }

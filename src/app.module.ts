@@ -6,6 +6,10 @@ import { IdentityModule } from './Platform/identity/identity.module';
 import { CatalogModule } from './Platform/catalog/catalog.module';
 import { PackageModule } from './Platform/package/package.module';
 import { TenantModule } from './Platform/tenant/tenant.module';
+import { AuditModule } from './Platform/audit/audit.module';
+import { PlatformUsersModule } from './Platform/platform-users/platform-users.module';
+import { DashboardModule } from './Platform/dashboard/dashboard.module';
+import { SearchModule } from './Platform/search/search.module';
 import { HospitalModule } from './hospital/hospital.module';
 
 
@@ -22,6 +26,10 @@ import { HospitalModule } from './hospital/hospital.module';
     CatalogModule,
 PackageModule,
     TenantModule,
+    AuditModule,
+    PlatformUsersModule,
+    DashboardModule,
+    SearchModule,
     HospitalModule,
   ],
 })

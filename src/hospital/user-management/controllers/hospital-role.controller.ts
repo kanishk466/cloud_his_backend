@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Put,
@@ -21,63 +22,55 @@ import { ToggleActiveDto } from '../../masters/dto/toggle-active.dto';
 export class HospitalRoleController {
   constructor(private readonly service: HospitalRoleService) {}
 
-  // Create role
   @Post()
   create(@Req() req: any, @Body() dto: CreateHospitalRoleDto) {
     return this.service.create(req.user.hospitalId, dto);
   }
 
-  // List roles
   @Get()
   list(@Req() req: any) {
     return this.service.findAll(req.user.hospitalId);
   }
 
-  // Get role by id
+  @Get('entitlements/modules')
+  getEntitledModules(@Req() req: any) {
+    return this.service.getEntitledModules(req.user.hospitalId);
+  }
+
   @Get(':id')
-  getById(@Req() req: any, @Param('id') id: string) {
+  getById(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
     return this.service.findByIdOrThrow(req.user.hospitalId, id);
   }
 
-  // Update role
   @Patch(':id')
   update(
     @Req() req: any,
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateHospitalRoleDto,
   ) {
     return this.service.update(req.user.hospitalId, id, dto);
   }
 
-  // Toggle active/inactive
   @Post(':id/toggle')
   toggle(
     @Req() req: any,
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() dto: ToggleActiveDto,
   ) {
     return this.service.toggle(req.user.hospitalId, id, dto.isActive);
   }
 
-  // Set permissions (replace all)
   @Put(':id/permissions')
   setPermissions(
     @Req() req: any,
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() dto: SetRolePermissionsDto,
   ) {
     return this.service.setPermissions(req.user.hospitalId, id, dto);
   }
 
-  // Get permissions
   @Get(':id/permissions')
-  getPermissions(@Req() req: any, @Param('id') id: string) {
+  getPermissions(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
     return this.service.getPermissions(req.user.hospitalId, id);
-  }
-
-  // Get entitled modules (for UI dropdowns in Step 2/3)
-  @Get('entitlements/modules')
-  getEntitledModules(@Req() req: any) {
-    return this.service.getEntitledModules(req.user.hospitalId);
   }
 }

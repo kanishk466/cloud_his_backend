@@ -15,6 +15,12 @@ enum UserStatus {
   INACTIVE
 }
 
+enum PlatformRole {
+  SUPER_ADMIN
+  PLATFORM_ADMIN
+  SUPPORT
+}
+
 enum HospitalStatus {
   DRAFT
   ACTIVE
@@ -60,7 +66,8 @@ model PlatformUser {
   firstName     String
   lastName      String?
   status        UserStatus     @default(ACTIVE)
-  
+  role          PlatformRole   @default(PLATFORM_ADMIN)
+
   refreshTokens RefreshToken[]
 
   createdAt     DateTime       @default(now())
@@ -85,46 +92,46 @@ model RefreshToken {
 // ============================================
 
 model Module {
-  id             String          @id @default(uuid())
-  name           String
-  code           String          @unique
-  route          String?
-  icon           String?
-  sortOrder      Int             @default(0)
-  isActive       Boolean         @default(true)
-  parentId       String?
-  parent         Module?         @relation("ModuleHierarchy", fields: [parentId], references: [id])
-  children       Module[]        @relation("ModuleHierarchy")
-  
+  id        Int     @id @default(autoincrement())
+  name      String
+  code      String  @unique
+  route     String?
+  icon      String?
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+  parentId  Int?
+  parent    Module? @relation("ModuleHierarchy", fields: [parentId], references: [id])
+  children  Module[] @relation("ModuleHierarchy")
+
   features       ModuleFeature[]
   packageModules PackageModule[]
-  
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("modules")
 }
 
 model Feature {
-  id          String          @id @default(uuid())
+  id          Int     @id @default(autoincrement())
   name        String
-  code        String          @unique
+  code        String  @unique
   description String?
-  
-  modules     ModuleFeature[]
-  
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+
+  modules ModuleFeature[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("features")
 }
 
 model ModuleFeature {
-  moduleId        String
-  featureId       String
-  module          Module                        @relation(fields: [moduleId], references: [id], onDelete: Cascade)
-  feature         Feature                       @relation(fields: [featureId], references: [id], onDelete: Cascade)
-  
+  moduleId  Int
+  featureId Int
+  module    Module  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  feature   Feature @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
   rolePermissions HospitalRolePermission[]
   userPermissions UserModuleFeaturePermission[]
 
@@ -133,23 +140,30 @@ model ModuleFeature {
 }
 
 model Package {
-  id               String            @id @default(uuid())
-  name             String            @unique
-  description      String?
-  isActive         Boolean           @default(true)
-  
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+
+  monthlyPrice Int
+  yearlyPrice  Int
+  maxDoctors   Int
+  maxStorageGb Int
+  maxBranches  Int
+  isPopular    Boolean @default(false)
+
   modules          PackageModule[]
   assignedPackages AssignedPackage[]
-  
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("packages")
 }
 
 model PackageModule {
-  packageId String
-  moduleId  String
+  packageId Int
+  moduleId  Int
   package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
   module    Module  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
 
@@ -162,7 +176,7 @@ model PackageModule {
 // ============================================
 
 model Hospital {
-  id          String         @id @default(uuid())
+  id          Int            @id @default(autoincrement())
   code        String         @unique
   name        String
   email       String         @unique
@@ -188,17 +202,17 @@ model Hospital {
 }
 
 model AssignedPackage {
-  id         String                  @id @default(uuid())
-  hospitalId String
-  packageId  String
+  id         Int                     @id @default(autoincrement())
+  hospitalId Int
+  packageId  Int
   startDate  DateTime
   endDate    DateTime?
   status     PackageAssignmentStatus @default(ACTIVE)
-  
-  hospital   Hospital                @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
-  package    Package                 @relation(fields: [packageId], references: [id], onDelete: Restrict)
-  
-  createdAt  DateTime                @default(now())
+
+  hospital  Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  package   Package  @relation(fields: [packageId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
 
   @@map("assigned_packages")
 }
@@ -208,13 +222,13 @@ model AssignedPackage {
 // ============================================
 
 model RoleName {
-  id          String   @id @default(uuid())
+  id          Int     @id @default(autoincrement())
   name        String
-  code        String   @unique
+  code        String  @unique
   description String?
-  isSystem    Boolean  @default(false)
+  isSystem    Boolean @default(false)
 
-  createdByHospitalId String?
+  createdByHospitalId Int?
   createdByHospital   Hospital?      @relation(fields: [createdByHospitalId], references: [id])
   hospitalRoles       HospitalRole[]
 
@@ -225,16 +239,16 @@ model RoleName {
 }
 
 model HospitalRole {
-  id          String   @id @default(uuid())
-  hospitalId  String
-  hospital    Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
-  
-  roleNameId  String
-  roleName    RoleName @relation(fields: [roleNameId], references: [id], onDelete: Restrict)
-  
+  id         Int      @id @default(autoincrement())
+  hospitalId Int
+  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+
+  roleNameId Int
+  roleName   RoleName @relation(fields: [roleNameId], references: [id], onDelete: Restrict)
+
   description String?
-  isSystem    Boolean  @default(false)
-  isActive    Boolean  @default(true)
+  isSystem    Boolean @default(false)
+  isActive    Boolean @default(true)
 
   permissions HospitalRolePermission[]
   users       UserRoleAssignment[]
@@ -248,32 +262,32 @@ model HospitalRole {
 }
 
 model HospitalRolePermission {
-  id             String        @id @default(uuid())
-  hospitalRoleId String
-  hospitalRole   HospitalRole  @relation(fields: [hospitalRoleId], references: [id], onDelete: Cascade)
-  
-  moduleId       String
-  featureId      String
-  moduleFeature  ModuleFeature @relation(fields: [moduleId, featureId], references: [moduleId, featureId], onDelete: Cascade)
-  
-  createdAt      DateTime      @default(now())
+  id             Int          @id @default(autoincrement())
+  hospitalRoleId Int
+  hospitalRole   HospitalRole @relation(fields: [hospitalRoleId], references: [id], onDelete: Cascade)
+
+  moduleId      Int
+  featureId     Int
+  moduleFeature ModuleFeature @relation(fields: [moduleId, featureId], references: [moduleId, featureId], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 
   @@unique([hospitalRoleId, moduleId, featureId])
   @@map("hospital_role_permissions")
 }
 
 model Department {
-  id         String   @id @default(uuid())
-  hospitalId String
+  id         Int      @id @default(autoincrement())
+  hospitalId Int
   hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
   name       String
   code       String?
   isActive   Boolean  @default(true)
-  
-  users      UserDepartmentMapping[]
-  
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+
+  users UserDepartmentMapping[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([hospitalId, name])
   @@index([hospitalId])
@@ -281,8 +295,8 @@ model Department {
 }
 
 model ShiftMaster {
-  id         String   @id @default(uuid())
-  hospitalId String
+  id         Int      @id @default(autoincrement())
+  hospitalId Int
   hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
   name       String
   startTime  String?
@@ -301,7 +315,7 @@ model ShiftMaster {
 
 model HospitalUser {
   id         String           @id @default(uuid())
-  hospitalId String
+  hospitalId Int
   hospital   Hospital         @relation(fields: [hospitalId], references: [id], onDelete: Restrict)
   userType   HospitalUserType @default(REGULAR_USER)
 
@@ -324,11 +338,11 @@ model HospitalUser {
   refreshTokenHash        String?
   lastLoginAt             DateTime?
 
-  staffProfile  StaffProfile?
-  roles         UserRoleAssignment[]
-  departments   UserDepartmentMapping[]
-  permissions   UserModuleFeaturePermission[]
-  managedStaff  StaffProfile[]              @relation("ReportingManager")
+  staffProfile StaffProfile?
+  roles        UserRoleAssignment[]
+  departments  UserDepartmentMapping[]
+  permissions  UserModuleFeaturePermission[]
+  managedStaff StaffProfile[]              @relation("ReportingManager")
 
   performedCopyLogs PermissionCopyLog[] @relation("PermissionCopyPerformedBy")
   sourceCopyLogs    PermissionCopyLog[] @relation("PermissionCopySource")
@@ -337,7 +351,6 @@ model HospitalUser {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  
   @@unique([hospitalId, username])
   @@unique([hospitalId,email])
   @@index([hospitalId])
@@ -345,10 +358,10 @@ model HospitalUser {
 }
 
 model StaffProfile {
-  id         String       @id @default(uuid())
+  id         Int          @id @default(autoincrement())
   userId     String       @unique
   user       HospitalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-  hospitalId String
+  hospitalId Int
   employeeId String
 
   title       String?
@@ -359,7 +372,7 @@ model StaffProfile {
   designation   String?
   dateOfJoining DateTime?
 
-  shiftId String?
+  shiftId Int?
   shift   ShiftMaster? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
 
   reportingManagerId String?
@@ -387,7 +400,7 @@ model StaffProfile {
 
 model UserRoleAssignment {
   userId         String
-  hospitalRoleId String
+  hospitalRoleId Int
   isPrimary      Boolean  @default(false)
   assignedAt     DateTime @default(now())
 
@@ -401,7 +414,7 @@ model UserRoleAssignment {
 
 model UserDepartmentMapping {
   userId       String
-  departmentId String
+  departmentId Int
   user         HospitalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
   department   Department   @relation(fields: [departmentId], references: [id], onDelete: Cascade)
 
@@ -411,13 +424,13 @@ model UserDepartmentMapping {
 }
 
 model UserModuleFeaturePermission {
-  id            String        @id @default(uuid())
-  userId        String
-  user          HospitalUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  moduleId      String
-  featureId     String
+  id        Int          @id @default(autoincrement())
+  userId    String
+  user      HospitalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moduleId  Int
+  featureId Int
   moduleFeature ModuleFeature @relation(fields: [moduleId, featureId], references: [moduleId, featureId], onDelete: Cascade)
-  grantedAt     DateTime      @default(now())
+  grantedAt DateTime      @default(now())
 
   @@unique([userId, moduleId, featureId])
   @@index([userId])
@@ -425,8 +438,8 @@ model UserModuleFeaturePermission {
 }
 
 model PermissionCopyLog {
-  id         String   @id @default(uuid())
-  hospitalId String
+  id         Int      @id @default(autoincrement())
+  hospitalId Int
   hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
 
   performedByUserId String
@@ -436,7 +449,7 @@ model PermissionCopyLog {
   sourceUser   HospitalUser @relation("PermissionCopySource", fields: [sourceUserId], references: [id], onDelete: Restrict)
 
   targetUserIds       String[]
-  targetDepartmentIds String[]
+  targetDepartmentIds Int[]
 
   createdAt DateTime @default(now())
 

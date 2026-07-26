@@ -6,11 +6,10 @@ import { ShiftsRepository } from '../repositories/shifts.repository';
 export class ShiftsService {
   constructor(private readonly repo: ShiftsRepository) {}
 
-  async create(hospitalId: string, data: { name: string; startTime?: string; endTime?: string }) {
+  async create(hospitalId: number, data: { name: string; startTime?: string; endTime?: string }) {
     try {
       return await this.repo.create(hospitalId, data);
     } catch (e) {
-      // Unique constraint: @@unique([hospitalId, name])
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException('Shift name already exists');
       }
@@ -18,11 +17,11 @@ export class ShiftsService {
     }
   }
 
-  findAll(hospitalId: string, active?: boolean) {
+  findAll(hospitalId: number, active?: boolean) {
     return this.repo.findAll(hospitalId, active);
   }
 
-  async findByIdOrThrow(hospitalId: string, id: string) {
+  async findByIdOrThrow(hospitalId: number, id: number) {
     const shift = await this.repo.findById(id);
     if (!shift || shift.hospitalId !== hospitalId) {
       throw new NotFoundException('Shift not found');
@@ -30,9 +29,8 @@ export class ShiftsService {
     return shift;
   }
 
-  async update(hospitalId: string, id: string, data: { name?: string; startTime?: string; endTime?: string }) {
+  async update(hospitalId: number, id: number, data: { name?: string; startTime?: string; endTime?: string }) {
     await this.findByIdOrThrow(hospitalId, id);
-
     try {
       return await this.repo.update(id, data);
     } catch (e) {
@@ -43,7 +41,7 @@ export class ShiftsService {
     }
   }
 
-  async toggle(hospitalId: string, id: string, isActive: boolean) {
+  async toggle(hospitalId: number, id: number, isActive: boolean) {
     await this.findByIdOrThrow(hospitalId, id);
     return this.repo.update(id, { isActive });
   }

@@ -5,7 +5,7 @@ import { PrismaService } from '../../../shared/prisma/prisma.service';
 export class ShiftsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(hospitalId: string, data: { name: string; startTime?: string; endTime?: string }) {
+  create(hospitalId: number, data: { name: string; startTime?: string; endTime?: string }) {
     return this.prisma.shiftMaster.create({
       data: {
         hospitalId,
@@ -16,7 +16,7 @@ export class ShiftsRepository {
     });
   }
 
-  findAll(hospitalId: string, active?: boolean) {
+  findAll(hospitalId: number, active?: boolean) {
     return this.prisma.shiftMaster.findMany({
       where: {
         hospitalId,
@@ -26,19 +26,19 @@ export class ShiftsRepository {
     });
   }
 
-  findById(id: string) {
+  findById(id: number) {
     return this.prisma.shiftMaster.findUnique({
       where: { id },
     });
   }
 
-  findByHospitalAndName(hospitalId: string, name: string) {
+  findByHospitalAndName(hospitalId: number, name: string) {
     return this.prisma.shiftMaster.findFirst({
       where: { hospitalId, name },
     });
   }
 
-  update(id: string, data: { name?: string; startTime?: string; endTime?: string; isActive?: boolean }) {
+  update(id: number, data: { name?: string; startTime?: string; endTime?: string; isActive?: boolean }) {
     return this.prisma.shiftMaster.update({
       where: { id },
       data,

@@ -143,7 +143,7 @@ export class HospitalAuthService {
     return { message: 'Password changed successfully' };
   }
 
-  private async generateTokens(input: { userId: string; hospitalId: string; email: string; userType: any }) {
+  private async generateTokens(input: { userId: string; hospitalId: number; email: string; userType: any }) {
     const payload = {
       sub: input.userId,
       hospitalId: input.hospitalId,

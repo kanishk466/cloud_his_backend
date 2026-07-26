@@ -1,12 +1,8 @@
-import {
-  IsDateString,
-  IsOptional,
-  IsString,
-} from 'class-validator';
+import { IsDateString, IsInt, IsOptional } from 'class-validator';
 
 export class AssignPackageDto {
-  @IsString()
-  packageId!: string;
+  @IsInt()
+  packageId!: number;
 
   @IsDateString()
   startDate!: string;

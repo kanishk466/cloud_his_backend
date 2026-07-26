@@ -2,16 +2,16 @@ import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
-  IsUUID,
+  IsInt,
   ValidateNested,
 } from 'class-validator';
 
 export class ModuleFeaturePairDto {
-  @IsUUID()
-  moduleId!: string;
+  @IsInt()
+  moduleId!: number;
 
-  @IsUUID()
-  featureId!: string;
+  @IsInt()
+  featureId!: number;
 }
 
 export class SetRolePermissionsDto {

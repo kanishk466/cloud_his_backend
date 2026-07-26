@@ -177,7 +177,8 @@ export class HospitalRoleService {
 
   // ─── Create ─────────────────────────────────────────────────────────────────
 
-  async create(hospitalId: string, dto: CreateHospitalRoleDto) {
+  async create(hospitalId: number, dto: CreateHospitalRoleDto) {
+    // Check duplicate: same roleName already used in this hospital
     const existing = await this.roleRepo.findByHospitalAndRoleName(
       hospitalId,
       dto.roleNameId,
@@ -198,7 +199,7 @@ export class HospitalRoleService {
 
   // ─── List ───────────────────────────────────────────────────────────────────
 
-  async findAll(hospitalId: string) {
+  async findAll(hospitalId: number) {
     const roles = await this.roleRepo.findAll(hospitalId);
 
     return roles.map((role) => ({
@@ -217,7 +218,7 @@ export class HospitalRoleService {
   // Single scoped query. No in-memory ownership check.
   // Prisma returns null if id does not match hospitalId — treated as 404.
 
-  async findByIdOrThrow(hospitalId: string, id: string) {
+  async findByIdOrThrow(hospitalId: number, id: number) {
     const role = await this.roleRepo.findById(id, hospitalId);
 
     if (!role) {
@@ -234,29 +235,35 @@ export class HospitalRoleService {
   // We catch that and surface as NotFoundException.
   // No pre-fetch round trip needed.
 
-  async update(hospitalId: string, id: string, dto: UpdateHospitalRoleDto) {
+  async update(hospitalId: number, id: number, dto: UpdateHospitalRoleDto) {
     try {
       return await this.roleRepo.update(id, hospitalId, dto);
-    } 
-    catch (err: unknown) {
-  if (err instanceof Error && err.message === 'ROLE_NOT_FOUND') {
-    throw new NotFoundException('Role not found');
-  }
-  throw err;
-}
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message === 'ROLE_NOT_FOUND') {
+        throw new NotFoundException('Role not found');
+      }
+      // Scoped WHERE (id + hospitalId) misses on cross-tenant access → P2025
+      if (isPrismaError(err, 'P2025')) {
+        throw new NotFoundException('Role not found');
+      }
+      throw err;
+    }
   }
 
   // ─── Toggle ─────────────────────────────────────────────────────────────────
 
-  async toggle(hospitalId: string, id: string, isActive: boolean) {
+  async toggle(hospitalId: number, id: number, isActive: boolean) {
     try {
       return await this.roleRepo.toggle(id, hospitalId, isActive);
     } catch (err: unknown) {
-  if (err instanceof Error && err.message === 'ROLE_NOT_FOUND') {
-    throw new NotFoundException('Role not found');
-  }
-  throw err;
-}
+      if (err instanceof Error && err.message === 'ROLE_NOT_FOUND') {
+        throw new NotFoundException('Role not found');
+      }
+      if (isPrismaError(err, 'P2025')) {
+        throw new NotFoundException('Role not found');
+      }
+      throw err;
+    }
   }
 
   // ─── Set Permissions ────────────────────────────────────────────────────────
@@ -266,8 +273,8 @@ export class HospitalRoleService {
   // Both must pass. Order: entitlement first (cheaper), then ownership + write.
 
   async setPermissions(
-    hospitalId: string,
-    roleId: string,
+    hospitalId: number,
+    roleId: number,
     dto: SetRolePermissionsDto,
   ) {
     // Entitlement check — is this module available in hospital's package?
@@ -280,6 +287,7 @@ export class HospitalRoleService {
       );
     }
 
+    // Validate each (moduleId, featureId) pair — entitlement check (strict)
     const invalidModules = dto.moduleFeatures.filter(
       (mf) => !entitledModuleIds.includes(mf.moduleId),
     );
@@ -311,7 +319,7 @@ export class HospitalRoleService {
   // No pre-fetch needed — returns empty array if role doesn't belong to hospital.
   // We do a single existence check to give a proper 404 if role is not found.
 
-  async getPermissions(hospitalId: string, roleId: string) {
+  async getPermissions(hospitalId: number, roleId: number) {
     const role = await this.roleRepo.findById(roleId, hospitalId);
 
     if (!role) {
@@ -323,7 +331,7 @@ export class HospitalRoleService {
 
   // ─── Get Entitlements (UI dropdown) ─────────────────────────────────────────
 
-  getEntitledModules(hospitalId: string) {
+  getEntitledModules(hospitalId: number) {
     return this.entitlementRepo.getEntitledModulesWithFeatures(hospitalId);
   }
 }

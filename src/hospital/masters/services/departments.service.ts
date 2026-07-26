@@ -6,11 +6,10 @@ import { DepartmentsRepository } from '../repositories/departments.repository';
 export class DepartmentsService {
   constructor(private readonly repo: DepartmentsRepository) {}
 
-  async create(hospitalId: string, data: { name: string; code?: string }) {
+  async create(hospitalId: number, data: { name: string; code?: string }) {
     try {
       return await this.repo.create(hospitalId, data);
     } catch (e) {
-      // Unique constraint: @@unique([hospitalId, name])
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException('Department name already exists');
       }
@@ -18,11 +17,11 @@ export class DepartmentsService {
     }
   }
 
-  findAll(hospitalId: string, active?: boolean) {
+  findAll(hospitalId: number, active?: boolean) {
     return this.repo.findAll(hospitalId, active);
   }
 
-  async findByIdOrThrow(hospitalId: string, id: string) {
+  async findByIdOrThrow(hospitalId: number, id: number) {
     const dept = await this.repo.findById(id);
     if (!dept || dept.hospitalId !== hospitalId) {
       throw new NotFoundException('Department not found');
@@ -30,9 +29,8 @@ export class DepartmentsService {
     return dept;
   }
 
-  async update(hospitalId: string, id: string, data: { name?: string; code?: string }) {
+  async update(hospitalId: number, id: number, data: { name?: string; code?: string }) {
     await this.findByIdOrThrow(hospitalId, id);
-
     try {
       return await this.repo.update(id, data);
     } catch (e) {
@@ -43,7 +41,7 @@ export class DepartmentsService {
     }
   }
 
-  async toggle(hospitalId: string, id: string, isActive: boolean) {
+  async toggle(hospitalId: number, id: number, isActive: boolean) {
     await this.findByIdOrThrow(hospitalId, id);
     return this.repo.update(id, { isActive });
   }

@@ -8,10 +8,11 @@ import { TenantService } from './services/tenant.service';
 import { HospitalAdminProvisioningService } from './services/hospital-admin-provisioning.service';
 
 import { PackageModule } from '../package/package.module';
+import { AuditModule } from '../audit/audit.module';
 import { TenantController } from './controllers/tenant.controller';
 
 @Module({
-  imports: [PackageModule],
+  imports: [PackageModule, AuditModule],
 
   controllers: [TenantController],
 

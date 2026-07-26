@@ -5,18 +5,12 @@ import { PrismaService } from '../../../shared/prisma/prisma.service';
 export class RoleNameRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  // Search globally (system + all hospitals)
   findAll(search?: string) {
     return this.prisma.roleName.findMany({
       where: {
-        ...(search
-          ? { name: { contains: search, mode: 'insensitive' } }
-          : {}),
+        ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
       },
-      orderBy: [
-        { isSystem: 'desc' }, // system roles first
-        { name: 'asc' },
-      ],
+      orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
       select: {
         id: true,
         name: true,
@@ -30,16 +24,14 @@ export class RoleNameRepository {
   }
 
   findByCode(code: string) {
-    return this.prisma.roleName.findUnique({
-      where: { code },
-    });
+    return this.prisma.roleName.findUnique({ where: { code } });
   }
 
   create(data: {
     name: string;
     code: string;
     description?: string;
-    createdByHospitalId: string;
+    createdByHospitalId: number;
   }) {
     return this.prisma.roleName.create({
       data: {

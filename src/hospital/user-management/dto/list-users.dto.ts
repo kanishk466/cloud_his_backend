@@ -1,14 +1,17 @@
-import { IsOptional, IsString, IsUUID, IsEnum } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsOptional, IsInt, IsString, IsEnum } from 'class-validator';
 import { HospitalUserStatus } from '@prisma/client';
 
 export class ListUsersDto {
   @IsOptional()
-  @IsUUID()
-  departmentId?: string;
+  @IsInt()
+  @Type(() => Number)
+  departmentId?: number;
 
   @IsOptional()
-  @IsUUID()
-  roleId?: string;
+  @IsInt()
+  @Type(() => Number)
+  roleId?: number;
 
   @IsOptional()
   @IsEnum(HospitalUserStatus)

@@ -278,7 +278,66 @@ async function main() {
   }
 
   // ========================
-  // 4. PLATFORM ADMIN USER
+  // 4. PACKAGES
+  // ========================
+  console.log('\n📌 Seeding Packages...');
+
+  const packagesData = [
+    {
+      name: 'FREE',
+      description: 'Trial plan for single-clinic evaluation',
+      monthlyPrice: 0,
+      yearlyPrice: 0,
+      maxDoctors: 3,
+      maxStorageGb: 2,
+      maxBranches: 1,
+      isPopular: false,
+    },
+    {
+      name: 'BASIC',
+      description: 'Essentials for a small hospital or two branches',
+      monthlyPrice: 2999,
+      yearlyPrice: 29990,
+      maxDoctors: 10,
+      maxStorageGb: 25,
+      maxBranches: 2,
+      isPopular: false,
+    },
+    {
+      name: 'PREMIUM',
+      description: 'Full clinical suite for growing multi-branch hospitals',
+      monthlyPrice: 7999,
+      yearlyPrice: 79990,
+      maxDoctors: 25,
+      maxStorageGb: 150,
+      maxBranches: 5,
+      isPopular: true,
+    },
+    {
+      name: 'ENTERPRISE',
+      description: 'Unrestricted scale for hospital groups and chains',
+      monthlyPrice: 19999,
+      yearlyPrice: 199990,
+      maxDoctors: 100,
+      maxStorageGb: 1024,
+      maxBranches: 20,
+      isPopular: false,
+    },
+  ];
+
+  for (const pkg of packagesData) {
+    const created = await prisma.package.upsert({
+      where: { name: pkg.name },
+      update: pkg,
+      create: pkg,
+    });
+    console.log(
+      `  ✅ Package: ${created.name} (₹${created.monthlyPrice}/mo, ${created.maxDoctors} doctors)`,
+    );
+  }
+
+  // ========================
+  // 5. PLATFORM ADMIN USER
   // ========================
   console.log('\n📌 Seeding Platform Admin...');
 
@@ -299,6 +358,105 @@ async function main() {
   console.log(`  ✅ Platform Admin: ${platformAdmin.email}`);
 
   // ========================
+  // 6. AUDIT LOGS (sample activity feed)
+  // ========================
+  console.log('\n📌 Seeding Audit Logs...');
+
+  const auditActor = {
+    actorId: platformAdmin.id,
+    actorEmail: platformAdmin.email,
+  };
+
+  const auditLogsData = [
+    {
+      ...auditActor,
+      action: 'HOSPITAL_CREATED',
+      targetType: 'Hospital',
+      targetName: 'Apollo Multispeciality',
+      detail: 'Hospital created with code APOLLO01',
+    },
+    {
+      ...auditActor,
+      action: 'PACKAGE_CREATED',
+      targetType: 'Package',
+      targetName: 'PREMIUM',
+      detail: 'Package created at 7999/month',
+    },
+    {
+      ...auditActor,
+      action: 'HOSPITAL_CREATED',
+      targetType: 'Hospital',
+      targetName: 'Sunrise Childrens Clinic',
+      detail: 'Hospital created with code SUNRISE01',
+    },
+    {
+      ...auditActor,
+      action: 'PACKAGE_UPDATED',
+      targetType: 'Package',
+      targetName: 'BASIC',
+      detail: 'Fields updated: monthlyPrice, maxDoctors',
+    },
+    {
+      ...auditActor,
+      action: 'HOSPITAL_SUSPENDED',
+      targetType: 'Hospital',
+      targetName: 'Sunrise Childrens Clinic',
+      detail: 'Suspended for non-payment',
+    },
+    {
+      ...auditActor,
+      action: 'USER_PASSWORD_RESET',
+      targetType: 'PlatformUser',
+      targetName: 'admin@platform.com',
+      detail: 'Password reset for admin@platform.com',
+    },
+    {
+      ...auditActor,
+      action: 'HOSPITAL_REACTIVATED',
+      targetType: 'Hospital',
+      targetName: 'Sunrise Childrens Clinic',
+      detail: 'Payment cleared, hospital reactivated',
+    },
+    {
+      ...auditActor,
+      action: 'PACKAGE_CREATED',
+      targetType: 'Package',
+      targetName: 'ENTERPRISE',
+      detail: 'Package created at 19999/month',
+    },
+    {
+      ...auditActor,
+      action: 'PACKAGE_DELETED',
+      targetType: 'Package',
+      targetName: 'LEGACY_TRIAL',
+      detail: 'Deprecated package removed from catalogue',
+    },
+    {
+      ...auditActor,
+      action: 'HOSPITAL_CREATED',
+      targetType: 'Hospital',
+      targetName: 'City Care Hospital',
+      detail: 'Hospital created with code CITYCARE01',
+    },
+  ];
+
+  // AuditLog has no natural unique key, so guard on current row count to keep
+  // re-runs idempotent (skipDuplicates only dedupes on unique constraints).
+  const existingAuditLogs = await prisma.auditLog.count();
+
+  if (existingAuditLogs === 0) {
+    const { count } = await prisma.auditLog.createMany({
+      data: auditLogsData,
+      skipDuplicates: true,
+    });
+    console.log(`  ✅ Audit logs inserted: ${count}`);
+  } else {
+    console.log(
+      `  ⏭️  Audit logs already present (${existingAuditLogs} rows) — skipping`,
+    );
+  }
+
+  // ========================
   // SUMMARY
   // ========================
   console.log('\n🎉 Seeding completed!');
@@ -306,6 +464,8 @@ async function main() {
   console.log(`   Modules   : ${modulesData.length}`);
   console.log(`   Features  : ${featureCount}`);
   console.log(`   ModFeat   : ${moduleFeatCount}`);
+  console.log(`   Packages  : ${packagesData.length}`);
+  console.log(`   AuditLogs : ${await prisma.auditLog.count()}`);
   console.log(`   Platform Admin : ${platformAdmin.email}`);
 }
 
