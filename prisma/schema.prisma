@@ -177,6 +177,9 @@ model Hospital {
   shifts             ShiftMaster[]
   roleNamesCreated   RoleName[]
   permissionCopyLogs PermissionCopyLog[]
+  doctorProfiles       DoctorProfile[]
+  doctorAvailabilities DoctorAvailability[]
+  doctorLeaveBlocks    DoctorLeaveBlock[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -329,6 +332,7 @@ model HospitalUser {
 
   performedCopyLogs PermissionCopyLog[] @relation("PermissionCopyPerformedBy")
   sourceCopyLogs    PermissionCopyLog[] @relation("PermissionCopySource")
+   doctorProfile   DoctorProfile?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -438,4 +442,72 @@ model PermissionCopyLog {
 
   @@index([hospitalId])
   @@map("permission_copy_logs")
+}
+
+
+
+// Extended profile for doctor-role users
+model DoctorProfile {
+  id                String   @id @default(uuid())
+  hospitalId        String
+  hospitalUserId    String   @unique  // 1-to-1 with HospitalUser
+  
+  specialization    String
+  qualifications    String?
+  consultationFee   Decimal  @db.Decimal(10,2)
+  slotDurationMins  Int      @default(15)  // 10, 15, 20, 30, 45, 60
+  bufferTimeMins    Int      @default(0)   // gap between slots
+  maxPatientsPerDay Int?
+  isActive          Boolean  @default(true)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  hospital          Hospital     @relation(fields: [hospitalId], references: [id])
+  hospitalUser      HospitalUser @relation(fields: [hospitalUserId], references: [id])
+  
+  availabilities    DoctorAvailability[]
+  leaveBlocks       DoctorLeaveBlock[]
+
+  @@index([hospitalId])
+}
+
+// Weekly recurring schedule template
+model DoctorAvailability {
+  id              String   @id @default(uuid())
+  hospitalId      String
+  doctorProfileId String
+  
+  dayOfWeek       Int      // 0=Sunday, 1=Monday ... 6=Saturday
+  startTime       String   // "09:00" (HH:mm, 24hr)
+  endTime         String   // "13:00"
+  isActive        Boolean  @default(true)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  hospital        Hospital       @relation(fields: [hospitalId], references: [id])
+  doctorProfile   DoctorProfile  @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorProfileId, dayOfWeek, startTime]) // no duplicate windows same day
+  @@index([hospitalId, doctorProfileId])
+}
+
+// Leave / blocked dates (overrides availability)
+model DoctorLeaveBlock {
+  id              String   @id @default(uuid())
+  hospitalId      String
+  doctorProfileId String
+  
+  blockDate       DateTime @db.Date  // specific date blocked
+  startTime       String?  // null = full day block
+  endTime         String?  // null = full day block
+  reason          String?
+  
+  createdAt       DateTime @default(now())
+
+  hospital        Hospital       @relation(fields: [hospitalId], references: [id])
+  doctorProfile   DoctorProfile  @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+
+  @@index([hospitalId, doctorProfileId, blockDate])
 }
