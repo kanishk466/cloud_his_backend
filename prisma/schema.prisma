@@ -459,68 +459,71 @@ model PermissionCopyLog {
 
 
 
-// Extended profile for doctor-role users
+// schema.prisma - Fix DoctorProfile, DoctorAvailability, DoctorLeaveBlock
+// hospitalId should be Int to match Hospital.id Int
+
 model DoctorProfile {
   id                String   @id @default(uuid())
-  hospitalId        String
-  hospitalUserId    String   @unique  // 1-to-1 with HospitalUser
-  
+  hospitalId        Int      // ← Fix: Int not String
+  hospitalUserId    String   @unique
+
   specialization    String
   qualifications    String?
   consultationFee   Decimal  @db.Decimal(10,2)
-  slotDurationMins  Int      @default(15)  // 10, 15, 20, 30, 45, 60
-  bufferTimeMins    Int      @default(0)   // gap between slots
+  slotDurationMins  Int      @default(15)
+  bufferTimeMins    Int      @default(0)
   maxPatientsPerDay Int?
   isActive          Boolean  @default(true)
-  
+
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
   hospital          Hospital     @relation(fields: [hospitalId], references: [id])
   hospitalUser      HospitalUser @relation(fields: [hospitalUserId], references: [id])
-  
+
   availabilities    DoctorAvailability[]
   leaveBlocks       DoctorLeaveBlock[]
 
   @@index([hospitalId])
+  @@map("doctor_profiles")  // ← Add map
 }
 
-// Weekly recurring schedule template
 model DoctorAvailability {
   id              String   @id @default(uuid())
-  hospitalId      String
+  hospitalId      Int      // ← Fix: Int not String
   doctorProfileId String
-  
-  dayOfWeek       Int      // 0=Sunday, 1=Monday ... 6=Saturday
-  startTime       String   // "09:00" (HH:mm, 24hr)
-  endTime         String   // "13:00"
+
+  dayOfWeek       Int
+  startTime       String
+  endTime         String
   isActive        Boolean  @default(true)
-  
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   hospital        Hospital       @relation(fields: [hospitalId], references: [id])
   doctorProfile   DoctorProfile  @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
 
-  @@unique([doctorProfileId, dayOfWeek, startTime]) // no duplicate windows same day
+  @@unique([doctorProfileId, dayOfWeek, startTime])
   @@index([hospitalId, doctorProfileId])
+  @@map("doctor_availabilities")  // ← Add map
 }
 
-// Leave / blocked dates (overrides availability)
 model DoctorLeaveBlock {
   id              String   @id @default(uuid())
-  hospitalId      String
+  hospitalId      Int      // ← Fix: Int not String
   doctorProfileId String
-  
-  blockDate       DateTime @db.Date  // specific date blocked
-  startTime       String?  // null = full day block
-  endTime         String?  // null = full day block
+
+  blockDate       DateTime @db.Date
+  startTime       String?
+  endTime         String?
   reason          String?
-  
+
   createdAt       DateTime @default(now())
 
   hospital        Hospital       @relation(fields: [hospitalId], references: [id])
   doctorProfile   DoctorProfile  @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
 
   @@index([hospitalId, doctorProfileId, blockDate])
+  @@map("doctor_leave_blocks")  // ← Add map
 }
