@@ -191,6 +191,9 @@ model Hospital {
   shifts             ShiftMaster[]
   roleNamesCreated   RoleName[]
   permissionCopyLogs PermissionCopyLog[]
+  doctorProfiles       DoctorProfile[]
+  doctorAvailabilities DoctorAvailability[]
+  doctorLeaveBlocks    DoctorLeaveBlock[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -343,6 +346,7 @@ model HospitalUser {
 
   performedCopyLogs PermissionCopyLog[] @relation("PermissionCopyPerformedBy")
   sourceCopyLogs    PermissionCopyLog[] @relation("PermissionCopySource")
+   doctorProfile   DoctorProfile?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -453,22 +457,73 @@ model PermissionCopyLog {
   @@map("permission_copy_logs")
 }
 
-// ============================================
-// PLATFORM AUDIT TRAIL
-// ============================================
 
-model AuditLog {
-  id         Int      @id @default(autoincrement())
-  action     String
-  actorId    String
-  actorEmail String
-  targetType String
-  targetName String
-  detail     String?
-  createdAt  DateTime @default(now())
 
-  @@index([createdAt])
-  @@index([action])
-  @@index([actorEmail])
-  @@map("audit_logs")
+// schema.prisma - Fix DoctorProfile, DoctorAvailability, DoctorLeaveBlock
+// hospitalId should be Int to match Hospital.id Int
+
+model DoctorProfile {
+  id                String   @id @default(uuid())
+  hospitalId        Int      // ← Fix: Int not String
+  hospitalUserId    String   @unique
+
+  specialization    String
+  qualifications    String?
+  consultationFee   Decimal  @db.Decimal(10,2)
+  slotDurationMins  Int      @default(15)
+  bufferTimeMins    Int      @default(0)
+  maxPatientsPerDay Int?
+  isActive          Boolean  @default(true)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  hospital          Hospital     @relation(fields: [hospitalId], references: [id])
+  hospitalUser      HospitalUser @relation(fields: [hospitalUserId], references: [id])
+
+  availabilities    DoctorAvailability[]
+  leaveBlocks       DoctorLeaveBlock[]
+
+  @@index([hospitalId])
+  @@map("doctor_profiles")  // ← Add map
+}
+
+model DoctorAvailability {
+  id              String   @id @default(uuid())
+  hospitalId      Int      // ← Fix: Int not String
+  doctorProfileId String
+
+  dayOfWeek       Int
+  startTime       String
+  endTime         String
+  isActive        Boolean  @default(true)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  hospital        Hospital       @relation(fields: [hospitalId], references: [id])
+  doctorProfile   DoctorProfile  @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorProfileId, dayOfWeek, startTime])
+  @@index([hospitalId, doctorProfileId])
+  @@map("doctor_availabilities")  // ← Add map
+}
+
+model DoctorLeaveBlock {
+  id              String   @id @default(uuid())
+  hospitalId      Int      // ← Fix: Int not String
+  doctorProfileId String
+
+  blockDate       DateTime @db.Date
+  startTime       String?
+  endTime         String?
+  reason          String?
+
+  createdAt       DateTime @default(now())
+
+  hospital        Hospital       @relation(fields: [hospitalId], references: [id])
+  doctorProfile   DoctorProfile  @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+
+  @@index([hospitalId, doctorProfileId, blockDate])
+  @@map("doctor_leave_blocks")  // ← Add map
 }

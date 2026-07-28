@@ -1,0 +1,10 @@
+export type HospitalId = number;      // Hospital.id is Int
+export type UserId = string;          // HospitalUser.id is UUID
+export type RoleId = number;          // HospitalRole.id is Int
+export type RoleNameId = number;      // RoleName.id is Int
+export type DepartmentId = number;    // Department.id is Int
+export type ShiftId = number;         // ShiftMaster.id is Int
+export type ModuleId = number;        // Module.id is Int
+export type FeatureId = number;       // Feature.id is Int
+export type PackageId = number;       // Package.id is Int
+export type DoctorProfileId = string; // DoctorProfile.id is UUID
