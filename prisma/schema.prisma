@@ -527,3 +527,24 @@ model DoctorLeaveBlock {
   @@index([hospitalId, doctorProfileId, blockDate])
   @@map("doctor_leave_blocks")  // ← Add map
 }
+
+
+
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  hospitalId Int?
+  userId     String?
+  action     String
+  entity     String?
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([hospitalId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
