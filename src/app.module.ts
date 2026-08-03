@@ -17,14 +17,14 @@ import { HospitalModule } from './hospital/hospital.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: '.env',
     }),
 
     SharedModule,
-
     SystemModule,
     IdentityModule,
     CatalogModule,
-PackageModule,
+    PackageModule,
     TenantModule,
     AuditModule,
     PlatformUsersModule,
@@ -33,4 +33,4 @@ PackageModule,
     HospitalModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }
