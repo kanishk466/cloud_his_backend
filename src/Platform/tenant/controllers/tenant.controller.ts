@@ -20,7 +20,7 @@ import { CreateHospitalDto } from '../dto/create-hospital.dto';
 import { AssignPackageDto } from '../dto/assign-package.dto';
 import { actorFromRequest } from '../../audit/audit-actor';
 
-@ApiTags('Hospitals')
+@ApiTags('hospitals')
 @ApiBearerAuth('access-token')
 @Controller('hospitals')
 @UseGuards(JwtAuthGuard)

@@ -1,6 +1,9 @@
-import { IsDateString, IsInt, IsOptional } from 'class-validator';
+import { IsDateString, IsInt, IsOptional,IsString } from 'class-validator';
 
 export class AssignPackageDto {
+  @IsInt()
+  hospitalId!: number;
+
   @IsInt()
   packageId!: number;
 
@@ -10,4 +13,7 @@ export class AssignPackageDto {
   @IsOptional()
   @IsDateString()
   endDate?: string;
+
+  @IsString()
+  status!: string;
 }
