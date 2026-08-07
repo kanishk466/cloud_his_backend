@@ -19,14 +19,14 @@ export class HospitalAdminProvisioningService {
   ) {}
 
   async provisionIfNotExists(input: {
-    hospitalId: number;
+    tenantId: string;
     email: string;
     hospitalName: string;
+    code: string;
   }) {
-    const existing =
-      await this.hospitalUserRepository.findSuperAdminByHospital(
-        input.hospitalId,
-      );
+    const existing = await this.hospitalUserRepository.findSuperAdminByHospital(
+      input.tenantId,
+    );
 
     if (existing) {
       return { created: false, admin: { email: existing.email } };
@@ -36,9 +36,10 @@ export class HospitalAdminProvisioningService {
     const passwordHash = await bcrypt.hash(password, 10);
 
     await this.hospitalUserRepository.createSuperAdmin({
-      hospitalId: input.hospitalId,
+      tenantId: input.tenantId,
       email: input.email,
       username: input.email,
+      code: input.code,
       passwordHash,
       firstName: input.hospitalName,
       lastName: 'Admin',

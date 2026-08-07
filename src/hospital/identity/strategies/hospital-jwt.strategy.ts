@@ -3,7 +3,10 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
 @Injectable()
-export class HospitalJwtStrategy extends PassportStrategy(Strategy, 'hospital-jwt') {
+export class HospitalJwtStrategy extends PassportStrategy(
+  Strategy,
+  'hospital-jwt',
+) {
   constructor() {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -12,10 +15,12 @@ export class HospitalJwtStrategy extends PassportStrategy(Strategy, 'hospital-jw
   }
 
   async validate(payload: any) {
-    if (payload.aud !== 'hospital') throw new UnauthorizedException('Invalid token audience');
+    if (payload.aud !== 'hospital')
+      throw new UnauthorizedException('Invalid token audience');
     return {
       userId: payload.sub,
-      hospitalId: payload.hospitalId,
+      code: payload.code,
+      tenantId: payload.tenantId,
       email: payload.email,
       userType: payload.userType,
     };

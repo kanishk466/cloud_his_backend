@@ -172,7 +172,7 @@ export class HospitalRoleRepository {
   // ─── Create ────────────────────────────────────────────────────────────────
 
   create(data: {
-    hospitalId: number;
+    tenantId: string;
     roleNameId: number;
     description?: string;
   }) {
@@ -190,9 +190,9 @@ export class HospitalRoleRepository {
   // Returns the full roleName relation plus the permission count, so both the
   // dropdown/table view and any consumer needing the whole role record are served.
 
-  findAll(hospitalId: number) {
+  findAll(tenantId: string) {
     return this.prisma.hospitalRole.findMany({
-      where: { hospitalId },
+      where: { tenantId },
       include: {
         roleName: true,
         _count: { select: { permissions: true } },
@@ -207,11 +207,11 @@ export class HospitalRoleRepository {
   // If the role does not belong to this hospital, Prisma returns null.
   // The service treats null as NotFoundException — no in-memory ownership check needed.
 
-  findById(id: number, hospitalId: number) {
+  findById(id: number, tenantId: string) {
     return this.prisma.hospitalRole.findUnique({
       where: {
         id,
-        hospitalId, // ← tenant scope enforced at query level
+        tenantId, // ← tenant scope enforced at query level
       },
       include: {
         roleName: true,
@@ -229,10 +229,10 @@ export class HospitalRoleRepository {
 
   // ─── Find By Hospital + RoleName (duplicate check) ──────────────────────────
 
-  findByHospitalAndRoleName(hospitalId: number, roleNameId: number) {
+  findByHospitalAndRoleName(tenantId: string, roleNameId: number) {
     return this.prisma.hospitalRole.findUnique({
       where: {
-        hospitalId_roleNameId: { hospitalId, roleNameId },
+        tenantId_roleNameId: { tenantId, roleNameId },
       },
     });
   }
@@ -243,11 +243,11 @@ export class HospitalRoleRepository {
   // If the role belongs to a different hospital, Prisma throws RecordNotFound.
   // We catch that in the service and surface it as NotFoundException.
 
-  update(id: number, hospitalId: number, data: { description?: string }) {
+  update(id: number, tenantId: string, data: { description?: string }) {
     return this.prisma.hospitalRole.update({
       where: {
         id,
-        hospitalId, // ← tenant scope enforced at query level
+        tenantId, // ← tenant scope enforced at query level
       },
       data,
     });
@@ -255,11 +255,11 @@ export class HospitalRoleRepository {
 
   // ─── Toggle Active ──────────────────────────────────────────────────────────
 
-  toggle(id: number, hospitalId: number, isActive: boolean) {
+  toggle(id: number, tenantId: string, isActive: boolean) {
     return this.prisma.hospitalRole.update({
       where: {
         id,
-        hospitalId, // ← tenant scope enforced at query level
+        tenantId, // ← tenant scope enforced at query level
       },
       data: { isActive },
     });
@@ -273,7 +273,7 @@ export class HospitalRoleRepository {
 
   async setPermissions(
     roleId: number,
-    hospitalId: number,
+    tenantId: string,
     moduleFeatures: { moduleId: number; featureId: number }[],
   ) {
     return this.prisma.$transaction(async (tx) => {
@@ -281,7 +281,7 @@ export class HospitalRoleRepository {
       const role = await tx.hospitalRole.findUnique({
         where: {
           id: roleId,
-          hospitalId, // ← tenant scope enforced at query level
+          tenantId, // ← tenant scope enforced at query level
         },
         select: { id: true },
       });
@@ -331,12 +331,12 @@ export class HospitalRoleRepository {
   // Scoped via hospitalRole relation — only returns permissions
   // for roles that belong to this hospital.
 
-  getPermissions(roleId: number, hospitalId: number) {
+  getPermissions(roleId: number, tenantId: string) {
     return this.prisma.hospitalRolePermission.findMany({
       where: {
         hospitalRoleId: roleId,
         hospitalRole: {
-          hospitalId, // ← tenant scope via relation filter
+          tenantId, // ← tenant scope via relation filter
         },
       },
       include: {
@@ -351,12 +351,12 @@ export class HospitalRoleRepository {
   //
   // Scoped via hospitalRole relation to prevent cross-tenant counts.
 
-  hasAssignedUsers(roleId: number, hospitalId: number) {
+  hasAssignedUsers(roleId: number, tenantId: string) {
     return this.prisma.userRoleAssignment.count({
       where: {
         hospitalRoleId: roleId,
         hospitalRole: {
-          hospitalId, // ← tenant scope via relation filter
+          tenantId, // ← tenant scope via relation filter
         },
       },
     });

@@ -6,11 +6,11 @@ export class EntitlementRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   // Returns all moduleIds available to this hospital via active package
-  async getEntitledModuleIds(hospitalId: number): Promise<number[]> {
+  async getEntitledModuleIds(tenantId: string): Promise<number[]> {
     const assignedPackages =
       await this.prisma.assignedPackage.findMany({
         where: {
-          hospitalId,
+          tenantId,
           status: 'ACTIVE',
         },
         include: {
@@ -36,8 +36,8 @@ export class EntitlementRepository {
   }
 
   // Returns all entitled modules with their features
-  async getEntitledModulesWithFeatures(hospitalId: number) {
-    const moduleIds = await this.getEntitledModuleIds(hospitalId);
+  async getEntitledModulesWithFeatures(tenantId: string) {
+    const moduleIds = await this.getEntitledModuleIds(tenantId);
 
     if (moduleIds.length === 0) return [];
 
@@ -59,10 +59,10 @@ export class EntitlementRepository {
 
   // Check if a specific moduleId is entitled for this hospital
   async isModuleEntitled(
-    hospitalId: number,
+    tenantId: string,
     moduleId: number,
   ): Promise<boolean> {
-    const moduleIds = await this.getEntitledModuleIds(hospitalId);
+    const moduleIds = await this.getEntitledModuleIds(tenantId);
     return moduleIds.includes(moduleId);
   }
 }

@@ -343,7 +343,7 @@ export class HospitalUserService {
 
   // ─── Create User ────────────────────────────────────────────────────────────
 
-  async create(hospitalId: number, dto: CreateHospitalUserDto) {
+  async create(tenantId: string, dto: CreateHospitalUserDto) {
     // Block SUPER_ADMIN creation
     if (dto.userInfo.userType === HospitalUserType.SUPER_ADMIN) {
       throw new ForbiddenException(
@@ -353,7 +353,7 @@ export class HospitalUserService {
 
     // Email uniqueness check (tenant-scoped now)
     const existingEmail = await this.userRepo.findByEmailWithHospital(
-      hospitalId,
+      tenantId,
       dto.userInfo.email,
     );
     if (existingEmail) {
@@ -362,7 +362,7 @@ export class HospitalUserService {
 
     // Username uniqueness check
     const existingUsername = await this.userRepo.findByUsername(
-      hospitalId,
+      tenantId,
       dto.userInfo.email,
     );
     if (existingUsername) {
@@ -374,7 +374,7 @@ export class HospitalUserService {
     const additionalRoleIds = dto.roles.additionalRoleIds ?? [];
 
     // Tenant validation for roles, departments, shift, manager
-    await this.tenantValidationService.validateReferences(hospitalId, {
+    await this.tenantValidationService.validateReferences(tenantId, {
       primaryRoleId: dto.roles.primaryRoleId,
       additionalRoleIds,
       departmentIds: dto.departmentIds ?? [],
@@ -383,7 +383,7 @@ export class HospitalUserService {
     });
 
     const entitledModuleIds =
-      await this.entitlementRepo.getEntitledModuleIds(hospitalId);
+      await this.entitlementRepo.getEntitledModuleIds(tenantId);
 
     const invalidModules = dto.permissions.filter(
       (p) => !entitledModuleIds.includes(p.moduleId),
@@ -394,11 +394,11 @@ export class HospitalUserService {
       );
     }
 
-    const employeeId = await this.userRepo.generateEmployeeId(hospitalId);
+    const employeeId = await this.userRepo.generateEmployeeId(tenantId);
     const passwordHash = await bcrypt.hash(dto.credentials.password, 10);
 
     const user = await this.userRepo.createFull({
-      hospitalId,
+      tenantId,
       userInfo: {
         firstName: dto.userInfo.firstName,
         lastName: dto.userInfo.lastName,
@@ -454,16 +454,16 @@ export class HospitalUserService {
 
   // ─── List Users ─────────────────────────────────────────────────────────────
 
-  findAll(hospitalId: number, filters: ListUsersDto) {
-    return this.userRepo.findAll(hospitalId, filters);
+  findAll(tenantId: string, filters: ListUsersDto) {
+    return this.userRepo.findAll(tenantId, filters);
   }
 
   // ─── Get User By Id ─────────────────────────────────────────────────────────
   //
   // Single scoped query. No in-memory ownership check.
 
-  async findByIdOrThrow(hospitalId: number, id: string) {
-    const user = await this.userRepo.findById(id, hospitalId);
+  async findByIdOrThrow(tenantId: string, id: string) {
+    const user = await this.userRepo.findById(id, tenantId);
 
     if (!user) {
       throw new NotFoundException('User not found');
@@ -477,14 +477,14 @@ export class HospitalUserService {
   // No pre-fetch ownership check needed.
 
   async updateProfile(
-    hospitalId: number,
+    tenantId: string,
     id: string,
     dto: UpdateHospitalUserProfileDto,
   ) {
     // Email uniqueness if changing email (tenant-scoped now)
     if (dto.userInfo?.email) {
       const existing = await this.userRepo.findByEmailWithHospital(
-        hospitalId,
+        tenantId,
         dto.userInfo.email,
       );
       // Existing user with this email found AND it's not the current user being updated
@@ -495,7 +495,7 @@ export class HospitalUserService {
 
     // Validate shift and manager if provided
     if (dto.staffProfile?.shiftId || dto.staffProfile?.reportingManagerId) {
-      await this.tenantValidationService.validateReferences(hospitalId, {
+      await this.tenantValidationService.validateReferences(tenantId, {
         shiftId: dto.staffProfile?.shiftId,
         reportingManagerId: dto.staffProfile?.reportingManagerId,
       });
@@ -517,7 +517,7 @@ export class HospitalUserService {
     try {
       return await this.userRepo.updateProfile(
         id,
-        hospitalId,
+        tenantId,
         dto.userInfo ?? {},
         staffProfileData,
       );
@@ -535,13 +535,13 @@ export class HospitalUserService {
   // Ownership check inside repo transaction.
 
   async setPermissions(
-    hospitalId: number,
+    tenantId: string,
     userId: string,
     dto: SetUserPermissionsDto,
   ) {
     // Entitlement check
     const entitledModuleIds =
-      await this.entitlementRepo.getEntitledModuleIds(hospitalId);
+      await this.entitlementRepo.getEntitledModuleIds(tenantId);
 
     const invalid = dto.permissions.filter(
       (p) => !entitledModuleIds.includes(p.moduleId),
@@ -554,7 +554,7 @@ export class HospitalUserService {
 
     // Ownership + write (atomic)
     try {
-      await this.userRepo.setPermissions(userId, hospitalId, dto.permissions);
+      await this.userRepo.setPermissions(userId, tenantId, dto.permissions);
       return { message: 'Permissions updated successfully' };
     } catch (err: unknown) {
       if (err instanceof Error && err.message === 'USER_NOT_FOUND') {
@@ -569,9 +569,9 @@ export class HospitalUserService {
   // Prevent deactivating last active SUPER_ADMIN.
   // Uses dedicated count method instead of loading all users.
 
-  async deactivate(hospitalId: number, userId: string) {
+  async deactivate(tenantId: string, userId: string) {
     // Fetch user to check userType
-    const user = await this.userRepo.findById(userId, hospitalId);
+    const user = await this.userRepo.findById(userId, tenantId);
 
     if (!user) {
       throw new NotFoundException('User not found');
@@ -580,7 +580,7 @@ export class HospitalUserService {
     // Block deactivating SUPER_ADMIN if last active one
     if (user.userType === HospitalUserType.SUPER_ADMIN) {
       const activeSuperAdmins =
-        await this.userRepo.countActiveSuperAdmins(hospitalId);
+        await this.userRepo.countActiveSuperAdmins(tenantId);
 
       if (activeSuperAdmins <= 1) {
         throw new BadRequestException(
@@ -590,7 +590,7 @@ export class HospitalUserService {
     }
 
     try {
-      return await this.userRepo.updateStatus(userId, hospitalId, 'INACTIVE');
+      return await this.userRepo.updateStatus(userId, tenantId, 'INACTIVE');
     } catch (err: unknown) {
       if (isPrismaError(err, 'P2025')) {
         throw new NotFoundException('User not found');
@@ -601,9 +601,9 @@ export class HospitalUserService {
 
   // ─── Activate ───────────────────────────────────────────────────────────────
 
-  async activate(hospitalId: number, userId: string) {
+  async activate(tenantId: string, userId: string) {
     try {
-      return await this.userRepo.updateStatus(userId, hospitalId, 'ACTIVE');
+      return await this.userRepo.updateStatus(userId, tenantId, 'ACTIVE');
     } catch (err: unknown) {
       if (isPrismaError(err, 'P2025')) {
         throw new NotFoundException('User not found');
@@ -616,12 +616,12 @@ export class HospitalUserService {
   //
   // FIXED: Uses crypto.randomBytes (CSPRNG) instead of Math.random()
 
-  async resetPassword(hospitalId: number, userId: string) {
+  async resetPassword(tenantId: string, userId: string) {
     const tempPassword = this.generateTempPassword();
     const passwordHash = await bcrypt.hash(tempPassword, 10);
 
     try {
-      await this.userRepo.resetPassword(userId, hospitalId, passwordHash);
+      await this.userRepo.resetPassword(userId, tenantId, passwordHash);
 
       return {
         message: 'Password reset successfully',

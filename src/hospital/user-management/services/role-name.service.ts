@@ -10,7 +10,7 @@ export class RoleNameService {
     return this.repo.findAll(search);
   }
 
-  async create(hospitalId: number, dto: CreateRoleNameDto) {
+  async create(tenantId: string, dto: CreateRoleNameDto) {
     const existing = await this.repo.findByCode(dto.code);
     if (existing) {
       throw new ConflictException(
@@ -22,7 +22,7 @@ export class RoleNameService {
       name: dto.name,
       code: dto.code,
       description: dto.description,
-      createdByHospitalId: hospitalId,
+      createdByTenantId: tenantId,
     });
   }
 }

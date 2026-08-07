@@ -17,7 +17,7 @@ export class RoleNameRepository {
         code: true,
         description: true,
         isSystem: true,
-        createdByHospitalId: true,
+        createdByTenantId: true,
         createdAt: true,
       },
     });
@@ -31,7 +31,7 @@ export class RoleNameRepository {
     name: string;
     code: string;
     description?: string;
-    createdByHospitalId: number;
+    createdByTenantId: string;
   }) {
     return this.prisma.roleName.create({
       data: {
@@ -39,7 +39,7 @@ export class RoleNameRepository {
         code: data.code,
         description: data.description,
         isSystem: false,
-        createdByHospitalId: data.createdByHospitalId,
+        createdByTenantId: data.createdByTenantId,
       },
     });
   }

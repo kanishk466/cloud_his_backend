@@ -56,7 +56,7 @@ enum Gender {
 }
 
 // ============================================
-// PLATFORM SIDE (Minimal Admin Only)
+// PLATFORM SIDE
 // ============================================
 
 model PlatformUser {
@@ -90,17 +90,18 @@ model RefreshToken {
 // ============================================
 // SAAS CORE (Modules, Features, Packages)
 // ============================================
+// NOTE: These are platform-level tables, no tenantId needed here
 
 model Module {
-  id        Int     @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   name      String
-  code      String  @unique
+  code      String   @unique
   route     String?
   icon      String?
-  sortOrder Int     @default(0)
-  isActive  Boolean @default(true)
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
   parentId  Int?
-  parent    Module? @relation("ModuleHierarchy", fields: [parentId], references: [id])
+  parent    Module?  @relation("ModuleHierarchy", fields: [parentId], references: [id])
   children  Module[] @relation("ModuleHierarchy")
 
   features       ModuleFeature[]
@@ -176,21 +177,31 @@ model PackageModule {
 // ============================================
 
 model Hospital {
-  id          Int            @id @default(autoincrement())
-  code        String         @unique
+  id       Int    @id @default(autoincrement())
+  
+  // ─── TENANT IDENTIFIER ───────────────────────────────────────────────────────
+  // tenantId is the stable, non-guessable UUID used for row-level isolation.
+  // All tenant-scoped tables carry tenantId (not hospitalId Int) as the FK.
+  // This prevents sequential ID enumeration attacks in a multi-tenant system.
+  // code remains human-readable for display/search but is NOT used as FK.
+  tenantId    String         @unique @default(uuid())  // ← THE isolation key
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  code        String         @unique   // human-readable (e.g. "HOSP-001"), NOT used as FK
   name        String
   email       String         @unique
   phone       String?
   status      HospitalStatus @default(DRAFT)
   activatedAt DateTime?
 
-  packages           AssignedPackage[]
-  users              HospitalUser[]
-  hospitalRoles      HospitalRole[]
-  departments        Department[]
-  shifts             ShiftMaster[]
-  roleNamesCreated   RoleName[]
-  permissionCopyLogs PermissionCopyLog[]
+  // Relations — children reference tenantId
+  packages             AssignedPackage[]
+  users                HospitalUser[]
+  hospitalRoles        HospitalRole[]
+  departments          Department[]
+  shifts               ShiftMaster[]
+  roleNamesCreated     RoleName[]
+  permissionCopyLogs   PermissionCopyLog[]
   doctorProfiles       DoctorProfile[]
   doctorAvailabilities DoctorAvailability[]
   doctorLeaveBlocks    DoctorLeaveBlock[]
@@ -202,23 +213,28 @@ model Hospital {
 }
 
 model AssignedPackage {
-  id         Int                     @id @default(autoincrement())
-  hospitalId Int
-  packageId  Int
-  startDate  DateTime
-  endDate    DateTime?
-  status     PackageAssignmentStatus @default(ACTIVE)
+  id        Int                     @id @default(autoincrement())
+  
+  // ─── TENANT ISOLATION ────────────────────────
+  tenantId  String                              // FK → Hospital.tenantId
+  // ─────────────────────────────────────────────
 
-  hospital  Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
-  package   Package  @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  packageId Int
+  startDate DateTime
+  endDate   DateTime?
+  status    PackageAssignmentStatus @default(ACTIVE)
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  package  Package  @relation(fields: [packageId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
 
+  @@index([tenantId])
   @@map("assigned_packages")
 }
 
 // ============================================
-// HIMS - USER & ROLE MANAGEMENT (Hospital Side)
+// HIMS — USER & ROLE MANAGEMENT
 // ============================================
 
 model RoleName {
@@ -228,9 +244,14 @@ model RoleName {
   description String?
   isSystem    Boolean @default(false)
 
-  createdByHospitalId Int?
-  createdByHospital   Hospital?      @relation(fields: [createdByHospitalId], references: [id])
-  hospitalRoles       HospitalRole[]
+  // ─── TENANT ISOLATION ────────────────────────
+  // Null = platform-defined system role
+  // Non-null = created by a specific tenant
+  createdByTenantId String?
+  // ─────────────────────────────────────────────
+
+  createdByHospitalId Hospital?      @relation(fields: [createdByTenantId], references: [tenantId])
+  hospitalRoles     HospitalRole[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -239,9 +260,13 @@ model RoleName {
 }
 
 model HospitalRole {
-  id         Int      @id @default(autoincrement())
-  hospitalId Int
-  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+
+  // ─── TENANT ISOLATION ────────────────────────
+  tenantId String
+  // ─────────────────────────────────────────────
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
 
   roleNameId Int
   roleName   RoleName @relation(fields: [roleNameId], references: [id], onDelete: Restrict)
@@ -256,8 +281,8 @@ model HospitalRole {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([hospitalId, roleNameId])
-  @@index([hospitalId])
+  @@unique([tenantId, roleNameId])
+  @@index([tenantId])
   @@map("hospital_roles")
 }
 
@@ -275,55 +300,70 @@ model HospitalRolePermission {
   @@unique([hospitalRoleId, moduleId, featureId])
   @@map("hospital_role_permissions")
 }
+// NOTE: HospitalRolePermission does NOT need tenantId directly —
+// it's already isolated via hospitalRoleId → HospitalRole.tenantId
 
 model Department {
-  id         Int      @id @default(autoincrement())
-  hospitalId Int
-  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
-  name       String
-  code       String?
-  isActive   Boolean  @default(true)
+  id       Int    @id @default(autoincrement())
+
+  // ─── TENANT ISOLATION ────────────────────────
+  tenantId String
+  // ─────────────────────────────────────────────
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  name     String
+  code     String?
+  isActive Boolean @default(true)
 
   users UserDepartmentMapping[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([hospitalId, name])
-  @@index([hospitalId])
+  @@unique([tenantId, name])
+  @@index([tenantId])
   @@map("departments")
 }
 
 model ShiftMaster {
-  id         Int      @id @default(autoincrement())
-  hospitalId Int
-  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
-  name       String
-  startTime  String?
-  endTime    String?
-  isActive   Boolean  @default(true)
+  id       Int    @id @default(autoincrement())
+
+  // ─── TENANT ISOLATION ────────────────────────
+  tenantId String
+  // ─────────────────────────────────────────────
+
+  hospital  Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  name      String
+  startTime String?
+  endTime   String?
+  isActive  Boolean @default(true)
 
   staffProfiles StaffProfile[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([hospitalId, name])
-  @@index([hospitalId])
+  @@unique([tenantId, name])
+  @@index([tenantId])
   @@map("shift_masters")
 }
 
 model HospitalUser {
-  id         String           @id @default(uuid())
-  hospitalId Int
-  hospital   Hospital         @relation(fields: [hospitalId], references: [id], onDelete: Restrict)
-  userType   HospitalUserType @default(REGULAR_USER)
+  id       String @id @default(uuid())
+
+  // ─── TENANT ISOLATION ────────────────────────
+  tenantId String
+  // ─────────────────────────────────────────────
+
+  hospital Hospital         @relation(fields: [tenantId], references: [tenantId], onDelete: Restrict)
+  userType HospitalUserType @default(REGULAR_USER)
 
   firstName       String
   lastName        String?
-  email           String 
+  email           String
   mobile          String?
   alternateMobile String?
+  code String
 
   username                String
   passwordHash            String
@@ -342,27 +382,33 @@ model HospitalUser {
   roles        UserRoleAssignment[]
   departments  UserDepartmentMapping[]
   permissions  UserModuleFeaturePermission[]
-  managedStaff StaffProfile[]              @relation("ReportingManager")
+  managedStaff StaffProfile[]               @relation("ReportingManager")
+  doctorProfile DoctorProfile?
 
   performedCopyLogs PermissionCopyLog[] @relation("PermissionCopyPerformedBy")
   sourceCopyLogs    PermissionCopyLog[] @relation("PermissionCopySource")
-   doctorProfile   DoctorProfile?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([hospitalId, username])
-  @@unique([hospitalId,email])
-  @@index([hospitalId])
+  @@unique([tenantId, username])
+  @@unique([tenantId, email])
+  @@index([tenantId])
   @@map("hospital_users")
 }
 
 model StaffProfile {
-  id         Int          @id @default(autoincrement())
-  userId     String       @unique
-  user       HospitalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-  hospitalId Int
+  id         Int    @id @default(autoincrement())
+  userId     String @unique
+
+  // ─── TENANT ISOLATION ────────────────────────
+  // Denormalized for fast tenant-scoped queries & RLS policies
+  tenantId   String
+  // ─────────────────────────────────────────────
+
   employeeId String
+
+  user HospitalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   title       String?
   dateOfBirth DateTime?
@@ -393,8 +439,8 @@ model StaffProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([hospitalId, employeeId])
-  @@index([hospitalId])
+  @@unique([tenantId, employeeId])
+  @@index([tenantId])
   @@map("staff_profiles")
 }
 
@@ -411,6 +457,8 @@ model UserRoleAssignment {
   @@index([hospitalRoleId])
   @@map("user_role_assignments")
 }
+// NOTE: UserRoleAssignment is isolated via userId → HospitalUser.tenantId
+// and hospitalRoleId → HospitalRole.tenantId — no direct tenantId needed
 
 model UserDepartmentMapping {
   userId       String
@@ -424,13 +472,13 @@ model UserDepartmentMapping {
 }
 
 model UserModuleFeaturePermission {
-  id        Int          @id @default(autoincrement())
+  id        Int    @id @default(autoincrement())
   userId    String
   user      HospitalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
   moduleId  Int
   featureId Int
   moduleFeature ModuleFeature @relation(fields: [moduleId, featureId], references: [moduleId, featureId], onDelete: Cascade)
-  grantedAt DateTime      @default(now())
+  grantedAt DateTime @default(now())
 
   @@unique([userId, moduleId, featureId])
   @@index([userId])
@@ -438,9 +486,13 @@ model UserModuleFeaturePermission {
 }
 
 model PermissionCopyLog {
-  id         Int      @id @default(autoincrement())
-  hospitalId Int
-  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+
+  // ─── TENANT ISOLATION ────────────────────────
+  tenantId String
+  // ─────────────────────────────────────────────
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
 
   performedByUserId String
   performedByUser   HospitalUser @relation("PermissionCopyPerformedBy", fields: [performedByUserId], references: [id], onDelete: Restrict)
@@ -453,97 +505,114 @@ model PermissionCopyLog {
 
   createdAt DateTime @default(now())
 
-  @@index([hospitalId])
+  @@index([tenantId])
   @@map("permission_copy_logs")
 }
 
-
-
-// schema.prisma - Fix DoctorProfile, DoctorAvailability, DoctorLeaveBlock
-// hospitalId should be Int to match Hospital.id Int
+// ============================================
+// DOCTOR SCHEDULING
+// ============================================
 
 model DoctorProfile {
-  id                String   @id @default(uuid())
-  hospitalId        Int      // ← Fix: Int not String
-  hospitalUserId    String   @unique
+  id             String @id @default(uuid())
+
+  // ─── TENANT ISOLATION ────────────────────────
+  tenantId       String
+  // ─────────────────────────────────────────────
+
+  hospitalUserId String @unique
 
   specialization    String
   qualifications    String?
-  consultationFee   Decimal  @db.Decimal(10,2)
-  slotDurationMins  Int      @default(15)
-  bufferTimeMins    Int      @default(0)
+  consultationFee   Decimal @db.Decimal(10, 2)
+  slotDurationMins  Int     @default(15)
+  bufferTimeMins    Int     @default(0)
   maxPatientsPerDay Int?
-  isActive          Boolean  @default(true)
+  isActive          Boolean @default(true)
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  hospital          Hospital     @relation(fields: [hospitalId], references: [id])
-  hospitalUser      HospitalUser @relation(fields: [hospitalUserId], references: [id])
+  hospital     Hospital     @relation(fields: [tenantId], references: [tenantId])
+  hospitalUser HospitalUser @relation(fields: [hospitalUserId], references: [id])
 
-  availabilities    DoctorAvailability[]
-  leaveBlocks       DoctorLeaveBlock[]
+  availabilities DoctorAvailability[]
+  leaveBlocks    DoctorLeaveBlock[]
 
-  @@index([hospitalId])
-  @@map("doctor_profiles")  // ← Add map
+  @@index([tenantId])
+  @@map("doctor_profiles")
 }
 
 model DoctorAvailability {
-  id              String   @id @default(uuid())
-  hospitalId      Int      // ← Fix: Int not String
+  id              String @id @default(uuid())
+
+  // ─── TENANT ISOLATION ────────────────────────
+  tenantId        String
+  // ─────────────────────────────────────────────
+
   doctorProfileId String
 
-  dayOfWeek       Int
-  startTime       String
-  endTime         String
-  isActive        Boolean  @default(true)
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  isActive  Boolean @default(true)
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  hospital        Hospital       @relation(fields: [hospitalId], references: [id])
-  doctorProfile   DoctorProfile  @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId])
+  doctorProfile DoctorProfile @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
 
   @@unique([doctorProfileId, dayOfWeek, startTime])
-  @@index([hospitalId, doctorProfileId])
-  @@map("doctor_availabilities")  // ← Add map
+  @@index([tenantId, doctorProfileId])
+  @@map("doctor_availabilities")
 }
 
 model DoctorLeaveBlock {
-  id              String   @id @default(uuid())
-  hospitalId      Int      // ← Fix: Int not String
+  id              String @id @default(uuid())
+
+  // ─── TENANT ISOLATION ────────────────────────
+  tenantId        String
+  // ─────────────────────────────────────────────
+
   doctorProfileId String
 
-  blockDate       DateTime @db.Date
-  startTime       String?
-  endTime         String?
-  reason          String?
+  blockDate DateTime @db.Date
+  startTime String?
+  endTime   String?
+  reason    String?
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
-  hospital        Hospital       @relation(fields: [hospitalId], references: [id])
-  doctorProfile   DoctorProfile  @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId])
+  doctorProfile DoctorProfile @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
 
-  @@index([hospitalId, doctorProfileId, blockDate])
-  @@map("doctor_leave_blocks")  // ← Add map
+  @@index([tenantId, doctorProfileId, blockDate])
+  @@map("doctor_leave_blocks")
 }
 
-
-
+// ============================================
+// AUDIT
+// ============================================
 
 model AuditLog {
-  id         Int      @id @default(autoincrement())
-  hospitalId Int?
-  userId     String?
-  action     String
-  entity     String?
-  entityId   String?
-  metadata   Json?
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime @default(now())
+  id       Int    @id @default(autoincrement())
 
-  @@index([hospitalId])
+  // ─── TENANT ISOLATION ────────────────────────
+  // String UUID for tenant-scoped audit queries
+  tenantId String?
+  // ─────────────────────────────────────────────
+
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
   @@index([userId])
   @@index([createdAt])
   @@map("audit_logs")
