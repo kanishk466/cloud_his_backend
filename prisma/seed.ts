@@ -77,22 +77,118 @@ async function main() {
   console.log('\n📌 Seeding Modules...');
 
   const modulesData = [
-    { name: 'Dashboard', code: 'DASHBOARD', route: '/dashboard', icon: 'dashboard', sortOrder: 1 },
-    { name: 'Patient Registration', code: 'PATIENT_REGISTRATION', route: '/patients/register', icon: 'person-add', sortOrder: 2 },
-    { name: 'Appointments', code: 'APPOINTMENTS', route: '/appointments', icon: 'calendar', sortOrder: 3 },
-    { name: 'OPD Examination', code: 'OPD_EXAMINATION', route: '/opd', icon: 'stethoscope', sortOrder: 4 },
-    { name: 'Consultation', code: 'CONSULTATION', route: '/consultation', icon: 'medical', sortOrder: 5 },
-    { name: 'Teleconsultation', code: 'TELECONSULTATION', route: '/teleconsultation', icon: 'video', sortOrder: 6 },
-    { name: 'Billing', code: 'BILLING', route: '/billing', icon: 'receipt', sortOrder: 7 },
-    { name: 'Pharmacy', code: 'PHARMACY', route: '/pharmacy', icon: 'medicine', sortOrder: 8 },
-    { name: 'Lab & Radiology', code: 'LAB_RADIOLOGY', route: '/lab', icon: 'lab', sortOrder: 9 },
-    { name: 'Patients', code: 'PATIENTS', route: '/patients', icon: 'people', sortOrder: 10 },
-    { name: 'Reports', code: 'REPORTS', route: '/reports', icon: 'bar-chart', sortOrder: 11 },
-    { name: 'Master Config', code: 'MASTER_CONFIG', route: '/master-config', icon: 'settings', sortOrder: 12 },
-    { name: 'User Management', code: 'USER_MANAGEMENT', route: '/user-management', icon: 'users', sortOrder: 13 },
-    { name: 'Insurance & Panel', code: 'INSURANCE_PANEL', route: '/insurance', icon: 'shield', sortOrder: 14 },
-    { name: 'Discharge Summary', code: 'DISCHARGE_SUMMARY', route: '/discharge', icon: 'document', sortOrder: 15 },
-    { name: 'IPD Management', code: 'IPD_MANAGEMENT', route: '/ipd', icon: 'bed', sortOrder: 16 },
+    {
+      name: 'Dashboard',
+      code: 'DASHBOARD',
+      route: '/dashboard',
+      icon: 'dashboard',
+      sortOrder: 1,
+    },
+    {
+      name: 'Patient Registration',
+      code: 'PATIENT_REGISTRATION',
+      route: '/patients/register',
+      icon: 'person-add',
+      sortOrder: 2,
+    },
+    {
+      name: 'Appointments',
+      code: 'APPOINTMENTS',
+      route: '/appointments',
+      icon: 'calendar',
+      sortOrder: 3,
+    },
+    {
+      name: 'OPD Examination',
+      code: 'OPD_EXAMINATION',
+      route: '/opd',
+      icon: 'stethoscope',
+      sortOrder: 4,
+    },
+    {
+      name: 'Consultation',
+      code: 'CONSULTATION',
+      route: '/consultation',
+      icon: 'medical',
+      sortOrder: 5,
+    },
+    {
+      name: 'Teleconsultation',
+      code: 'TELECONSULTATION',
+      route: '/teleconsultation',
+      icon: 'video',
+      sortOrder: 6,
+    },
+    {
+      name: 'Billing',
+      code: 'BILLING',
+      route: '/billing',
+      icon: 'receipt',
+      sortOrder: 7,
+    },
+    {
+      name: 'Pharmacy',
+      code: 'PHARMACY',
+      route: '/pharmacy',
+      icon: 'medicine',
+      sortOrder: 8,
+    },
+    {
+      name: 'Lab & Radiology',
+      code: 'LAB_RADIOLOGY',
+      route: '/lab',
+      icon: 'lab',
+      sortOrder: 9,
+    },
+    {
+      name: 'Patients',
+      code: 'PATIENTS',
+      route: '/patients',
+      icon: 'people',
+      sortOrder: 10,
+    },
+    {
+      name: 'Reports',
+      code: 'REPORTS',
+      route: '/reports',
+      icon: 'bar-chart',
+      sortOrder: 11,
+    },
+    {
+      name: 'Master Config',
+      code: 'MASTER_CONFIG',
+      route: '/master-config',
+      icon: 'settings',
+      sortOrder: 12,
+    },
+    {
+      name: 'User Management',
+      code: 'USER_MANAGEMENT',
+      route: '/user-management',
+      icon: 'users',
+      sortOrder: 13,
+    },
+    {
+      name: 'Insurance & Panel',
+      code: 'INSURANCE_PANEL',
+      route: '/insurance',
+      icon: 'shield',
+      sortOrder: 14,
+    },
+    {
+      name: 'Discharge Summary',
+      code: 'DISCHARGE_SUMMARY',
+      route: '/discharge',
+      icon: 'document',
+      sortOrder: 15,
+    },
+    {
+      name: 'IPD Management',
+      code: 'IPD_MANAGEMENT',
+      route: '/ipd',
+      icon: 'bed',
+      sortOrder: 16,
+    },
   ];
 
   for (const mod of modulesData) {
@@ -109,10 +205,11 @@ async function main() {
   // ========================
   console.log('\n📌 Seeding Features and ModuleFeatures...');
 
-  const moduleFeaturesData: Record<string, { name: string; code: string; description?: string }[]> = {
-    DASHBOARD: [
-      { name: 'View Dashboard', code: 'DASHBOARD_VIEW' },
-    ],
+  const moduleFeaturesData: Record<
+    string,
+    { name: string; code: string; description?: string }[]
+  > = {
+    DASHBOARD: [{ name: 'View Dashboard', code: 'DASHBOARD_VIEW' }],
     PATIENT_REGISTRATION: [
       { name: 'View Patients', code: 'PATIENT_REG_VIEW' },
       { name: 'Register Patient', code: 'PATIENT_REG_CREATE' },
@@ -274,7 +371,9 @@ async function main() {
       moduleFeatCount++;
     }
 
-    console.log(`  ✅ Module [${moduleCode}]: ${features.length} features linked`);
+    console.log(
+      `  ✅ Module [${moduleCode}]: ${features.length} features linked`,
+    );
   }
 
   // ========================
@@ -327,12 +426,112 @@ async function main() {
 
   for (const pkg of packagesData) {
     const created = await prisma.package.upsert({
-      where: { name: pkg.name },
+      where: {
+        name: pkg.name,
+      },
       update: pkg,
       create: pkg,
     });
+
     console.log(
       `  ✅ Package: ${created.name} (₹${created.monthlyPrice}/mo, ${created.maxDoctors} doctors)`,
+    );
+  }
+
+  // ========================
+  // 5. PACKAGE → MODULE MAPPING
+  // ========================
+  console.log('\n📌 Assigning Modules to Packages...');
+
+  const packageModules: Record<string, string[]> = {
+    FREE: ['DASHBOARD', 'PATIENT_REGISTRATION', 'APPOINTMENTS'],
+
+    BASIC: [
+      'DASHBOARD',
+      'PATIENT_REGISTRATION',
+      'APPOINTMENTS',
+      'OPD_EXAMINATION',
+      'CONSULTATION',
+      'PATIENTS',
+      'BILLING',
+    ],
+
+    PREMIUM: [
+      'DASHBOARD',
+      'PATIENT_REGISTRATION',
+      'APPOINTMENTS',
+      'OPD_EXAMINATION',
+      'CONSULTATION',
+      'TELECONSULTATION',
+      'BILLING',
+      'PHARMACY',
+      'LAB_RADIOLOGY',
+      'PATIENTS',
+      'REPORTS',
+      'DISCHARGE_SUMMARY',
+    ],
+
+    ENTERPRISE: [
+      'DASHBOARD',
+      'PATIENT_REGISTRATION',
+      'APPOINTMENTS',
+      'OPD_EXAMINATION',
+      'CONSULTATION',
+      'TELECONSULTATION',
+      'BILLING',
+      'PHARMACY',
+      'LAB_RADIOLOGY',
+      'PATIENTS',
+      'REPORTS',
+      'MASTER_CONFIG',
+      'USER_MANAGEMENT',
+      'INSURANCE_PANEL',
+      'DISCHARGE_SUMMARY',
+      'IPD_MANAGEMENT',
+    ],
+  };
+
+  for (const [packageName, moduleCodes] of Object.entries(packageModules)) {
+    const pkg = await prisma.package.findUnique({
+      where: {
+        name: packageName,
+      },
+    });
+
+    if (!pkg) {
+      console.warn(`  ⚠️ Package not found: ${packageName}`);
+      continue;
+    }
+
+    for (const moduleCode of moduleCodes) {
+      const module = await prisma.module.findUnique({
+        where: {
+          code: moduleCode,
+        },
+      });
+
+      if (!module) {
+        console.warn(`  ⚠️ Module not found: ${moduleCode}`);
+        continue;
+      }
+
+      await prisma.packageModule.upsert({
+        where: {
+          packageId_moduleId: {
+            packageId: pkg.id,
+            moduleId: module.id,
+          },
+        },
+        update: {},
+        create: {
+          packageId: pkg.id,
+          moduleId: module.id,
+        },
+      });
+    }
+
+    console.log(
+      `  ✅ Package [${packageName}]: ${moduleCodes.length} modules assigned`,
     );
   }
 
