@@ -9,10 +9,11 @@ import { HospitalAdminProvisioningService } from './services/hospital-admin-prov
 
 import { PackageModule } from '../package/package.module';
 import { AuditModule } from '../audit/audit.module';
+import { MailModule } from '../mail/mail.module';
 import { TenantController } from './controllers/tenant.controller';
 
 @Module({
-  imports: [PackageModule, AuditModule],
+  imports: [PackageModule, AuditModule, MailModule],
 
   controllers: [TenantController],
 

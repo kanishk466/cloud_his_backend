@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Hospital } from '@prisma/client';
@@ -13,6 +14,7 @@ import { AssignPackageDto } from '../dto/assign-package.dto';
 import { HospitalAdminProvisioningService } from './hospital-admin-provisioning.service';
 import { AuditService } from '../../audit/audit.service';
 import { AuditActor } from '../../audit/audit-actor';
+import { MailService } from '../../mail/mail.service';
 
 /**
  * The schema models hospital state as a `status` enum (DRAFT | ACTIVE |
@@ -25,12 +27,15 @@ function withIsActive<T extends Hospital>(hospital: T) {
 
 @Injectable()
 export class TenantService {
+  private readonly logger = new Logger(TenantService.name);
+
   constructor(
     private readonly hospitalRepository: HospitalRepository,
     private readonly assignedPackageRepository: AssignedPackageRepository,
     private readonly packageRepository: PackageRepository,
     private readonly hospitalAdminProvisioningService: HospitalAdminProvisioningService,
     private readonly auditService: AuditService,
+    private readonly mailService: MailService,
   ) {}
 
   async createHospital(dto: CreateHospitalDto, actor?: AuditActor) {
@@ -190,6 +195,20 @@ export class TenantService {
         code:hospital.code,
         hospitalName: hospital.name,
       });
+
+    if (provisionResult.created && provisionResult.admin.password) {
+      this.mailService
+        .sendHospitalActivation({
+          to: hospital.email,
+          hospitalName: hospital.name,
+          hospitalCode: updatedHospital.code,
+          adminEmail: hospital.email,
+          adminPassword: provisionResult.admin.password,
+          loginUrl:
+            process.env.HOSPITAL_LOGIN_URL ?? 'https://his.mediops.in/login',
+        })
+        .catch((err) => this.logger.error('Activation email failed', err));
+    }
 
     return {
       hospital: withIsActive(updatedHospital),
