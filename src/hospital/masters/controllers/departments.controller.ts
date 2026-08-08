@@ -23,7 +23,7 @@ export class DepartmentsController {
 
   @Post()
   create(@Req() req: any, @Body() dto: CreateDepartmentDto) {
-    return this.service.create(req.user.hospitalId, dto);
+    return this.service.create(req.user.tenantId, dto);
   }
 
   @Get()

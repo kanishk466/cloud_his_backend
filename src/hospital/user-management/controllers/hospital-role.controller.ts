@@ -19,7 +19,7 @@ import { ToggleActiveDto } from '../../masters/dto/toggle-active.dto';
 import { HospitalJwtStrategy } from 'src/hospital/identity/strategies/hospital-jwt.strategy';
 
 @Controller('hospital/roles')
-@UseGuards(HospitalJwtStrategy)
+@UseGuards(HospitalJwtAuthGuard)
 export class HospitalRoleController {
   constructor(private readonly service: HospitalRoleService) {}
 

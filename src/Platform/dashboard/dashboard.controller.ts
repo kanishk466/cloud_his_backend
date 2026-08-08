@@ -7,11 +7,12 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../identity/guards/jwt-auth.guard';
 import { DashboardService } from './dashboard.service';
+import { HospitalJwtAuthGuard } from 'src/hospital/identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
 
 @ApiTags('Dashboard')
 @ApiBearerAuth('access-token')
 @Controller('dashboard')
-@UseGuards(JwtAuthGuard)
+@UseGuards(HospitalJwtAuthGuard)
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
