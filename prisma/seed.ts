@@ -442,19 +442,19 @@ async function main() {
 
   // AuditLog has no natural unique key, so guard on current row count to keep
   // re-runs idempotent (skipDuplicates only dedupes on unique constraints).
-  const existingAuditLogs = await prisma.auditLog.count();
+  // const existingAuditLogs = await prisma.auditLog.count();
 
-  if (existingAuditLogs === 0) {
-    const { count } = await prisma.auditLog.createMany({
-      data: auditLogsData,
-      skipDuplicates: true,
-    });
-    console.log(`  ✅ Audit logs inserted: ${count}`);
-  } else {
-    console.log(
-      `  ⏭️  Audit logs already present (${existingAuditLogs} rows) — skipping`,
-    );
-  }
+  // if (existingAuditLogs === 0) {
+  //   const { count } = await prisma.auditLog.createMany({
+  //     data: auditLogsData,
+  //     skipDuplicates: true,
+  //   });
+  //   console.log(`  ✅ Audit logs inserted: ${count}`);
+  // } else {
+  //   console.log(
+  //     `  ⏭️  Audit logs already present (${existingAuditLogs} rows) — skipping`,
+  //   );
+  // }
 
   // ========================
   // SUMMARY
