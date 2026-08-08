@@ -15,7 +15,7 @@ export interface TenantRefs {
 export class TenantValidationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async validateReferences(hospitalId: number, refs: TenantRefs): Promise<void> {
+  async validateReferences(tenantId: string, refs: TenantRefs): Promise<void> {
     const errors: Array<{ field: string; ids: Array<string | number> }> = [];
 
     const additionalRoleIds = refs.additionalRoleIds?.filter((id): id is number => Boolean(id)) ?? [];
@@ -28,7 +28,7 @@ export class TenantValidationService {
 
     if (roleIds.length > 0) {
       const roles = await this.prisma.hospitalRole.findMany({
-        where: { id: { in: roleIds }, hospitalId },
+        where: { id: { in: roleIds }, tenantId: tenantId },
         select: { id: true },
       });
       const validRoleIds = new Set(roles.map((role) => role.id));
@@ -45,7 +45,7 @@ export class TenantValidationService {
 
     if (departmentIds.length > 0) {
       const departments = await this.prisma.department.findMany({
-        where: { id: { in: departmentIds }, hospitalId },
+        where: { id: { in: departmentIds }, tenantId: tenantId },
         select: { id: true },
       });
       const validDepartmentIds = new Set(departments.map((department) => department.id));
@@ -57,7 +57,7 @@ export class TenantValidationService {
 
     if (shiftId.length > 0) {
       const shifts = await this.prisma.shiftMaster.findMany({
-        where: { id: { in: shiftId }, hospitalId },
+        where: { id: { in: shiftId }, tenantId: tenantId },
         select: { id: true },
       });
       const validShiftIds = new Set(shifts.map((shift) => shift.id));
@@ -69,7 +69,7 @@ export class TenantValidationService {
 
     if (reportingManagerId.length > 0) {
       const managers = await this.prisma.hospitalUser.findMany({
-        where: { id: { in: reportingManagerId }, hospitalId },
+        where: { id: { in: reportingManagerId }, tenantId: tenantId },
         select: { id: true },
       });
       const validManagerIds = new Set(managers.map((manager) => manager.id));

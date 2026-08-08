@@ -1,30 +1,36 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
-import { HospitalUserType, HospitalUserStatus, LoginType } from '@prisma/client';
+import {
+  HospitalUserType,
+  HospitalUserStatus,
+  LoginType,
+} from '@prisma/client';
 
 @Injectable()
 export class HospitalUserRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findSuperAdminByHospital(hospitalId: number) {
+  findSuperAdminByHospital(tenantId: string) {
     return this.prisma.hospitalUser.findFirst({
-      where: { hospitalId, userType: HospitalUserType.SUPER_ADMIN },
+      where: { tenantId, userType: HospitalUserType.SUPER_ADMIN },
     });
   }
 
   createSuperAdmin(data: {
-    hospitalId: number;
+    tenantId: string;
     email: string;
     username: string;
     passwordHash: string;
+    code: string;
     firstName: string;
     lastName?: string;
   }) {
     return this.prisma.hospitalUser.create({
       data: {
-        hospitalId: data.hospitalId,
+        tenantId: data.tenantId,
         email: data.email,
         username: data.username,
+        code: data.code,
         passwordHash: data.passwordHash,
         firstName: data.firstName,
         lastName: data.lastName ?? null,

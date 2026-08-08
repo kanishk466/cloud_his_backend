@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 
@@ -46,14 +50,15 @@ export class HospitalAuthService {
   //   };
   // }
 
-
-
-    async login(email: string, password: string) {
-    const user = await this.hospitalAuthUserRepository.findByEmailWithHospital(email);
+  async login(email: string, password: string) {
+    const user =
+      await this.hospitalAuthUserRepository.findByEmailWithHospital(email);
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
-    if (user.status !== 'ACTIVE') throw new UnauthorizedException('User is inactive');
-    if (user.hospital.status !== 'ACTIVE') throw new UnauthorizedException('Hospital is not active');
+    if (user.status !== 'ACTIVE')
+      throw new UnauthorizedException('User is inactive');
+    if (user.hospital.status !== 'ACTIVE')
+      throw new UnauthorizedException('Hospital is not active');
     if (user.accountValidTill && user.accountValidTill.getTime() < Date.now()) {
       throw new UnauthorizedException('Account expired');
     }
@@ -63,13 +68,17 @@ export class HospitalAuthService {
 
     const tokens = await this.generateTokens({
       userId: user.id,
-      hospitalId: user.hospitalId,
+      code: user.code,
       email: user.email,
       userType: user.userType,
+      tenantId: user.tenantId,
     });
 
     const refreshHash = await bcrypt.hash(tokens.refreshToken, 10);
-    await this.hospitalAuthUserRepository.setRefreshTokenHash(user.id, refreshHash);
+    await this.hospitalAuthUserRepository.setRefreshTokenHash(
+      user.id,
+      refreshHash,
+    );
 
     return {
       accessToken: tokens.accessToken,
@@ -98,20 +107,25 @@ export class HospitalAuthService {
     const user = await this.hospitalAuthUserRepository.findById(payload.sub);
     if (!user) throw new UnauthorizedException('Invalid refresh token');
 
-    if (!user.refreshTokenHash) throw new UnauthorizedException('Invalid refresh token');
+    if (!user.refreshTokenHash)
+      throw new UnauthorizedException('Invalid refresh token');
 
     const match = await bcrypt.compare(refreshToken, user.refreshTokenHash);
     if (!match) throw new UnauthorizedException('Invalid refresh token');
 
     const tokens = await this.generateTokens({
       userId: user.id,
-      hospitalId: payload.hospitalId,
+      code: payload.code,
       email: user.email,
       userType: user.userType,
+      tenantId: payload.tenantId,
     });
 
     const refreshHash = await bcrypt.hash(tokens.refreshToken, 10);
-    await this.hospitalAuthUserRepository.setRefreshTokenHash(user.id, refreshHash);
+    await this.hospitalAuthUserRepository.setRefreshTokenHash(
+      user.id,
+      refreshHash,
+    );
 
     return tokens;
   }
@@ -122,7 +136,10 @@ export class HospitalAuthService {
       const payload = await this.jwtService.verifyAsync(refreshToken, {
         secret: process.env.JWT_REFRESH_SECRET!,
       });
-      await this.hospitalAuthUserRepository.setRefreshTokenHash(payload.sub, null);
+      await this.hospitalAuthUserRepository.setRefreshTokenHash(
+        payload.sub,
+        null,
+      );
     } catch {
       // ignore
     }
@@ -130,7 +147,11 @@ export class HospitalAuthService {
     return { message: 'Logged out successfully' };
   }
 
-  async changePassword(userId: string, oldPassword: string, newPassword: string) {
+  async changePassword(
+    userId: string,
+    oldPassword: string,
+    newPassword: string,
+  ) {
     const user = await this.hospitalAuthUserRepository.findById(userId);
     if (!user) throw new UnauthorizedException('User not found');
 
@@ -143,12 +164,19 @@ export class HospitalAuthService {
     return { message: 'Password changed successfully' };
   }
 
-  private async generateTokens(input: { userId: string; hospitalId: number; email: string; userType: any }) {
+  private async generateTokens(input: {
+    userId: string;
+    code: string;
+    email: string;
+    userType: any;
+    tenantId: string;
+  }) {
     const payload = {
       sub: input.userId,
-      hospitalId: input.hospitalId,
+      code: input.code,
       email: input.email,
       userType: input.userType,
+      tenantId: input.tenantId,
       aud: 'hospital',
     };
 

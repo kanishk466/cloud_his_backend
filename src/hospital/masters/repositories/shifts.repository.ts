@@ -5,10 +5,10 @@ import { PrismaService } from '../../../shared/prisma/prisma.service';
 export class ShiftsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(hospitalId: number, data: { name: string; startTime?: string; endTime?: string }) {
+  create(tenantId: string, data: { name: string; startTime?: string; endTime?: string }) {
     return this.prisma.shiftMaster.create({
       data: {
-        hospitalId,
+        tenantId,
         name: data.name,
         startTime: data.startTime,
         endTime: data.endTime,
@@ -16,10 +16,10 @@ export class ShiftsRepository {
     });
   }
 
-  findAll(hospitalId: number, active?: boolean) {
+  findAll(tenantId: string, active?: boolean) {
     return this.prisma.shiftMaster.findMany({
       where: {
-        hospitalId,
+        tenantId,
         ...(typeof active === 'boolean' ? { isActive: active } : {}),
       },
       orderBy: { name: 'asc' },
@@ -32,9 +32,9 @@ export class ShiftsRepository {
     });
   }
 
-  findByHospitalAndName(hospitalId: number, name: string) {
+  findByTenantAndName(tenantId: string, name: string) {
     return this.prisma.shiftMaster.findFirst({
-      where: { hospitalId, name },
+      where: { tenantId, name },
     });
   }
 

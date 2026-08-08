@@ -1,7 +1,3 @@
-
-
-
-
 import {
   BadRequestException,
   ConflictException,
@@ -24,10 +20,10 @@ export class HospitalRoleService {
 
   // ─── Create ─────────────────────────────────────────────────────────────────
 
-  async create(hospitalId: number, dto: CreateHospitalRoleDto) {
+  async create(tenantId: string, dto: CreateHospitalRoleDto) {
     // Check duplicate: same roleName already used in this hospital
     const existing = await this.roleRepo.findByHospitalAndRoleName(
-      hospitalId,
+      tenantId,
       dto.roleNameId,
     );
 
@@ -38,7 +34,7 @@ export class HospitalRoleService {
     }
 
     return this.roleRepo.create({
-      hospitalId,
+      tenantId: tenantId,
       roleNameId: dto.roleNameId,
       description: dto.description,
     });
@@ -46,8 +42,8 @@ export class HospitalRoleService {
 
   // ─── List ───────────────────────────────────────────────────────────────────
 
-  async findAll(hospitalId: number) {
-    const roles = await this.roleRepo.findAll(hospitalId);
+  async findAll(tenantId: string) {
+    const roles = await this.roleRepo.findAll(tenantId);
 
     return roles.map((role) => ({
       id: role.id,
@@ -65,8 +61,8 @@ export class HospitalRoleService {
   // Single scoped query. No in-memory ownership check.
   // Prisma returns null if id does not match hospitalId — treated as 404.
 
-  async findByIdOrThrow(hospitalId: number, id: number) {
-    const role = await this.roleRepo.findById(id, hospitalId);
+  async findByIdOrThrow(tenantId: string, id: number) {
+    const role = await this.roleRepo.findById(id, tenantId);
 
     if (!role) {
       throw new NotFoundException('Role not found');
@@ -82,14 +78,14 @@ export class HospitalRoleService {
   // We catch that and surface as NotFoundException.
   // No pre-fetch round trip needed.
 
-  async update(hospitalId: number, id: number, dto: UpdateHospitalRoleDto) {
+  async update(tenantId: string, id: number, dto: UpdateHospitalRoleDto) {
     try {
-      return await this.roleRepo.update(id, hospitalId, dto);
+      return await this.roleRepo.update(id, tenantId, dto);
     } catch (err: unknown) {
       if (err instanceof Error && err.message === 'ROLE_NOT_FOUND') {
         throw new NotFoundException('Role not found');
       }
-      // Scoped WHERE (id + hospitalId) misses on cross-tenant access → P2025
+      // Scoped WHERE (id + tenantId) misses on cross-tenant access → P2025
       if (isPrismaError(err, 'P2025')) {
         throw new NotFoundException('Role not found');
       }
@@ -99,9 +95,9 @@ export class HospitalRoleService {
 
   // ─── Toggle ─────────────────────────────────────────────────────────────────
 
-  async toggle(hospitalId: number, id: number, isActive: boolean) {
+  async toggle(tenantId: string, id: number, isActive: boolean) {
     try {
-      return await this.roleRepo.toggle(id, hospitalId, isActive);
+      return await this.roleRepo.toggle(id, tenantId, isActive);
     } catch (err: unknown) {
       if (err instanceof Error && err.message === 'ROLE_NOT_FOUND') {
         throw new NotFoundException('Role not found');
@@ -120,13 +116,13 @@ export class HospitalRoleService {
   // Both must pass. Order: entitlement first (cheaper), then ownership + write.
 
   async setPermissions(
-    hospitalId: number,
+    tenantId: string,
     roleId: number,
     dto: SetRolePermissionsDto,
   ) {
     // Entitlement check — is this module available in hospital's package?
     const entitledModuleIds =
-      await this.entitlementRepo.getEntitledModuleIds(hospitalId);
+      await this.entitlementRepo.getEntitledModuleIds(tenantId);
 
     if (entitledModuleIds.length === 0) {
       throw new BadRequestException(
@@ -149,15 +145,15 @@ export class HospitalRoleService {
     try {
       return await this.roleRepo.setPermissions(
         roleId,
-        hospitalId,
+        tenantId,
         dto.moduleFeatures,
       );
     } catch (err: unknown) {
-  if (err instanceof Error && err.message === 'ROLE_NOT_FOUND') {
-    throw new NotFoundException('Role not found');
-  }
-  throw err;
-}
+      if (err instanceof Error && err.message === 'ROLE_NOT_FOUND') {
+        throw new NotFoundException('Role not found');
+      }
+      throw err;
+    }
   }
 
   // ─── Get Permissions ────────────────────────────────────────────────────────
@@ -166,19 +162,19 @@ export class HospitalRoleService {
   // No pre-fetch needed — returns empty array if role doesn't belong to hospital.
   // We do a single existence check to give a proper 404 if role is not found.
 
-  async getPermissions(hospitalId: number, roleId: number) {
-    const role = await this.roleRepo.findById(roleId, hospitalId);
+  async getPermissions(tenantId: string, roleId: number) {
+    const role = await this.roleRepo.findById(roleId, tenantId);
 
     if (!role) {
       throw new NotFoundException('Role not found');
     }
 
-    return this.roleRepo.getPermissions(roleId, hospitalId);
+    return this.roleRepo.getPermissions(roleId, tenantId);
   }
 
   // ─── Get Entitlements (UI dropdown) ─────────────────────────────────────────
 
-  getEntitledModules(hospitalId: number) {
-    return this.entitlementRepo.getEntitledModulesWithFeatures(hospitalId);
+  getEntitledModules(tenantId: string) {
+    return this.entitlementRepo.getEntitledModulesWithFeatures(tenantId);
   }
 }

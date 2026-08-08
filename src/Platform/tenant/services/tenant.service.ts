@@ -72,8 +72,8 @@ export class TenantService {
     return withIsActive(hospital);
   }
 
-  async suspendHospital(hospitalId: number, actor?: AuditActor) {
-    const hospital = await this.hospitalRepository.findById(hospitalId);
+  async suspendHospital(id: number, actor?: AuditActor) {
+    const hospital = await this.hospitalRepository.findById(id);
     if (!hospital) {
       throw new NotFoundException('Hospital not found');
     }
@@ -91,7 +91,7 @@ export class TenantService {
     }
 
     const updated = await this.hospitalRepository.updateStatus(
-      hospitalId,
+      id,
       'SUSPENDED',
     );
 
@@ -108,8 +108,8 @@ export class TenantService {
     return withIsActive(updated);
   }
 
-  async reactivateHospital(hospitalId: number, actor?: AuditActor) {
-    const hospital = await this.hospitalRepository.findById(hospitalId);
+  async reactivateHospital(id: number, actor?: AuditActor) {
+    const hospital = await this.hospitalRepository.findById(id);
     if (!hospital) {
       throw new NotFoundException('Hospital not found');
     }
@@ -119,7 +119,7 @@ export class TenantService {
     }
 
     const updated = await this.hospitalRepository.updateStatus(
-      hospitalId,
+      id,
       'ACTIVE',
     );
 
@@ -136,8 +136,9 @@ export class TenantService {
     return withIsActive(updated);
   }
 
-  async assignPackage(hospitalId: number, dto: AssignPackageDto) {
-    const hospital = await this.hospitalRepository.findById(hospitalId);
+  // Assign a package to a hospital. A hospital can have only one active package at a time.
+  async assignPackage(id: number, dto: AssignPackageDto) {
+    const hospital = await this.hospitalRepository.findById(id);
     if (!hospital) {
       throw new NotFoundException('Hospital not found');
     }
@@ -152,40 +153,41 @@ export class TenantService {
     }
 
     const activePackage =
-      await this.assignedPackageRepository.findActiveByHospital(hospitalId);
+      await this.assignedPackageRepository.findActiveByHospital(id);
     if (activePackage) {
       throw new ConflictException('Hospital already has an active package');
     }
 
     return this.assignedPackageRepository.create({
-      hospitalId,
+      tenantId: hospital.tenantId,
       packageId: dto.packageId,
       startDate: new Date(dto.startDate),
       endDate: dto.endDate ? new Date(dto.endDate) : undefined,
     });
   }
 
-  async activateHospital(hospitalId: number) {
-    const hospital = await this.hospitalRepository.findById(hospitalId);
+  async activateHospital(id: number) {
+    const hospital = await this.hospitalRepository.findById(id);
     if (!hospital) {
       throw new NotFoundException('Hospital not found');
     }
 
     const activePackage =
-      await this.assignedPackageRepository.findActiveByHospital(hospitalId);
+      await this.assignedPackageRepository.findActiveByHospital(id);
     if (!activePackage) {
       throw new BadRequestException('Assign a package before activation');
     }
 
     const updatedHospital = await this.hospitalRepository.updateStatus(
-      hospitalId,
+      id,
       'ACTIVE',
     );
 
     const provisionResult =
       await this.hospitalAdminProvisioningService.provisionIfNotExists({
-        hospitalId,
+        tenantId: hospital.tenantId,
         email: hospital.email,
+        code:hospital.code,
         hospitalName: hospital.name,
       });
 

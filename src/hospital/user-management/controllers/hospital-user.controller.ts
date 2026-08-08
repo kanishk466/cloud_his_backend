@@ -24,17 +24,17 @@ export class HospitalUserController {
 
   @Post()
   create(@Req() req: any, @Body() dto: CreateHospitalUserDto) {
-    return this.service.create(req.user.hospitalId, dto);
+    return this.service.create(req.user.tenantId, dto);
   }
 
   @Get()
   list(@Req() req: any, @Query() query: ListUsersDto) {
-    return this.service.findAll(req.user.hospitalId, query);
+    return this.service.findAll(req.user.tenantId, query);
   }
 
   @Get(':id')
   getById(@Req() req: any, @Param('id') id: string) {
-    return this.service.findByIdOrThrow(req.user.hospitalId, id);
+    return this.service.findByIdOrThrow(req.user.tenantId, id);
   }
 
   @Patch(':id/profile')
@@ -43,7 +43,7 @@ export class HospitalUserController {
     @Param('id') id: string,
     @Body() dto: UpdateHospitalUserProfileDto,
   ) {
-    return this.service.updateProfile(req.user.hospitalId, id, dto);
+    return this.service.updateProfile(req.user.tenantId, id, dto);
   }
 
   @Put(':id/permissions')
@@ -52,21 +52,21 @@ export class HospitalUserController {
     @Param('id') id: string,
     @Body() dto: SetUserPermissionsDto,
   ) {
-    return this.service.setPermissions(req.user.hospitalId, id, dto);
+    return this.service.setPermissions(req.user.tenantId, id, dto);
   }
 
   @Post(':id/deactivate')
   deactivate(@Req() req: any, @Param('id') id: string) {
-    return this.service.deactivate(req.user.hospitalId, id);
+    return this.service.deactivate(req.user.tenantId, id);
   }
 
   @Post(':id/activate')
   activate(@Req() req: any, @Param('id') id: string) {
-    return this.service.activate(req.user.hospitalId, id);
+    return this.service.activate(req.user.tenantId, id);
   }
 
   @Post(':id/reset-password')
   resetPassword(@Req() req: any, @Param('id') id: string) {
-    return this.service.resetPassword(req.user.hospitalId, id);
+    return this.service.resetPassword(req.user.tenantId, id);
   }
 }

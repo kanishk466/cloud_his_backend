@@ -16,9 +16,9 @@ export class HospitalUserRepository {
   // Two simultaneous creates can get the same ID.
   // Fix later with DB sequence or SELECT FOR UPDATE inside transaction.
 
-  async generateEmployeeId(hospitalId: number): Promise<string> {
+  async generateEmployeeId(tenantId: string): Promise<string> {
     const last = await this.prisma.staffProfile.findFirst({
-      where: { hospitalId },
+      where: { tenantId },
       orderBy: { employeeId: 'desc' },
       select: { employeeId: true },
     });
@@ -34,10 +34,10 @@ export class HospitalUserRepository {
   // Email is unique per hospital, not globally unique.
   // Composite unique constraint: (hospitalId, email)
 
-  findByEmailWithHospital(hospitalId: number, email: string) {
+  findByEmailWithHospital(tenantId: string, email: string) {
     return this.prisma.hospitalUser.findUnique({
       where: {
-        hospitalId_email: { hospitalId, email }, // ← tenant scope enforced
+        tenantId_email: { tenantId, email }, // ← tenant scope enforced
       },
       include: {
         hospital: {
@@ -49,9 +49,9 @@ export class HospitalUserRepository {
 
   // ─── Find By Username ───────────────────────────────────────────────────────
 
-  findByUsername(hospitalId: number, username: string) {
+  findByUsername(tenantId: string, username: string) {
     return this.prisma.hospitalUser.findUnique({
-      where: { hospitalId_username: { hospitalId, username } },
+      where: { tenantId_username: { tenantId, username } },
     });
   }
 
@@ -60,11 +60,11 @@ export class HospitalUserRepository {
   // hospitalId is included in WHERE clause.
   // If user does not belong to this hospital, Prisma returns null.
 
-  findById(id: string, hospitalId: number) {
+  findById(id: string, tenantId: string) {
     return this.prisma.hospitalUser.findUnique({
       where: {
         id,
-        hospitalId, // ← tenant scope enforced at query level
+        tenantId, // ← tenant scope enforced at query level
       },
       include: {
         staffProfile: true,
@@ -88,7 +88,7 @@ export class HospitalUserRepository {
   // ─── Find All (list with filters) ───────────────────────────────────────────
 
   findAll(
-    hospitalId: number,
+    tenantId: string,
     filters: {
       departmentId?: number;
       roleId?: number;
@@ -98,12 +98,14 @@ export class HospitalUserRepository {
   ) {
     return this.prisma.hospitalUser.findMany({
       where: {
-        hospitalId,
+        tenantId,
         ...(filters.status ? { status: filters.status } : {}),
         ...(filters.search
           ? {
               OR: [
-                { firstName: { contains: filters.search, mode: 'insensitive' } },
+                {
+                  firstName: { contains: filters.search, mode: 'insensitive' },
+                },
                 { lastName: { contains: filters.search, mode: 'insensitive' } },
                 { email: { contains: filters.search, mode: 'insensitive' } },
               ],
@@ -134,7 +136,7 @@ export class HospitalUserRepository {
   // ─── Create Full (6-step transaction) ───────────────────────────────────────
 
   async createFull(data: {
-    hospitalId: number;
+    tenantId: string;
     userInfo: {
       firstName: string;
       lastName?: string;
@@ -181,7 +183,8 @@ export class HospitalUserRepository {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.hospitalUser.create({
         data: {
-          hospitalId: data.hospitalId,
+          tenantId: data.tenantId,
+          code: data.staffProfile.employeeId,
           firstName: data.userInfo.firstName,
           lastName: data.userInfo.lastName,
           email: data.userInfo.email,
@@ -204,7 +207,7 @@ export class HospitalUserRepository {
       await tx.staffProfile.create({
         data: {
           userId: user.id,
-          hospitalId: data.hospitalId,
+          tenantId: data.tenantId,
           employeeId: data.staffProfile.employeeId,
           title: data.staffProfile.title,
           dateOfBirth: data.staffProfile.dateOfBirth,
@@ -281,7 +284,7 @@ export class HospitalUserRepository {
 
   async updateProfile(
     id: string,
-    hospitalId: number,
+    tenantId: string,
     userInfo: Partial<{
       firstName: string;
       lastName: string;
@@ -315,12 +318,17 @@ export class HospitalUserRepository {
       const user = await tx.hospitalUser.update({
         where: {
           id,
-          hospitalId, // ← tenant scope enforced at query level
+          tenantId, // ← tenant scope enforced at query level
         },
         data: {
           ...(userInfo.firstName && { firstName: userInfo.firstName }),
-          ...(userInfo.lastName !== undefined && { lastName: userInfo.lastName }),
-          ...(userInfo.email && { email: userInfo.email, username: userInfo.email }),
+          ...(userInfo.lastName !== undefined && {
+            lastName: userInfo.lastName,
+          }),
+          ...(userInfo.email && {
+            email: userInfo.email,
+            username: userInfo.email,
+          }),
           ...(userInfo.mobile !== undefined && { mobile: userInfo.mobile }),
           ...(userInfo.alternateMobile !== undefined && {
             alternateMobile: userInfo.alternateMobile,
@@ -348,7 +356,7 @@ export class HospitalUserRepository {
 
   async setPermissions(
     userId: string,
-    hospitalId: number,
+    tenantId: string,
     permissions: { moduleId: number; featureId: number }[],
   ) {
     return this.prisma.$transaction(async (tx) => {
@@ -356,7 +364,7 @@ export class HospitalUserRepository {
       const user = await tx.hospitalUser.findUnique({
         where: {
           id: userId,
-          hospitalId, // ← tenant scope enforced at query level
+          tenantId: tenantId, // ← tenant scope enforced at query level
         },
         select: { id: true },
       });
@@ -385,11 +393,11 @@ export class HospitalUserRepository {
 
   // ─── Update Status ──────────────────────────────────────────────────────────
 
-  updateStatus(id: string, hospitalId: number, status: HospitalUserStatus) {
+  updateStatus(id: string, tenantId: string, status: HospitalUserStatus) {
     return this.prisma.hospitalUser.update({
       where: {
         id,
-        hospitalId, // ← tenant scope enforced at query level
+        tenantId: tenantId, // ← tenant scope enforced at query level
       },
       data: { status },
     });
@@ -397,11 +405,11 @@ export class HospitalUserRepository {
 
   // ─── Reset Password ─────────────────────────────────────────────────────────
 
-  resetPassword(id: string, hospitalId: number, passwordHash: string) {
+  resetPassword(id: string, tenantId: string, passwordHash: string) {
     return this.prisma.hospitalUser.update({
       where: {
         id,
-        hospitalId, // ← tenant scope enforced at query level
+        tenantId: tenantId, // ← tenant scope enforced at query level
       },
       data: {
         passwordHash,
@@ -416,10 +424,10 @@ export class HospitalUserRepository {
   // NEW: Dedicated count method instead of loading all users into memory.
   // Used to prevent deactivating the last active admin.
 
-  countActiveSuperAdmins(hospitalId: number): Promise<number> {
+  countActiveSuperAdmins(tenantId: string): Promise<number> {
     return this.prisma.hospitalUser.count({
       where: {
-        hospitalId,
+        tenantId: tenantId,
         userType: HospitalUserType.SUPER_ADMIN,
         status: HospitalUserStatus.ACTIVE,
       },

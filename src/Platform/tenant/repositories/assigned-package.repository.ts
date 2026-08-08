@@ -6,7 +6,7 @@ export class AssignedPackageRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   create(data: {
-    hospitalId: number;
+    tenantId: string;
     packageId: number;
     startDate: Date;
     endDate?: Date;
@@ -14,16 +14,16 @@ export class AssignedPackageRepository {
     return this.prisma.assignedPackage.create({ data });
   }
 
-  findActiveByHospital(hospitalId: number) {
+  findActiveByHospital(id: number) {
     return this.prisma.assignedPackage.findFirst({
-      where: { hospitalId, status: 'ACTIVE' },
+      where: { id, status: 'ACTIVE' },
       include: { package: true },
     });
   }
 
-  findByHospital(hospitalId: number) {
+  findByHospital(tenantId: string) {
     return this.prisma.assignedPackage.findMany({
-      where: { hospitalId },
+      where: { tenantId },
       include: { package: true },
       orderBy: { createdAt: 'desc' },
     });

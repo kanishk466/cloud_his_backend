@@ -5,16 +5,16 @@ import { PrismaService } from '../../../shared/prisma/prisma.service';
 export class DepartmentsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(hospitalId: number, data: { name: string; code?: string }) {
+  create(tenantId: string, data: { name: string; code?: string }) {
     return this.prisma.department.create({
-      data: { hospitalId, name: data.name, code: data.code },
+      data: { tenantId, name: data.name, code: data.code },
     });
   }
 
-  findAll(hospitalId: number, active?: boolean) {
+  findAll(tenantId: string, active?: boolean) {
     return this.prisma.department.findMany({
       where: {
-        hospitalId,
+        tenantId,
         ...(typeof active === 'boolean' ? { isActive: active } : {}),
       },
       orderBy: { name: 'asc' },
@@ -25,11 +25,14 @@ export class DepartmentsRepository {
     return this.prisma.department.findUnique({ where: { id } });
   }
 
-  findByHospitalAndName(hospitalId: number, name: string) {
-    return this.prisma.department.findFirst({ where: { hospitalId, name } });
+  findByTenantAndName(tenantId: string, name: string) {
+    return this.prisma.department.findFirst({ where: { tenantId, name } });
   }
 
-  update(id: number, data: { name?: string; code?: string; isActive?: boolean }) {
+  update(
+    id: number,
+    data: { name?: string; code?: string; isActive?: boolean },
+  ) {
     return this.prisma.department.update({ where: { id }, data });
   }
 }
