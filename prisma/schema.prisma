@@ -8,7 +8,9 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// ---------- ENUMS ----------
+// ============================================
+// ENUMS — PLATFORM
+// ============================================
 
 enum UserStatus {
   ACTIVE
@@ -56,22 +58,211 @@ enum Gender {
 }
 
 // ============================================
-// PLATFORM SIDE (Minimal Admin Only)
+// ENUMS — OPD STEP 1 (Patient)
+// ============================================
+
+enum PatientType {
+  NEW
+  REVIEW
+  REFERRAL
+  EMERGENCY
+}
+
+enum PatientStatus {
+  ACTIVE
+  INACTIVE
+  DECEASED
+}
+
+enum MaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+}
+
+enum BloodGroup {
+  A_POSITIVE
+  A_NEGATIVE
+  B_POSITIVE
+  B_NEGATIVE
+  O_POSITIVE
+  O_NEGATIVE
+  AB_POSITIVE
+  AB_NEGATIVE
+  UNKNOWN
+}
+
+enum RelationType {
+  SELF
+  SPOUSE
+  FATHER
+  MOTHER
+  SON
+  DAUGHTER
+  BROTHER
+  SISTER
+  GUARDIAN
+  OTHER
+}
+
+// ============================================
+// ENUMS — OPD STEP 2 (Appointment)
+// ============================================
+
+enum AppointmentStatus {
+  BOOKED
+  CHECKED_IN
+  IN_QUEUE
+  IN_CONSULTATION
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum AppointmentType {
+  WALK_IN
+  SCHEDULED
+  EMERGENCY
+  TELECONSULTATION
+}
+
+enum VisitType {
+  NEW_VISIT
+  FOLLOW_UP
+  REVIEW
+  REFERRAL
+  POST_OP
+  EMERGENCY
+}
+
+// ============================================
+// ENUMS — OPD STEP 3 (Queue / Token)
+// ============================================
+
+enum TokenStatus {
+  WAITING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+  CANCELLED
+}
+
+// ============================================
+// ENUMS — OPD (Placeholder for upcoming steps)
+// ============================================
+
+enum ConsultationStatus {
+  IN_PROGRESS
+  COMPLETED
+  REFERRED
+}
+
+enum PrescriptionFrequency {
+  ONCE_DAILY
+  TWICE_DAILY
+  THRICE_DAILY
+  FOUR_TIMES_DAILY
+  EVERY_6_HOURS
+  EVERY_8_HOURS
+  EVERY_12_HOURS
+  AS_NEEDED
+  BEFORE_MEALS
+  AFTER_MEALS
+  AT_BEDTIME
+  STAT
+  WEEKLY
+  CUSTOM
+}
+
+enum MealRelation {
+  BEFORE_FOOD
+  AFTER_FOOD
+  WITH_FOOD
+  EMPTY_STOMACH
+  NOT_APPLICABLE
+}
+
+enum MedicineRoute {
+  ORAL
+  IV
+  IM
+  SC
+  TOPICAL
+  SUBLINGUAL
+  INHALATION
+  RECTAL
+  NASAL
+  OPHTHALMIC
+  OTIC
+  OTHER
+}
+
+enum InvestigationType {
+  LAB
+  RADIOLOGY
+  PATHOLOGY
+  CARDIOLOGY
+  OTHER
+}
+
+enum InvestigationUrgency {
+  ROUTINE
+  URGENT
+  STAT
+}
+
+enum InvestigationStatus {
+  ORDERED
+  SAMPLE_COLLECTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  REFUNDED
+  WAIVED
+}
+
+enum PaymentMode {
+  CASH
+  CARD
+  UPI
+  INSURANCE
+  ONLINE
+  MIXED
+}
+
+enum BillStatus {
+  DRAFT
+  GENERATED
+  PAID
+  PARTIALLY_PAID
+  CANCELLED
+  REFUNDED
+}
+
+// ============================================
+// PLATFORM SIDE
 // ============================================
 
 model PlatformUser {
-  id            String         @id @default(uuid())
-  email         String         @unique
-  passwordHash  String
-  firstName     String
-  lastName      String?
-  status        UserStatus     @default(ACTIVE)
-  role          PlatformRole   @default(PLATFORM_ADMIN)
+  id           String       @id @default(uuid())
+  email        String       @unique
+  passwordHash String
+  firstName    String
+  lastName     String?
+  status       UserStatus   @default(ACTIVE)
+  role         PlatformRole @default(PLATFORM_ADMIN)
 
   refreshTokens RefreshToken[]
 
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("platform_users")
 }
@@ -92,15 +283,15 @@ model RefreshToken {
 // ============================================
 
 model Module {
-  id        Int     @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   name      String
-  code      String  @unique
+  code      String   @unique
   route     String?
   icon      String?
-  sortOrder Int     @default(0)
-  isActive  Boolean @default(true)
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
   parentId  Int?
-  parent    Module? @relation("ModuleHierarchy", fields: [parentId], references: [id])
+  parent    Module?  @relation("ModuleHierarchy", fields: [parentId], references: [id])
   children  Module[] @relation("ModuleHierarchy")
 
   features       ModuleFeature[]
@@ -176,24 +367,54 @@ model PackageModule {
 // ============================================
 
 model Hospital {
-  id          Int            @id @default(autoincrement())
+  id       String @id @default(uuid())
+  tenantId String @unique @default(uuid())
+
   code        String         @unique
   name        String
   email       String         @unique
   phone       String?
+  address     String?
+  city        String?
+  state       String?
+  pincode     String?
+  timezone    String         @default("Asia/Kolkata")
+  logoUrl     String?
   status      HospitalStatus @default(DRAFT)
   activatedAt DateTime?
 
-  packages           AssignedPackage[]
-  users              HospitalUser[]
-  hospitalRoles      HospitalRole[]
-  departments        Department[]
-  shifts             ShiftMaster[]
-  roleNamesCreated   RoleName[]
-  permissionCopyLogs PermissionCopyLog[]
+  // Phase 1 Relations
+  packages             AssignedPackage[]
+  users                HospitalUser[]
+  hospitalRoles        HospitalRole[]
+  departments          Department[]
+  shifts               ShiftMaster[]
+  roleNamesCreated     RoleName[]
+  permissionCopyLogs   PermissionCopyLog[]
   doctorProfiles       DoctorProfile[]
   doctorAvailabilities DoctorAvailability[]
   doctorLeaveBlocks    DoctorLeaveBlock[]
+
+  // OPD Step 1
+  patients Patient[]
+
+  // OPD Step 2
+  appointments Appointment[]
+
+  // OPD Step 3
+  opdTokens OpdToken[]
+
+
+  // OPD Step 6
+  opdBills    OpdBill[]
+  opdPayments OpdPayment[]
+
+
+  patientVitals PatientVitals[]
+
+    consultations      Consultation[]
+  prescriptions      Prescription[]
+  investigationOrders InvestigationOrder[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -202,35 +423,36 @@ model Hospital {
 }
 
 model AssignedPackage {
-  id         Int                     @id @default(autoincrement())
-  hospitalId Int
-  packageId  Int
-  startDate  DateTime
-  endDate    DateTime?
-  status     PackageAssignmentStatus @default(ACTIVE)
+  id        Int                     @id @default(autoincrement())
+  tenantId  String
+  packageId Int
+  startDate DateTime
+  endDate   DateTime?
+  status    PackageAssignmentStatus @default(ACTIVE)
 
-  hospital  Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
-  package   Package  @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  package  Package  @relation(fields: [packageId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
 
+  @@index([tenantId])
   @@map("assigned_packages")
 }
 
 // ============================================
-// HIMS - USER & ROLE MANAGEMENT (Hospital Side)
+// HIMS — USER & ROLE MANAGEMENT
 // ============================================
 
 model RoleName {
-  id          Int     @id @default(autoincrement())
-  name        String
-  code        String  @unique
-  description String?
-  isSystem    Boolean @default(false)
+  id                Int     @id @default(autoincrement())
+  name              String
+  code              String  @unique
+  description       String?
+  isSystem          Boolean @default(false)
+  createdByTenantId String?
 
-  createdByHospitalId Int?
-  createdByHospital   Hospital?      @relation(fields: [createdByHospitalId], references: [id])
-  hospitalRoles       HospitalRole[]
+  createdByHospital Hospital?      @relation(fields: [createdByTenantId], references: [tenantId])
+  hospitalRoles     HospitalRole[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -239,16 +461,16 @@ model RoleName {
 }
 
 model HospitalRole {
-  id         Int      @id @default(autoincrement())
-  hospitalId Int
-  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
-
+  id         Int    @id @default(autoincrement())
+  tenantId   String
   roleNameId Int
-  roleName   RoleName @relation(fields: [roleNameId], references: [id], onDelete: Restrict)
 
   description String?
   isSystem    Boolean @default(false)
   isActive    Boolean @default(true)
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  roleName RoleName @relation(fields: [roleNameId], references: [id], onDelete: Restrict)
 
   permissions HospitalRolePermission[]
   users       UserRoleAssignment[]
@@ -256,18 +478,18 @@ model HospitalRole {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([hospitalId, roleNameId])
-  @@index([hospitalId])
+  @@unique([tenantId, roleNameId])
+  @@index([tenantId])
   @@map("hospital_roles")
 }
 
 model HospitalRolePermission {
-  id             Int          @id @default(autoincrement())
+  id             Int @id @default(autoincrement())
   hospitalRoleId Int
-  hospitalRole   HospitalRole @relation(fields: [hospitalRoleId], references: [id], onDelete: Cascade)
+  moduleId       Int
+  featureId      Int
 
-  moduleId      Int
-  featureId     Int
+  hospitalRole  HospitalRole  @relation(fields: [hospitalRoleId], references: [id], onDelete: Cascade)
   moduleFeature ModuleFeature @relation(fields: [moduleId, featureId], references: [moduleId, featureId], onDelete: Cascade)
 
   createdAt DateTime @default(now())
@@ -277,51 +499,54 @@ model HospitalRolePermission {
 }
 
 model Department {
-  id         Int      @id @default(autoincrement())
-  hospitalId Int
-  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
-  name       String
-  code       String?
-  isActive   Boolean  @default(true)
+  id       Int    @id @default(autoincrement())
+  tenantId String
 
-  users UserDepartmentMapping[]
+  name     String
+  code     String?
+  isActive Boolean @default(true)
+
+  hospital     Hospital                @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  users        UserDepartmentMapping[]
+  appointments Appointment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([hospitalId, name])
-  @@index([hospitalId])
+  @@unique([tenantId, name])
+  @@index([tenantId])
   @@map("departments")
 }
 
 model ShiftMaster {
-  id         Int      @id @default(autoincrement())
-  hospitalId Int
-  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
-  name       String
-  startTime  String?
-  endTime    String?
-  isActive   Boolean  @default(true)
+  id       Int    @id @default(autoincrement())
+  tenantId String
 
+  name      String
+  startTime String?
+  endTime   String?
+  isActive  Boolean @default(true)
+
+  hospital      Hospital       @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
   staffProfiles StaffProfile[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([hospitalId, name])
-  @@index([hospitalId])
+  @@unique([tenantId, name])
+  @@index([tenantId])
   @@map("shift_masters")
 }
 
 model HospitalUser {
-  id         String           @id @default(uuid())
-  hospitalId Int
-  hospital   Hospital         @relation(fields: [hospitalId], references: [id], onDelete: Restrict)
-  userType   HospitalUserType @default(REGULAR_USER)
+  id       String @id @default(uuid())
+  tenantId String
+
+  userType HospitalUserType @default(REGULAR_USER)
 
   firstName       String
   lastName        String?
-  email           String 
+  email           String
   mobile          String?
   alternateMobile String?
 
@@ -338,30 +563,30 @@ model HospitalUser {
   refreshTokenHash        String?
   lastLoginAt             DateTime?
 
-  staffProfile StaffProfile?
-  roles        UserRoleAssignment[]
-  departments  UserDepartmentMapping[]
-  permissions  UserModuleFeaturePermission[]
-  managedStaff StaffProfile[]              @relation("ReportingManager")
+  hospital      Hospital                      @relation(fields: [tenantId], references: [tenantId], onDelete: Restrict)
+  staffProfile  StaffProfile?
+  roles         UserRoleAssignment[]
+  departments   UserDepartmentMapping[]
+  permissions   UserModuleFeaturePermission[]
+  managedStaff  StaffProfile[]                @relation("ReportingManager")
+  doctorProfile DoctorProfile?
 
   performedCopyLogs PermissionCopyLog[] @relation("PermissionCopyPerformedBy")
   sourceCopyLogs    PermissionCopyLog[] @relation("PermissionCopySource")
-   doctorProfile   DoctorProfile?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([hospitalId, username])
-  @@unique([hospitalId,email])
-  @@index([hospitalId])
+  @@unique([tenantId, username])
+  @@unique([tenantId, email])
+  @@index([tenantId])
   @@map("hospital_users")
 }
 
 model StaffProfile {
-  id         Int          @id @default(autoincrement())
-  userId     String       @unique
-  user       HospitalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-  hospitalId Int
+  id         Int    @id @default(autoincrement())
+  userId     String @unique
+  tenantId   String
   employeeId String
 
   title       String?
@@ -373,10 +598,8 @@ model StaffProfile {
   dateOfJoining DateTime?
 
   shiftId Int?
-  shift   ShiftMaster? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
 
   reportingManagerId String?
-  reportingManager   HospitalUser? @relation("ReportingManager", fields: [reportingManagerId], references: [id], onDelete: SetNull)
 
   aadhaarNumber  String?
   panNumber      String?
@@ -390,11 +613,15 @@ model StaffProfile {
   pincode          String?
   emergencyContact String?
 
+  user             HospitalUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shift            ShiftMaster?  @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  reportingManager HospitalUser? @relation("ReportingManager", fields: [reportingManagerId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([hospitalId, employeeId])
-  @@index([hospitalId])
+  @@unique([tenantId, employeeId])
+  @@index([tenantId])
   @@map("staff_profiles")
 }
 
@@ -415,8 +642,9 @@ model UserRoleAssignment {
 model UserDepartmentMapping {
   userId       String
   departmentId Int
-  user         HospitalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-  department   Department   @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  user       HospitalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department Department   @relation(fields: [departmentId], references: [id], onDelete: Cascade)
 
   @@id([userId, departmentId])
   @@index([departmentId])
@@ -424,13 +652,15 @@ model UserDepartmentMapping {
 }
 
 model UserModuleFeaturePermission {
-  id        Int          @id @default(autoincrement())
+  id        Int    @id @default(autoincrement())
   userId    String
-  user      HospitalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
   moduleId  Int
   featureId Int
+
+  user          HospitalUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
   moduleFeature ModuleFeature @relation(fields: [moduleId, featureId], references: [moduleId, featureId], onDelete: Cascade)
-  grantedAt DateTime      @default(now())
+
+  grantedAt DateTime @default(now())
 
   @@unique([userId, moduleId, featureId])
   @@index([userId])
@@ -438,112 +668,638 @@ model UserModuleFeaturePermission {
 }
 
 model PermissionCopyLog {
-  id         Int      @id @default(autoincrement())
-  hospitalId Int
-  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  id       Int    @id @default(autoincrement())
+  tenantId String
 
   performedByUserId String
-  performedByUser   HospitalUser @relation("PermissionCopyPerformedBy", fields: [performedByUserId], references: [id], onDelete: Restrict)
-
-  sourceUserId String
-  sourceUser   HospitalUser @relation("PermissionCopySource", fields: [sourceUserId], references: [id], onDelete: Restrict)
+  sourceUserId      String
 
   targetUserIds       String[]
   targetDepartmentIds Int[]
 
+  hospital        Hospital     @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  performedByUser HospitalUser @relation("PermissionCopyPerformedBy", fields: [performedByUserId], references: [id], onDelete: Restrict)
+  sourceUser      HospitalUser @relation("PermissionCopySource", fields: [sourceUserId], references: [id], onDelete: Restrict)
+
   createdAt DateTime @default(now())
 
-  @@index([hospitalId])
+  @@index([tenantId])
   @@map("permission_copy_logs")
 }
 
-
-
-// schema.prisma - Fix DoctorProfile, DoctorAvailability, DoctorLeaveBlock
-// hospitalId should be Int to match Hospital.id Int
+// ============================================
+// DOCTOR SCHEDULING
+// ============================================
 
 model DoctorProfile {
-  id                String   @id @default(uuid())
-  hospitalId        Int      // ← Fix: Int not String
-  hospitalUserId    String   @unique
+  id             String  @id @default(uuid())
+  tenantId       String
+  hospitalUserId String  @unique
 
   specialization    String
   qualifications    String?
-  consultationFee   Decimal  @db.Decimal(10,2)
-  slotDurationMins  Int      @default(15)
-  bufferTimeMins    Int      @default(0)
+  consultationFee   Decimal @db.Decimal(10, 2)
+  slotDurationMins  Int     @default(15)
+  bufferTimeMins    Int     @default(0)
   maxPatientsPerDay Int?
-  isActive          Boolean  @default(true)
+  isActive          Boolean @default(true)
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  hospital     Hospital     @relation(fields: [tenantId], references: [tenantId])
+  hospitalUser HospitalUser @relation(fields: [hospitalUserId], references: [id])
 
-  hospital          Hospital     @relation(fields: [hospitalId], references: [id])
-  hospitalUser      HospitalUser @relation(fields: [hospitalUserId], references: [id])
+  availabilities DoctorAvailability[]
+  leaveBlocks    DoctorLeaveBlock[]
 
-  availabilities    DoctorAvailability[]
-  leaveBlocks       DoctorLeaveBlock[]
+  // OPD Step 2
+  appointments Appointment[]
 
-  @@index([hospitalId])
-  @@map("doctor_profiles")  // ← Add map
+  // OPD Step 3
+  opdTokens OpdToken[]
+
+  consultations Consultation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@map("doctor_profiles")
 }
 
 model DoctorAvailability {
-  id              String   @id @default(uuid())
-  hospitalId      Int      // ← Fix: Int not String
+  id              String @id @default(uuid())
+  tenantId        String
   doctorProfileId String
 
-  dayOfWeek       Int
-  startTime       String
-  endTime         String
-  isActive        Boolean  @default(true)
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  isActive  Boolean @default(true)
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId])
+  doctorProfile DoctorProfile @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
 
-  hospital        Hospital       @relation(fields: [hospitalId], references: [id])
-  doctorProfile   DoctorProfile  @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([doctorProfileId, dayOfWeek, startTime])
-  @@index([hospitalId, doctorProfileId])
-  @@map("doctor_availabilities")  // ← Add map
+  @@index([tenantId, doctorProfileId])
+  @@map("doctor_availabilities")
 }
 
 model DoctorLeaveBlock {
-  id              String   @id @default(uuid())
-  hospitalId      Int      // ← Fix: Int not String
+  id              String @id @default(uuid())
+  tenantId        String
   doctorProfileId String
 
-  blockDate       DateTime @db.Date
-  startTime       String?
-  endTime         String?
-  reason          String?
+  blockDate DateTime @db.Date
+  startTime String?
+  endTime   String?
+  reason    String?
 
-  createdAt       DateTime @default(now())
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId])
+  doctorProfile DoctorProfile @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
 
-  hospital        Hospital       @relation(fields: [hospitalId], references: [id])
-  doctorProfile   DoctorProfile  @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 
-  @@index([hospitalId, doctorProfileId, blockDate])
-  @@map("doctor_leave_blocks")  // ← Add map
+  @@index([tenantId, doctorProfileId, blockDate])
+  @@map("doctor_leave_blocks")
+}
+
+// ============================================
+// OPD — STEP 1: PATIENT REGISTRATION ✅
+// ============================================
+
+model Patient {
+  id       String @id @default(uuid())
+  tenantId String
+
+  uhid String
+
+  firstName     String
+  lastName      String?
+  dateOfBirth   DateTime?     @db.Date
+  age           Int?
+  ageUnit       String?       @default("years")
+  gender        Gender
+  bloodGroup    BloodGroup?
+  maritalStatus MaritalStatus?
+  photo         String?
+
+  mobile          String
+  alternateMobile String?
+  email           String?
+
+  address  String?
+  city     String?
+  district String?
+  state    String?
+  pincode  String?
+  country  String? @default("India")
+
+  aadhaarNumber String?
+  panNumber     String?
+  abhaId        String?
+
+  guardianName     String?
+  guardianRelation RelationType?
+  guardianMobile   String?
+
+  insuranceProvider  String?
+  insurancePolicyNo  String?
+  insuranceValidTill DateTime?
+
+  allergies       String?
+  chronicDiseases String?
+
+  patientType  PatientType   @default(NEW)
+  status       PatientStatus @default(ACTIVE)
+  registeredAt DateTime      @default(now())
+  registeredBy String?
+
+  deletedAt DateTime?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  // OPD Step 2
+  appointments Appointment[]
+  vitalsRecords PatientVitals[]
+ consultations Consultation[]
+
+
+  bills OpdBill[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, uhid])
+  @@unique([tenantId, mobile])
+  @@index([tenantId])
+  @@index([tenantId, mobile])
+  @@index([tenantId, abhaId])
+  @@index([tenantId, status])
+  @@index([tenantId, deletedAt])
+  @@map("patients")
+}
+
+// ============================================
+// OPD — STEP 2: APPOINTMENT BOOKING ✅
+// ============================================
+
+model Appointment {
+  id       String @id @default(uuid())
+  tenantId String
+
+  appointmentNo String
+
+  patientId       String
+  doctorProfileId String
+  departmentId    Int?
+
+  appointmentDate DateTime @db.Date
+  slotStartTime   String?
+  slotEndTime     String?
+
+  appointmentType AppointmentType   @default(WALK_IN)
+  visitType       VisitType         @default(NEW_VISIT)
+  status          AppointmentStatus @default(BOOKED)
+  priority        Int               @default(0)
+
+  consultationFee Decimal @db.Decimal(10, 2)
+
+  referredByDoctorName String?
+  referralNote         String?
+
+  reasonForVisit String?
+  notes          String?
+
+  bookedAt    DateTime  @default(now())
+  bookedBy    String?
+  checkedInAt DateTime?
+  checkedInBy String?
+
+  cancelledAt  DateTime?
+  cancelReason String?
+  cancelledBy  String?
+
+  deletedAt DateTime?
+
+ hospital      Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  patient       Patient       @relation(fields: [patientId], references: [id])
+  doctorProfile DoctorProfile @relation(fields: [doctorProfileId], references: [id])
+  department    Department?   @relation(fields: [departmentId], references: [id])
+  token         OpdToken?
+  consultation  Consultation?
+   bill OpdBill?
+   
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, appointmentNo])
+  @@index([tenantId, appointmentDate])
+  @@index([tenantId, doctorProfileId, appointmentDate])
+  @@index([tenantId, patientId])
+  @@index([tenantId, status])
+  @@index([tenantId, doctorProfileId, appointmentDate, slotStartTime])
+  @@index([tenantId, deletedAt])
+  @@map("appointments")
+}
+
+// ============================================
+// OPD — STEP 3: TOKEN / QUEUE MANAGEMENT ✅
+// ============================================
+
+model OpdToken {
+  id       String @id @default(uuid())
+  tenantId String
+
+  appointmentId   String @unique
+  doctorProfileId String
+
+  tokenNumber      Int
+  tokenDate        DateTime    @db.Date
+  status           TokenStatus @default(WAITING)
+  originalPosition Int?
+
+  estimatedTime String?
+  calledAt      DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+
+  roomNo String?
+
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId])
+  appointment   Appointment   @relation(fields: [appointmentId], references: [id])
+  doctorProfile DoctorProfile @relation(fields: [doctorProfileId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, doctorProfileId, tokenDate, tokenNumber])
+  @@index([tenantId, doctorProfileId, tokenDate])
+  @@index([tenantId, status])
+  @@index([tenantId, tokenDate])
+  @@map("opd_tokens")
 }
 
 
 
+// ============================================
+// OPD — STEP 4: PATIENT VITALS ✅
+// ============================================
+
+model PatientVitals {
+  id       String @id @default(uuid())
+  tenantId String
+
+  patientId String
+  
+  // Links to consultation AFTER doctor starts session
+  // Null when nurse records vitals before consultation
+  consultationId String?
+
+  // Links to appointment for this visit
+  appointmentId String?
+
+  // ─── ANTHROPOMETRY ──────────────────────────────────────────────
+  heightCm Decimal? @db.Decimal(5, 2)  // 172.50 cm
+  weightKg Decimal? @db.Decimal(5, 2)  // 70.50 kg
+  bmi      Decimal? @db.Decimal(4, 1)  // Auto: weight/(height/100)²
+
+  // ─── TEMPERATURE ────────────────────────────────────────────────
+  temperatureF Decimal? @db.Decimal(4, 1)  // 98.6°F
+
+  // ─── CARDIOVASCULAR ─────────────────────────────────────────────
+  bloodPressureSys Int?  // Systolic  e.g., 120
+  bloodPressureDia Int?  // Diastolic e.g., 80
+  pulseRate        Int?  // beats/min e.g., 72
+
+  // ─── RESPIRATORY ────────────────────────────────────────────────
+  respiratoryRate Int?     // breaths/min e.g., 16
+  spo2            Decimal? @db.Decimal(4, 1)  // 98.5%
+
+  // ─── BLOOD SUGAR ────────────────────────────────────────────────
+  bloodSugarFasting Decimal? @db.Decimal(5, 1)  // mg/dL
+  bloodSugarPP      Decimal? @db.Decimal(5, 1)  // Post Prandial
+  bloodSugarRandom  Decimal? @db.Decimal(5, 1)  // Random
+
+  // ─── PAIN ASSESSMENT ────────────────────────────────────────────
+  painScore Int?  // 0-10 (Visual Analog Scale)
+
+  // ─── CLINICAL INPUT BY NURSE ────────────────────────────────────
+  chiefComplaints String?  // "Fever since 3 days, headache"
+  notes           String?
+
+  // ─── META ───────────────────────────────────────────────────────
+  recordedBy String?   // HospitalUser.id (nurse/staff)
+  recordedAt DateTime  @default(now())
+
+  // ─── RELATIONS ──────────────────────────────────────────────────
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId])
+  patient  Patient  @relation(fields: [patientId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, patientId])
+  @@index([tenantId, appointmentId])
+  @@index([tenantId, recordedAt])
+  @@map("patient_vitals")
+}
+
+
+
+// ============================================
+// OPD — STEP 5: CONSULTATION ✅
+// ============================================
+
+model Consultation {
+  id       String @id @default(uuid())
+  tenantId String
+
+  // Format : CON-{YYYYMMDD}-{0001}
+  // Example: CON-20250610-0001
+  // Scope  : Per tenant, resets daily
+  consultationNo String
+
+  // ─── CORE LINKS ─────────────────────────────────────────────────
+  appointmentId   String @unique
+  patientId       String
+  doctorProfileId String
+
+  // ─── SUBJECTIVE (S in SOAP) ─────────────────────────────────────
+  chiefComplaints  String?
+  historyOfIllness String?
+  pastHistory      String?
+  familyHistory    String?
+  personalHistory  String?
+
+  // ─── OBJECTIVE (O in SOAP) ──────────────────────────────────────
+  generalExamination  String?
+  systemicExamination String?
+  localExamination    String?
+
+  // ─── ASSESSMENT (A in SOAP) ─────────────────────────────────────
+  provisionalDiagnosis String?
+  finalDiagnosis       String?
+  icdCodes             String[]
+
+  // ─── PLAN (P in SOAP) ──────────────────────────────────────────
+  clinicalNotes       String?
+  specialInstructions String?
+
+  // ─── FOLLOW-UP ──────────────────────────────────────────────────
+  followUpDate  DateTime? @db.Date
+  followUpNotes String?
+
+  // ─── REFERRAL ───────────────────────────────────────────────────
+  referredToDoctorId   String?
+  referredToDepartment String?
+  referralReason       String?
+
+  // ─── STATUS & TIMING ───────────────────────────────────────────
+  status      ConsultationStatus @default(IN_PROGRESS)
+  startedAt   DateTime           @default(now())
+  completedAt DateTime?
+
+  // ─── RELATIONS ──────────────────────────────────────────────────
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId])
+  appointment   Appointment   @relation(fields: [appointmentId], references: [id])
+  patient       Patient       @relation(fields: [patientId], references: [id])
+  doctorProfile DoctorProfile @relation(fields: [doctorProfileId], references: [id])
+
+  prescriptions  Prescription[]
+  investigations InvestigationOrder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, consultationNo])
+  @@index([tenantId, patientId])
+  @@index([tenantId, doctorProfileId])
+  @@index([tenantId, appointmentId])
+  @@index([tenantId, startedAt])
+  @@map("consultations")
+}
+
+// ============================================
+// OPD — STEP 5: PRESCRIPTION ✅
+// ============================================
+
+model Prescription {
+  id       String @id @default(uuid())
+  tenantId String
+
+  consultationId String
+
+  // ─── MEDICINE IDENTIFICATION ────────────────────────────────────
+  medicineName String
+  genericName  String?
+  medicineType String?   // Tablet | Capsule | Syrup | Injection | Drop | Cream | Ointment
+
+  // ─── DOSAGE ─────────────────────────────────────────────────────
+  dosage          String?                    // "500 mg" | "5 ml"
+  frequency       PrescriptionFrequency     @default(TWICE_DAILY)
+  customFrequency String?                    // Only if frequency = CUSTOM
+  route           MedicineRoute             @default(ORAL)
+  mealRelation    MealRelation              @default(AFTER_FOOD)
+
+  // ─── DURATION ───────────────────────────────────────────────────
+  durationDays  Int?
+  durationWeeks Int?
+  quantity      Int?     // Total qty to dispense
+
+  // ─── INSTRUCTIONS ──────────────────────────────────────────────
+  instructions String?
+  isCritical   Boolean @default(false)
+
+  // ─── DISPLAY ORDER ─────────────────────────────────────────────
+  sortOrder Int @default(0)
+
+
+
+  // ─── RELATIONS ──────────────────────────────────────────────────
+  hospital     Hospital     @relation(fields: [tenantId], references: [tenantId])
+  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, consultationId])
+  @@map("prescriptions")
+}
+
+// ============================================
+// OPD — STEP 5: INVESTIGATION ORDER ✅
+// ============================================
+
+model InvestigationOrder {
+  id       String @id @default(uuid())
+  tenantId String
+
+  consultationId String
+
+  // ─── INVESTIGATION DETAILS ─────────────────────────────────────
+  investigationName String
+  investigationType InvestigationType     @default(LAB)
+
+  // ─── ORDER DETAILS ─────────────────────────────────────────────
+  urgency       InvestigationUrgency @default(ROUTINE)
+  instructions  String?
+  clinicalNotes String?
+
+  // ─── STATUS TRACKING ───────────────────────────────────────────
+  status      InvestigationStatus @default(ORDERED)
+  orderedAt   DateTime            @default(now())
+  completedAt DateTime?
+
+  // ─── RESULT (Basic — full result in Lab module) ────────────────
+  resultSummary String?
+  resultFile    String?
+
+  sortOrder Int @default(0)
+
+  // ─── RELATIONS ──────────────────────────────────────────────────
+   hospital     Hospital     @relation(fields: [tenantId], references: [tenantId])
+  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, consultationId])
+  @@index([tenantId, status])
+  @@map("investigation_orders")
+}
+
+
+
+// ============================================
+// OPD — STEP 6: OPD BILLING ✅
+// ============================================
+
+model OpdBill {
+  id       String @id @default(uuid())
+  tenantId String
+
+  // Format : BILL-{YYYYMMDD}-{0001}
+  // Example: BILL-20250610-0001
+  // Scope  : Per tenant, resets daily
+  billNo String
+
+  // ─── LINKS ──────────────────────────────────────────────────────
+  patientId     String
+  appointmentId String @unique
+
+  // ─── CHARGES BREAKDOWN ──────────────────────────────────────────
+  consultationFee Decimal @db.Decimal(10, 2)
+  registrationFee Decimal @db.Decimal(10, 2) @default(0)
+  otherCharges    Decimal @db.Decimal(10, 2) @default(0)
+
+  // ─── CALCULATION ────────────────────────────────────────────────
+  // subtotal = consultationFee + registrationFee + otherCharges
+  subtotal        Decimal @db.Decimal(10, 2)
+  discountPercent Decimal @db.Decimal(5, 2)  @default(0)
+  discountAmount  Decimal @db.Decimal(10, 2) @default(0)
+  taxPercent      Decimal @db.Decimal(5, 2)  @default(0)
+  taxAmount       Decimal @db.Decimal(10, 2) @default(0)
+  // totalAmount = subtotal - discountAmount + taxAmount
+  totalAmount     Decimal @db.Decimal(10, 2)
+  paidAmount      Decimal @db.Decimal(10, 2) @default(0)
+  // dueAmount = totalAmount - paidAmount
+  dueAmount       Decimal @db.Decimal(10, 2) @default(0)
+
+  // ─── STATUS ─────────────────────────────────────────────────────
+  paymentStatus PaymentStatus @default(PENDING)
+  paymentMode   PaymentMode?
+  billStatus    BillStatus    @default(DRAFT)
+
+  // ─── INSURANCE ──────────────────────────────────────────────────
+  isInsurance       Boolean  @default(false)
+  insuranceProvider String?
+  insurancePolicyNo String?
+  insuranceClaimed  Decimal? @db.Decimal(10, 2)
+  insuranceApproved Decimal? @db.Decimal(10, 2)
+
+  // ─── DISCOUNT AUTHORIZATION ─────────────────────────────────────
+  discountReason       String?
+  discountAuthorizedBy String?
+
+  // ─── META ───────────────────────────────────────────────────────
+  generatedBy  String?
+  billedAt     DateTime  @default(now())
+  paidAt       DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+
+  // ─── RELATIONS ──────────────────────────────────────────────────
+  hospital    Hospital    @relation(fields: [tenantId], references: [tenantId])
+  patient     Patient     @relation(fields: [patientId], references: [id])
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+
+  payments OpdPayment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, billNo])
+  @@index([tenantId, patientId])
+  @@index([tenantId, billStatus])
+  @@index([tenantId, billedAt])
+  @@index([tenantId, paymentStatus])
+  @@map("opd_bills")
+}
+
+// ============================================
+// OPD — STEP 6: OPD PAYMENT ✅
+// ============================================
+
+model OpdPayment {
+  id       String @id @default(uuid())
+  tenantId String
+
+  billId String
+
+  // Format : RCP-{YYYYMMDD}-{0001}
+  receiptNo     String
+  amount        Decimal     @db.Decimal(10, 2)
+  paymentMode   PaymentMode
+  transactionId String?
+
+  receivedBy String?
+  paidAt     DateTime @default(now())
+  notes      String?
+
+  // ─── RELATIONS ──────────────────────────────────────────────────
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId])
+  bill     OpdBill  @relation(fields: [billId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, receiptNo])
+  @@index([tenantId, billId])
+  @@map("opd_payments")
+}
+
+// ============================================
+// AUDIT
+// ============================================
 
 model AuditLog {
-  id         Int      @id @default(autoincrement())
-  hospitalId Int?
-  userId     String?
-  action     String
-  entity     String?
-  entityId   String?
-  metadata   Json?
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime @default(now())
+  id       Int     @id @default(autoincrement())
+  tenantId String?
 
-  @@index([hospitalId])
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
   @@index([userId])
   @@index([createdAt])
   @@map("audit_logs")

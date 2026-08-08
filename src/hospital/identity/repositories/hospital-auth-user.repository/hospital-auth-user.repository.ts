@@ -17,17 +17,37 @@ export class HospitalAuthUserRepository {
   // }
 
 
-findByEmailWithHospital(email: string) {
-  return this.prisma.hospitalUser.findUnique({
-    where: { email } as any,  // ✅ bypass type check temporarily
-    include: {
-      hospital: {
-        select: { id: true, code: true, name: true, status: true },
-      },
-    },
-  });
-}
+// findByEmailWithHospital(email: string) {
+//   return this.prisma.hospitalUser.findUnique({
+//     where: { email } as any,  // ✅ bypass type check temporarily
+//     include: {
+//       hospital: {
+//         select: { id: true, code: true, name: true, status: true },
+//       },
+//     },
+//   });
+// }
 
+
+ findByEmailWithHospital(email: string) {
+    return this.prisma.hospitalUser.findFirst({
+      where: {
+        email,
+        status: 'ACTIVE',
+      },
+      include: {
+        hospital: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            status: true,
+          },
+        },
+      },
+    });
+  }
+  
   updatePassword(userId: string, passwordHash: string) {
     return this.prisma.hospitalUser.update({
       where: { id: userId },
