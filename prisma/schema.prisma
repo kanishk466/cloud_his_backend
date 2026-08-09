@@ -596,24 +596,14 @@ model DoctorLeaveBlock {
 // ============================================
 
 model AuditLog {
-  id       Int    @id @default(autoincrement())
+  id         Int      @id @default(autoincrement())
+  action     String
+  actorId    String
+  actorEmail String
+  targetType String
+  targetName String
+  detail     String?
+  createdAt  DateTime @default(now())
 
-  // ─── TENANT ISOLATION ────────────────────────
-  // String UUID for tenant-scoped audit queries
-  tenantId String?
-  // ─────────────────────────────────────────────
-
-  userId    String?
-  action    String
-  entity    String?
-  entityId  String?
-  metadata  Json?
-  ipAddress String?
-  userAgent String?
-  createdAt DateTime @default(now())
-
-  @@index([tenantId])
-  @@index([userId])
-  @@index([createdAt])
   @@map("audit_logs")
 }
