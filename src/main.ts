@@ -3,19 +3,21 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
-  
-  // ✅ Enable CORS
+
+  app.use(cookieParser());
+
   app.enableCors({
-    origin: ['http://localhost:8081'], // frontend URL (or use '*' for all origins)
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true, // allow cookies / authorization headers
+    origin: 'http://localhost:8081', // frontend URL (or use '*' for all origins)
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
-  // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -54,7 +56,7 @@ async function bootstrap() {
     customSiteTitle: 'My API Docs',
   });
 
-  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
+  await app.listen(process.env.PORT ?? 8000, '0.0.0.0');
 
   console.log(`Application is running on: ${await app.getUrl()}`);
   console.log(`Swagger docs available at: ${await app.getUrl()}/api/docs`);
