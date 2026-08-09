@@ -184,7 +184,6 @@ export class HospitalUserRepository {
       const user = await tx.hospitalUser.create({
         data: {
           tenantId: data.tenantId,
-          code: data.staffProfile.employeeId,
           firstName: data.userInfo.firstName,
           lastName: data.userInfo.lastName,
           email: data.userInfo.email,

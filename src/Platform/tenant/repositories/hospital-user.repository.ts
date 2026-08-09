@@ -30,7 +30,6 @@ export class HospitalUserRepository {
         tenantId: data.tenantId,
         email: data.email,
         username: data.username,
-        code: data.code,
         passwordHash: data.passwordHash,
         firstName: data.firstName,
         lastName: data.lastName ?? null,

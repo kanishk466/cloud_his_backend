@@ -68,7 +68,7 @@ export class HospitalAuthService {
 
     const tokens = await this.generateTokens({
       userId: user.id,
-      code: user.code,
+      code: user.hospital.code,
       email: user.email,
       userType: user.userType,
       tenantId: user.tenantId,

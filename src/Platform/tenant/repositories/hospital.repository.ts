@@ -9,7 +9,7 @@ export class HospitalRepository {
     return this.prisma.hospital.create({ data });
   }
 
-  findById(id: number) {
+  findById(id:number) {
     return this.prisma.hospital.findUnique({
       where: { id },
       include: { packages: { include: { package: true } } },
