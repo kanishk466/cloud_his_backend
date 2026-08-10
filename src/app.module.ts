@@ -11,6 +11,8 @@ import { PlatformUsersModule } from './Platform/platform-users/platform-users.mo
 import { DashboardModule } from './Platform/dashboard/dashboard.module';
 import { SearchModule } from './Platform/search/search.module';
 import { HospitalModule } from './hospital/hospital.module';
+import { MailModule } from './Platform/mail/mail.module';
+import { NotificationsModule } from './Platform/notifications/notifications.module';
 
 
 @Module({
@@ -31,6 +33,8 @@ import { HospitalModule } from './hospital/hospital.module';
     DashboardModule,
     SearchModule,
     HospitalModule,
+    MailModule,
+    NotificationsModule,
   ],
 })
 export class AppModule { }

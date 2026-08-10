@@ -5,14 +5,30 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import cookieParser from 'cookie-parser';
 
+async function runMigrations() {
+  const { execSync } = await import('child_process');
+  try {
+    execSync('npx prisma migrate deploy', { stdio: 'inherit' });
+    console.log('Migrations applied successfully');
+  } catch (err) {
+    console.error('Migration failed:', err);
+  }
+}
+
 async function bootstrap() {
+  await runMigrations();
+
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
 
   app.use(cookieParser());
 
   app.enableCors({
-    origin: 'http://localhost:8081', // frontend URL (or use '*' for all origins)
+    origin: [
+      'http://localhost:8080',
+      'http://localhost:8081',
+      'https://mediops-admin-ui.harshalvermaaaaa.workers.dev',
+    ], // frontend URL (or use '*' for all origins)
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -26,10 +42,8 @@ async function bootstrap() {
     }),
   );
 
-  // Global exception filter — consistent error envelope on every route
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  // Swagger configuration
   const config = new DocumentBuilder()
     .setTitle('My API')
     .setDescription('API description')
