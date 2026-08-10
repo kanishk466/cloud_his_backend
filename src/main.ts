@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import cookieParser from 'cookie-parser';
 
 async function runMigrations() {
   const { execSync } = await import('child_process');
@@ -20,14 +21,17 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
 
+  app.use(cookieParser());
+
   app.enableCors({
     origin: [
       'http://localhost:8080',
       'http://localhost:8081',
       'https://mediops-admin-ui.harshalvermaaaaa.workers.dev',
-    ],
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    ], // frontend URL (or use '*' for all origins)
     credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   app.useGlobalPipes(
@@ -66,7 +70,7 @@ async function bootstrap() {
     customSiteTitle: 'My API Docs',
   });
 
-  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
+  await app.listen(process.env.PORT ?? 8000, '0.0.0.0');
 
   console.log(`Application is running on: ${await app.getUrl()}`);
   console.log(`Swagger docs available at: ${await app.getUrl()}/api/docs`);
