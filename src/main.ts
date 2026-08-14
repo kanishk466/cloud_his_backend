@@ -27,6 +27,7 @@ async function bootstrap() {
     origin: [
       'http://localhost:8080',
       'http://localhost:8081',
+      'https://ojas1his.netlify.app',
       'https://mediops-admin-ui.harshalvermaaaaa.workers.dev',
     ], // frontend URL (or use '*' for all origins)
     credentials: true,

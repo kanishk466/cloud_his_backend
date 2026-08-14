@@ -302,18 +302,6 @@
 //   }
 // }
 
-
-
-
-
-
-
-
-
-
-
-
-
 import {
   BadRequestException,
   ConflictException,
@@ -449,7 +437,13 @@ export class HospitalUserService {
       permissions: dto.permissions,
     });
 
-    return { message: 'User created successfully', userId: user.id, employeeId };
+    return {
+      message: 'User created successfully',
+      userId: user.id,
+      email: user.email,
+      tempPassword: user.passwordHash,
+      employeeId,
+    };
   }
 
   // ─── List Users ─────────────────────────────────────────────────────────────
