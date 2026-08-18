@@ -43,6 +43,7 @@ enum HospitalUserStatus {
 enum HospitalUserType {
   SUPER_ADMIN
   REGULAR_USER
+  DOCTOR
 }
 
 enum LoginType {
@@ -397,6 +398,8 @@ model Hospital {
 
   // OPD Step 1
   patients Patient[]
+
+  patientUhidSequences PatientUhidSequence[]
 
   // OPD Step 2
   appointments Appointment[]
@@ -838,6 +841,25 @@ model Patient {
   @@index([tenantId, status])
   @@index([tenantId, deletedAt])
   @@map("patients")
+}
+
+//=============================================
+// OPD - Patient UHID Sequence
+//=============================================
+
+model PatientUhidSequence {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  year      Int
+  sequence  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, year])
+  @@index([tenantId])
+  @@map("patient_uhid_sequences")
 }
 
 // ============================================

@@ -95,7 +95,6 @@ export class CreatePatientDto {
 
   // ─── CONTACT ──────────────────────────────────────────────────
   @IsMobilePhone('en-IN')
-  @Transform(({ value }) => value?.replace(/\s/g, ''))
   mobile!: string;
 
   @IsOptional()
@@ -104,7 +103,7 @@ export class CreatePatientDto {
 
   @IsOptional()
   @IsEmail()
-  @Transform(({ value }) => value?.toLowerCase().trim())
+  @Transform(({ value }) => value?.toLowerCase()?.trim())
   email?: string;
 
   // ─── ADDRESS ──────────────────────────────────────────────────
