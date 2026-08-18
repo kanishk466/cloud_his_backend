@@ -31,7 +31,7 @@ export class PatientsController {
 
   // ─── POST /opd/patients ──────────────────────────────────────────
   // Register new patient
-  @Post()
+  @Post('/create')
   @HttpCode(HttpStatus.CREATED)
   async register(
     @Body() dto: CreatePatientDto,

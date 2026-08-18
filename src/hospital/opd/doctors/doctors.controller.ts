@@ -2,6 +2,7 @@ import {
   Controller, Post, Get, Patch, Delete,
   Body, Param, Query,
   UseGuards, HttpCode, HttpStatus, ParseUUIDPipe,
+  Req,
 } from '@nestjs/common';
 import { DoctorsService } from './doctors.service';
 import { CreateDoctorProfileDto } from './dto/create-doctor-profile.dto';
@@ -22,7 +23,7 @@ export class DoctorsController {
   // ═══════════════════════════════════════════════════════════════
 
   // POST /opd/doctors — Create doctor profile
-  @Post()
+  @Post('/create')
   @HttpCode(HttpStatus.CREATED)
   async createProfile(
     @Body() dto: CreateDoctorProfileDto,
@@ -32,7 +33,7 @@ export class DoctorsController {
   }
 
   // GET /opd/doctors — List all doctors
-  @Get()
+  @Get('/list')
   async findMany(
     @CurrentTenant() tenantId: string,
     @Query('search') search?: string,
@@ -75,13 +76,12 @@ export class DoctorsController {
 
   // PUT /opd/doctors/:id/availability — Set weekly schedule
   @Post(':id/availability')
-  @HttpCode(HttpStatus.OK)
+  //@HttpCode(HttpStatus.OK)
   async setAvailability(
-    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetAvailabilityDto,
-    @CurrentTenant() tenantId: string,
+    @Req() req: any, @Param('id') id: string
   ) {
-    return this.doctorsService.setAvailability(tenantId, id, dto);
+    return this.doctorsService.setAvailability(req.user.tenantId, id, dto);
   }
 
   // GET /opd/doctors/:id/availability — Get weekly schedule

@@ -54,7 +54,7 @@ export class DailyAvailabilityDto {
 export class SetAvailabilityDto {
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(7)
+  @ArrayMaxSize(7) 
   @ValidateNested({ each: true })
   @Type(() => DailyAvailabilityDto)
   schedule!: DailyAvailabilityDto[];

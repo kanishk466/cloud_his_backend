@@ -6,10 +6,7 @@ import {
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 import { Patient, Prisma } from '@prisma/client';
 import { SearchPatientDto } from './dto/search-patient.dto';
-import {
-  UHID_CONFIG,
-  PATIENT_ERRORS,
-} from './constants/patients.constants';
+import { UHID_CONFIG, PATIENT_ERRORS } from './constants/patients.constants';
 
 export interface CreatePatientData {
   tenantId: string;
@@ -59,43 +56,47 @@ export class PatientsRepository {
   // Two receptionists registering at same time = safe
   async generateUhid(tenantId: string): Promise<string> {
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        const year = UHID_CONFIG.YEARLY_RESET
-          ? new Date().getFullYear()
-          : '';
+      const year = new Date().getFullYear();
 
-        const prefix = year
-          ? `${UHID_CONFIG.PREFIX}-${year}-`
-          : `${UHID_CONFIG.PREFIX}-`;
+      const result = await this.prisma.$queryRaw<{ sequence: number }[]>`
+      INSERT INTO patient_uhid_sequences (
+        id,
+        tenant_id,
+        year,
+        sequence,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        gen_random_uuid(),
+        ${tenantId},
+        ${year},
+        1,
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (tenant_id, year)
+      DO UPDATE SET
+        sequence = patient_uhid_sequences.sequence + 1,
+        updated_at = NOW()
+      RETURNING sequence;
+    `;
 
-        // Lock the row for update to prevent race condition
-        const result = await tx.$queryRaw<{ uhid: string }[]>`
-          SELECT uhid 
-          FROM patients 
-          WHERE tenant_id = ${tenantId}
-            AND uhid LIKE ${`${prefix}%`}
-          ORDER BY uhid DESC
-          LIMIT 1
-          FOR UPDATE SKIP LOCKED
-        `;
+      const sequence = Number(result[0].sequence);
 
-        const lastUhid = result[0]?.uhid;
-        let sequence = 1;
+      const prefix = UHID_CONFIG.YEARLY_RESET
+        ? `${UHID_CONFIG.PREFIX}-${year}-`
+        : `${UHID_CONFIG.PREFIX}-`;
 
-        if (lastUhid) {
-          const parts = lastUhid.split('-');
-          const lastSeq = parseInt(parts[parts.length - 1], 10);
-          sequence = lastSeq + 1;
-        }
-
-        const paddedSeq = sequence
-          .toString()
-          .padStart(UHID_CONFIG.SEQUENCE_LENGTH, '0');
-
-        return `${prefix}${paddedSeq}`;
-      });
+      return `${prefix}${sequence
+        .toString()
+        .padStart(UHID_CONFIG.SEQUENCE_LENGTH, '0')}`;
     } catch (error) {
-      this.logger.error('UHID generation failed', error);
+      this.logger.error(
+        'UHID generation failed',
+        error instanceof Error ? error.stack : String(error),
+      );
+
       throw new InternalServerErrorException(
         PATIENT_ERRORS.UHID_GENERATION_FAILED,
       );
@@ -150,30 +151,21 @@ export class PatientsRepository {
   }
 
   // ─── FIND BY ID (with tenant check) ─────────────────────────────
-  async findById(
-    tenantId: string,
-    id: string,
-  ): Promise<Patient | null> {
+  async findById(tenantId: string, id: string): Promise<Patient | null> {
     return this.prisma.patient.findFirst({
       where: { id, tenantId }, // tenantId check is MANDATORY
     });
   }
 
   // ─── FIND BY UHID ────────────────────────────────────────────────
-  async findByUhid(
-    tenantId: string,
-    uhid: string,
-  ): Promise<Patient | null> {
+  async findByUhid(tenantId: string, uhid: string): Promise<Patient | null> {
     return this.prisma.patient.findFirst({
       where: { tenantId, uhid },
     });
   }
 
   // ─── SEARCH PATIENTS ─────────────────────────────────────────────
-  async search(
-    tenantId: string,
-    dto: SearchPatientDto,
-  ): Promise<SearchResult> {
+  async search(tenantId: string, dto: SearchPatientDto): Promise<SearchResult> {
     const {
       search,
       mobile,
