@@ -26,6 +26,7 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       'http://localhost:8080',
+       'http://localhost:3000',
       'http://localhost:8081',
       'https://ojas1his.netlify.app',
       'https://mediops-admin-ui.harshalvermaaaaa.workers.dev',
