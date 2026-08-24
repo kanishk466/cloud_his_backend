@@ -812,6 +812,11 @@ model Patient {
 
   allergies       String?
   chronicDiseases String?
+  companyName         String?
+  empId               String?
+  coverage            String?
+  consultingDoctor    String?
+  department          String?
 
   patientType  PatientType   @default(NEW)
   status       PatientStatus @default(ACTIVE)
