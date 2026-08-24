@@ -94,6 +94,7 @@ export class HospitalUserRepository {
       roleId?: number;
       status?: HospitalUserStatus;
       search?: string;
+      userType?: HospitalUserType;
     },
   ) {
     return this.prisma.hospitalUser.findMany({
@@ -117,6 +118,7 @@ export class HospitalUserRepository {
         ...(filters.roleId
           ? { roles: { some: { hospitalRoleId: filters.roleId } } }
           : {}),
+        ...(filters.userType ? { userType: filters.userType } : {}),
       },
       include: {
         staffProfile: {

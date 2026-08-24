@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsOptional, IsInt, IsString, IsEnum } from 'class-validator';
-import { HospitalUserStatus } from '@prisma/client';
+import { HospitalUserStatus, HospitalUserType } from '@prisma/client';
 
 export class ListUsersDto {
   @IsOptional()
@@ -20,4 +20,8 @@ export class ListUsersDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsString()
+  userType?: HospitalUserType;
 }

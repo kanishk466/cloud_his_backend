@@ -181,4 +181,35 @@ export class CreatePatientDto {
   @IsString()
   @MaxLength(500)
   chronicDiseases?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  companyName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  empId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  coverage?: string;
+
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  consultingDoctor?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  country?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  department?: string;
 }
