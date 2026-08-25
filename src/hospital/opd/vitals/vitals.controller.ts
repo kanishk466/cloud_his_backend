@@ -15,13 +15,12 @@ import { VitalsService } from './vitals.service';
 import { CreateVitalsDto } from './dto/create-vitals.dto';
 import { UpdateVitalsDto } from './dto/update-vitals.dto';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
-import {HospitalJwtStrategy } from '../../identity/strategies/hospital-jwt.strategy';
 import { CurrentTenant } from '../../core/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../core/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../core/decorators/current-user.decorator';
 
 @Controller('opd/vitals')
-@UseGuards(HospitalJwtAuthGuard, HospitalJwtStrategy)
+@UseGuards(HospitalJwtAuthGuard)
 export class VitalsController {
   constructor(private readonly vitalsService: VitalsService) {}
 

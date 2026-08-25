@@ -10,9 +10,11 @@ import { HospitalAuthUserRepository } from './repositories/hospital-auth-user.re
 import { HospitalLookupRepository } from './repositories/hospital-lookup.repository/hospital-lookup.repository';
 
 import { HospitalJwtStrategy } from './strategies/hospital-jwt.strategy';
+import { SharedModule } from '../../shared/shared.module';
 
 @Module({
   imports: [
+    SharedModule,
     JwtModule.register({}), // we use jwtService.signAsync with secrets from env
   ],
   controllers: [HospitalAuthController],

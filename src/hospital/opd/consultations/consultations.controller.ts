@@ -9,11 +9,10 @@ import { UpdateConsultationDto } from './dto/update-consultation.dto';
 import { AddPrescriptionDto } from './dto/add-prescription.dto';
 import { AddInvestigationDto } from './dto/add-investigation.dto';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
-import { HospitalJwtStrategy } from '../../identity/strategies/hospital-jwt.strategy';
 import { CurrentTenant } from '../../core/decorators/current-tenant.decorator';
 
 @Controller('opd/consultations')
-@UseGuards(HospitalJwtAuthGuard, HospitalJwtStrategy)
+@UseGuards(HospitalJwtAuthGuard)
 export class ConsultationsController {
   constructor(private readonly consultationsService: ConsultationsService) {}
 

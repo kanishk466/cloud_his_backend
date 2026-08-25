@@ -6,6 +6,9 @@ import {
   Req,
   Res,
   UnauthorizedException,
+  // === SECURITY ADDITION START ===
+  Headers,
+  // === SECURITY ADDITION END ===
 } from '@nestjs/common';
 import { HospitalAuthService } from '../services/hospital-auth.service';
 import { HospitalLoginDto } from '../dto/hospital-login.dto/hospital-login.dto';
@@ -25,6 +28,10 @@ export class HospitalAuthController {
   ) {
     const result = await this.authService.login(dto.email, dto.password);
 
+    // === SECURITY ADDITION START ===
+    if (!result.accessToken) return result;
+    // === SECURITY ADDITION END ===
+
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
       secure: false,
@@ -39,6 +46,13 @@ export class HospitalAuthController {
       user: result.user,
     };
   }
+
+  // === SECURITY ADDITION START ===
+  @Post('verify-otp')
+  verifyOtp(@Body() body: { otpToken: string; code: string }) {
+    return this.authService.verifyOtp(body.otpToken, body.code);
+  }
+  // === SECURITY ADDITION END ===
 
   @Post('refresh')
   async refresh(

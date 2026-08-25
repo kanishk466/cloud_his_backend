@@ -4,9 +4,17 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
-import { Prisma } from '@prisma/client';
-import { APPOINTMENT_NO_CONFIG } from './constants/appointments.constants';
+import { Prisma , Appointment } from '@prisma/client';
+
 import { format } from 'date-fns';
+import { TZDate } from '@date-fns/tz';
+
+export const APPOINTMENT_NO_CONFIG = {
+  PREFIX: 'APT',
+  SEQUENCE_LENGTH: 4,
+  DEFAULT_TIMEZONE: 'Asia/Kolkata',
+};
+
 
 export interface CreateAppointmentData {
   tenantId: string;
@@ -17,8 +25,8 @@ export interface CreateAppointmentData {
   appointmentDate: Date;
   slotStartTime?: string;
   slotEndTime?: string;
-  appointmentType: string;
-  visitType: string;
+  appointmentType: any;
+  visitType: any;
   priority: number;
   consultationFee: number;
   referredByDoctorName?: string;
@@ -92,52 +100,66 @@ export class AppointmentsRepository {
   // Format : APT-20250610-0001
   // Resets : Daily per tenant
   // Safe   : DB transaction prevents duplicates
-  async generateAppointmentNo(tenantId: string): Promise<string> {
+   async generateAppointmentNo(
+    tenantId: string,
+    txClient?: Prisma.TransactionClient,
+    timezone: string = APPOINTMENT_NO_CONFIG.DEFAULT_TIMEZONE,
+  ): Promise<string> {
+    const prisma = txClient || this.prisma;
+
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        const today = format(new Date(), 'yyyyMMdd');
-        const prefix = `${APPOINTMENT_NO_CONFIG.PREFIX}-${today}-`;
+      // 1. Calculate the daily date scope in the hospital's local timezone
+      const localTime = new TZDate(new Date(), timezone);
+      const dateScope = format(localTime, 'yyyyMMdd'); // e.g. "20260825"
+      const entityType = 'APPOINTMENT';
 
-        const result = await tx.$queryRaw<
-          { appointment_no: string }[]
-        >`
-          SELECT appointment_no
-          FROM appointments
-          WHERE tenant_id = ${tenantId}
-            AND appointment_no LIKE ${`${prefix}%`}
-          ORDER BY appointment_no DESC
-          LIMIT 1
-          FOR UPDATE SKIP LOCKED
-        `;
+      // 2. Atomic UPSERT and increment
+      const result = await prisma.$queryRaw<Array<{ next_val: number }>>`
+        INSERT INTO "tenant_sequences" (
+          "id", "tenant_id", "entity_type", "scope_key", "last_value", "updated_at"
+        )
+        VALUES (
+          gen_random_uuid(), ${tenantId}, ${entityType}, ${dateScope}, 1, NOW()
+        )
+        ON CONFLICT ("tenant_id", "entity_type", "scope_key")
+        DO UPDATE SET 
+          "last_value" = "tenant_sequences"."last_value" + 1,
+          "updated_at" = NOW()
+        RETURNING "last_value" AS next_val;
+      `;
 
-        const lastNo = result[0]?.appointment_no;
-        let sequence = 1;
+      const sequence = result[0]?.next_val;
+      if (!sequence) {
+        throw new Error('Database did not return sequence value');
+      }
 
-        if (lastNo) {
-          const parts = lastNo.split('-');
-          sequence =
-            parseInt(parts[parts.length - 1], 10) + 1;
-        }
+      const paddedSeq = sequence
+        .toString()
+        .padStart(APPOINTMENT_NO_CONFIG.SEQUENCE_LENGTH, '0');
 
-        const paddedSeq = sequence
-          .toString()
-          .padStart(APPOINTMENT_NO_CONFIG.SEQUENCE_LENGTH, '0');
-
-        return `${prefix}${paddedSeq}`;
-        // Output: APT-20250610-0001
-      });
+      return `${APPOINTMENT_NO_CONFIG.PREFIX}-${dateScope}-${paddedSeq}`;
+      // Output: APT-20260825-0001
     } catch (error) {
-      this.logger.error('Appointment number generation failed', error);
+      this.logger.error(
+        `Failed to generate appointment number for tenant ${tenantId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
       throw new InternalServerErrorException({
         code: 'OPD_APT_000',
-        message: 'Failed to generate appointment number',
+        message: 'Failed to generate appointment reference number',
       });
     }
   }
 
+
   // ─── CREATE APPOINTMENT ─────────────────────────────────────────
-  async create(data: CreateAppointmentData) {
-    return this.prisma.appointment.create({
+  async create(
+    data: CreateAppointmentData,
+    txClient?: Prisma.TransactionClient,
+  ): Promise<Appointment> {
+    const prisma = txClient || this.prisma;
+
+    return prisma.appointment.create({
       data: {
         tenantId: data.tenantId,
         appointmentNo: data.appointmentNo,
@@ -147,18 +169,14 @@ export class AppointmentsRepository {
         appointmentDate: data.appointmentDate,
         slotStartTime: data.slotStartTime,
         slotEndTime: data.slotEndTime,
-        appointmentType: data.appointmentType as any,
-        visitType: data.visitType as any,
-        priority: data.priority,
+        appointmentType: data.appointmentType ?? 'WALK_IN',
+        visitType: data.visitType ?? 'NEW_VISIT',
         consultationFee: data.consultationFee,
-        referredByDoctorName: data.referredByDoctorName,
-        referralNote: data.referralNote,
         reasonForVisit: data.reasonForVisit,
         notes: data.notes,
         bookedBy: data.bookedBy,
         status: 'BOOKED',
       },
-      include: appointmentWithRelations,
     });
   }
 

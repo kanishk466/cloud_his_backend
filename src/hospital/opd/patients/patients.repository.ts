@@ -7,6 +7,8 @@ import { PrismaService } from '../../../shared/prisma/prisma.service';
 import { Patient, Prisma } from '@prisma/client';
 import { SearchPatientDto } from './dto/search-patient.dto';
 import { UHID_CONFIG, PATIENT_ERRORS } from './constants/patients.constants';
+import { TZDate } from '@date-fns/tz';
+import { format } from 'date-fns';
 
 export interface CreatePatientData {
   tenantId: string;
@@ -51,61 +53,73 @@ export class PatientsRepository {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  // ─── GENERATE UHID ──────────────────────────────────────────────
-  // Uses DB transaction + SELECT to prevent race conditions
-  // Two receptionists registering at same time = safe
-  async generateUhid(tenantId: string): Promise<string> {
+  // ─── 1. ATOMIC UHID GENERATOR ────────────────────────────────────
+  /**
+   * Generates a unique, collision-proof UHID: UHID-YYYY-000001
+   * Guaranteed safe across concurrent registrations.
+   */
+  async generateUhid(
+    tenantId: string,
+    txClient?: Prisma.TransactionClient,
+    timezone: string = 'Asia/Kolkata',
+  ): Promise<string> {
+    const prisma = txClient || this.prisma;
+
     try {
-      const year = new Date().getFullYear();
+      // 1. Calculate the yearly scope key in the hospital's local timezone
+      const localTime = new TZDate(new Date(), timezone);
+      const currentYear = format(localTime, 'yyyy'); // e.g. "2026"
+      const entityType = 'UHID';
 
-      const result = await this.prisma.$queryRaw<{ sequence: number }[]>`
-      INSERT INTO patient_uhid_sequences (
-        id,
-        tenant_id,
-        year,
-        sequence,
-        created_at,
-        updated_at
-      )
-      VALUES (
-        gen_random_uuid(),
-        ${tenantId},
-        ${year},
-        1,
-        NOW(),
-        NOW()
-      )
-      ON CONFLICT (tenant_id, year)
-      DO UPDATE SET
-        sequence = patient_uhid_sequences.sequence + 1,
-        updated_at = NOW()
-      RETURNING sequence;
-    `;
+      // 2. Perform atomic UPSERT and increment
+      const result = await prisma.$queryRaw<Array<{ next_val: number }>>`
+        INSERT INTO "tenant_sequences" (
+          "id", "tenant_id", "entity_type", "scope_key", "last_value", "updated_at"
+        )
+        VALUES (
+          gen_random_uuid(), ${tenantId}, ${entityType}, ${currentYear}, 1, NOW()
+        )
+        ON CONFLICT ("tenant_id", "entity_type", "scope_key")
+        DO UPDATE SET
+          "last_value" = "tenant_sequences"."last_value" + 1,
+          "updated_at" = NOW()
+        RETURNING "last_value" AS next_val;
+      `;
 
-      const sequence = Number(result[0].sequence);
+      const sequence = result[0]?.next_val;
+      if (!sequence) {
+        throw new Error('Database did not return a valid sequence value');
+      }
+
+      const paddedSeq = sequence
+        .toString()
+        .padStart(UHID_CONFIG.SEQUENCE_LENGTH || 6, '0');
 
       const prefix = UHID_CONFIG.YEARLY_RESET
-        ? `${UHID_CONFIG.PREFIX}-${year}-`
-        : `${UHID_CONFIG.PREFIX}-`;
+        ? `${UHID_CONFIG.PREFIX || 'UHID'}-${currentYear}-`
+        : `${UHID_CONFIG.PREFIX || 'UHID'}-`;
 
-      return `${prefix}${sequence
-        .toString()
-        .padStart(UHID_CONFIG.SEQUENCE_LENGTH, '0')}`;
+      return `${prefix}${paddedSeq}`;
+      // Output: UHID-2026-000001
     } catch (error) {
       this.logger.error(
-        'UHID generation failed',
+        `UHID generation failed for tenant ${tenantId}`,
         error instanceof Error ? error.stack : String(error),
       );
-
       throw new InternalServerErrorException(
         PATIENT_ERRORS.UHID_GENERATION_FAILED,
       );
     }
   }
 
-  // ─── CREATE PATIENT ─────────────────────────────────────────────
-  async create(data: CreatePatientData): Promise<Patient> {
-    return this.prisma.patient.create({
+  // ─── 2. CREATE PATIENT ───────────────────────────────────────────
+  async create(
+    data: CreatePatientData,
+    txClient?: Prisma.TransactionClient,
+  ): Promise<Patient> {
+    const prisma = txClient || this.prisma;
+
+    return prisma.patient.create({
       data: {
         tenantId: data.tenantId,
         uhid: data.uhid,
@@ -140,31 +154,28 @@ export class PatientsRepository {
     });
   }
 
-  // ─── FIND BY MOBILE (for duplicate check) ───────────────────────
-  async findByMobile(
-    tenantId: string,
-    mobile: string,
-  ): Promise<Patient | null> {
+  // ─── 3. FIND BY MOBILE ───────────────────────────────────────────
+  async findByMobile(tenantId: string, mobile: string): Promise<Patient | null> {
     return this.prisma.patient.findFirst({
-      where: { tenantId, mobile },
+      where: { tenantId, mobile, deletedAt: null },
     });
   }
 
-  // ─── FIND BY ID (with tenant check) ─────────────────────────────
+  // ─── 4. FIND BY ID ───────────────────────────────────────────────
   async findById(tenantId: string, id: string): Promise<Patient | null> {
     return this.prisma.patient.findFirst({
-      where: { id, tenantId }, // tenantId check is MANDATORY
+      where: { tenantId, id, deletedAt: null },
     });
   }
 
-  // ─── FIND BY UHID ────────────────────────────────────────────────
+  // ─── 5. FIND BY UHID ─────────────────────────────────────────────
   async findByUhid(tenantId: string, uhid: string): Promise<Patient | null> {
     return this.prisma.patient.findFirst({
-      where: { tenantId, uhid },
+      where: { tenantId, uhid, deletedAt: null },
     });
   }
 
-  // ─── SEARCH PATIENTS ─────────────────────────────────────────────
+  // ─── 6. SEARCH PATIENTS ──────────────────────────────────────────
   async search(tenantId: string, dto: SearchPatientDto): Promise<SearchResult> {
     const {
       search,
@@ -176,12 +187,11 @@ export class PatientsRepository {
       limit = 20,
     } = dto;
 
-    // Build where clause
     const where: Prisma.PatientWhereInput = {
-      tenantId, // ALWAYS filter by tenant
+      tenantId,
+      deletedAt: null,
     };
 
-    // Exact matches take priority
     if (uhid) {
       where.uhid = uhid;
     } else if (mobile) {
@@ -189,31 +199,11 @@ export class PatientsRepository {
     } else if (aadhaarNumber) {
       where.aadhaarNumber = aadhaarNumber;
     } else if (search) {
-      // Free text search: name or uhid or mobile
       where.OR = [
-        {
-          firstName: {
-            contains: search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          lastName: {
-            contains: search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          uhid: {
-            contains: search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          mobile: {
-            contains: search,
-          },
-        },
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName: { contains: search, mode: 'insensitive' } },
+        { uhid: { contains: search, mode: 'insensitive' } },
+        { mobile: { contains: search } },
       ];
     }
 
@@ -223,7 +213,6 @@ export class PatientsRepository {
 
     const skip = (page - 1) * limit;
 
-    // Run count and data query in parallel
     const [patients, total] = await Promise.all([
       this.prisma.patient.findMany({
         where,
@@ -237,26 +226,35 @@ export class PatientsRepository {
     return { patients, total };
   }
 
-  // ─── UPDATE PATIENT ──────────────────────────────────────────────
+  // ─── 7. UPDATE PATIENT (TENANT ISOLATED) ─────────────────────────
   async update(
     tenantId: string,
     id: string,
     data: Partial<CreatePatientData>,
+    txClient?: Prisma.TransactionClient,
   ): Promise<Patient> {
-    // findFirst ensures tenant isolation before update
-    return this.prisma.patient.update({
-      where: { id },
+    const prisma = txClient || this.prisma;
+
+    const patient = await prisma.patient.findFirstOrThrow({
+      where: { tenantId, id },
+      select: { uhid: true },
+    });
+
+    return prisma.patient.update({
+      where: {
+        tenantId_uhid: { tenantId, uhid: patient.uhid },
+      },
       data: {
         ...data,
-        gender: data.gender as any,
-        bloodGroup: data.bloodGroup as any,
-        maritalStatus: data.maritalStatus as any,
-        guardianRelation: data.guardianRelation as any,
+        gender: data.gender ? (data.gender as any) : undefined,
+        bloodGroup: data.bloodGroup ? (data.bloodGroup as any) : undefined,
+        maritalStatus: data.maritalStatus ? (data.maritalStatus as any) : undefined,
+        guardianRelation: data.guardianRelation ? (data.guardianRelation as any) : undefined,
       },
     });
   }
 
-  // ─── GET VISIT HISTORY ───────────────────────────────────────────
+  // ─── 8. GET VISIT HISTORY ────────────────────────────────────────
   async getVisitHistory(
     tenantId: string,
     patientId: string,
@@ -304,7 +302,7 @@ export class PatientsRepository {
     return { appointments, total };
   }
 
-  // ─── CHECK AADHAAR DUPLICATE ────────────────────────────────────
+  // ─── 9. CHECK AADHAAR DUPLICATE ─────────────────────────────────
   async findByAadhaar(
     tenantId: string,
     aadhaarNumber: string,
@@ -314,6 +312,7 @@ export class PatientsRepository {
       where: {
         tenantId,
         aadhaarNumber,
+        deletedAt: null,
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
     });

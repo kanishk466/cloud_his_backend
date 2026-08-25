@@ -10,9 +10,11 @@ import { UserRepository } from './repositories/user.repository';
 
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RefreshTokenRepository } from './repositories/refresh-token.repository';
+import { SharedModule } from '../../shared/shared.module';
 
 @Module({
   imports: [
+    SharedModule,
     JwtModule.register({
       secret:
         process.env.JWT_ACCESS_SECRET,

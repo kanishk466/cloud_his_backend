@@ -6,6 +6,9 @@ import {
   HttpStatus,
   Get,
   Request,
+  // === SECURITY ADDITION START ===
+  Headers,
+  // === SECURITY ADDITION END ===
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -69,6 +72,13 @@ export class AuthController {
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto.email, dto.password);
   }
+
+  // === SECURITY ADDITION START ===
+  @Post('verify-otp')
+  verifyOtp(@Body() body: { otpToken: string; code: string }) {
+    return this.authService.verifyOtp(body.otpToken, body.code);
+  }
+  // === SECURITY ADDITION END ===
 
 
 
