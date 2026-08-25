@@ -14,11 +14,10 @@ import {
 import { QueueService } from './queue.service';
 import { CreateTokenDto } from './dto/create-token.dto';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
-import { HospitalJwtStrategy } from '../../identity/strategies/hospital-jwt.strategy';
 import { CurrentTenant } from '../../core/decorators/current-tenant.decorator';
 
 @Controller('opd/queue')
-@UseGuards(HospitalJwtAuthGuard, HospitalJwtStrategy)
+@UseGuards(HospitalJwtAuthGuard)
 export class QueueController {
   constructor(private readonly queueService: QueueService) {}
 

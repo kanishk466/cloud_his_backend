@@ -10,47 +10,44 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
+  DefaultValuePipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { PatientsService } from './patients.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { SearchPatientDto } from './dto/search-patient.dto';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
-import { HospitalJwtStrategy } from '../../identity/strategies/hospital-jwt.strategy';
+import { CurrentTenant } from '../../core/decorators/current-tenant.decorator';
 import {
-  CurrentTenant,
-} from '../../core/decorators/current-tenant.decorator';
-import * as currentUserDecorator from '../../core/decorators/current-user.decorator';
+  CurrentUser,
+  CurrentUserPayload,
+} from '../../core/decorators/current-user.decorator';
 
 @Controller('opd/patients')
-@UseGuards(HospitalJwtAuthGuard, HospitalJwtStrategy)
+@UseGuards(HospitalJwtAuthGuard)
 export class PatientsController {
-  constructor(
-    private readonly patientsService: PatientsService,
-  ) {}
+  constructor(private readonly patientsService: PatientsService) {}
 
   // ─── POST /opd/patients ──────────────────────────────────────────
   // Register new patient
-  @Post('/create')
+  @Post()
   @HttpCode(HttpStatus.CREATED)
   async register(
-    @Body() dto: CreatePatientDto,
     @CurrentTenant() tenantId: string,
-    @currentUserDecorator.CurrentUser() user: currentUserDecorator.CurrentUserPayload,
+    @Body() dto: CreatePatientDto,
+    @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.patientsService.register(
-      tenantId,
-      user.userId,
-      dto,
-    );
+    // ✅ Fixed: Order now matches (tenantId, dto, userId)
+    return this.patientsService.register(tenantId, dto, user.userId);
   }
 
   // ─── GET /opd/patients ───────────────────────────────────────────
   // Search / list patients
   @Get()
   async search(
-    @Query() dto: SearchPatientDto,
     @CurrentTenant() tenantId: string,
+    @Query() dto: SearchPatientDto,
   ) {
     return this.patientsService.search(tenantId, dto);
   }
@@ -59,8 +56,8 @@ export class PatientsController {
   // Get patient by UHID (used at reception)
   @Get('uhid/:uhid')
   async findByUhid(
-    @Param('uhid') uhid: string,
     @CurrentTenant() tenantId: string,
+    @Param('uhid') uhid: string,
   ) {
     return this.patientsService.findByUhid(tenantId, uhid);
   }
@@ -69,8 +66,8 @@ export class PatientsController {
   // Get patient by ID
   @Get(':id')
   async findOne(
-    @Param('id', ParseUUIDPipe) id: string,
     @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.patientsService.findById(tenantId, id);
   }
@@ -79,9 +76,9 @@ export class PatientsController {
   // Update patient info
   @Patch(':id')
   async update(
+    @CurrentTenant() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdatePatientDto,
-    @CurrentTenant() tenantId: string,
   ) {
     return this.patientsService.update(tenantId, id, dto);
   }
@@ -90,16 +87,11 @@ export class PatientsController {
   // Get patient visit history
   @Get(':id/history')
   async getHistory(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 10,
     @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
   ) {
-    return this.patientsService.getVisitHistory(
-      tenantId,
-      id,
-      page,
-      limit,
-    );
+    return this.patientsService.getVisitHistory(tenantId, id, page, limit);
   }
 }

@@ -6,6 +6,9 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PatientsRepository } from './patients.repository';
+import { PrismaService } from '../../../shared/prisma/prisma.service';
+import { Patient, Prisma } from '@prisma/client';
+
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { SearchPatientDto } from './dto/search-patient.dto';
@@ -20,109 +23,69 @@ export class PatientsService {
   private readonly logger = new Logger(PatientsService.name);
 
   constructor(
+    private readonly prisma: PrismaService,
     private readonly patientsRepository: PatientsRepository,
+    
   ) {}
 
   // ─── REGISTER NEW PATIENT ────────────────────────────────────────
-  async register(
-    tenantId: string,
-    registeredBy: string,
-    dto: CreatePatientDto,
-  ): Promise<PatientResponseDto> {
-    // Rule 1: Check mobile duplicate within tenant
-    const existingByMobile =
-      await this.patientsRepository.findByMobile(
-        tenantId,
-        dto.mobile,
-      );
 
-    if (existingByMobile) {
+
+
+    async register(
+    tenantId: string,
+    dto: CreatePatientDto,
+    registeredByUserId: string,
+  ) {
+    // 1. Pre-validation: Check for mobile duplication
+    const existingPatient = await this.patientsRepository.findByMobile(
+      tenantId,
+      dto.mobile,
+    );
+    if (existingPatient) {
       throw new ConflictException({
-        ...PATIENT_ERRORS.ALREADY_EXISTS,
-        details: {
-          existingUhid: existingByMobile.uhid,
-          message: `Patient already registered. UHID: ${existingByMobile.uhid}`,
-        },
+        code: 'PATIENT_MOBILE_EXISTS',
+        message: 'A patient with this mobile number already exists',
       });
     }
 
-    // Rule 2: Check Aadhaar duplicate (if provided)
+    // 2. Check Aadhaar duplication (if provided)
     if (dto.aadhaarNumber) {
-      const existingByAadhaar =
-        await this.patientsRepository.findByAadhaar(
-          tenantId,
-          dto.aadhaarNumber,
-        );
-
-      if (existingByAadhaar) {
+      const existingAadhaar = await this.patientsRepository.findByAadhaar(
+        tenantId,
+        dto.aadhaarNumber,
+      );
+      if (existingAadhaar) {
         throw new ConflictException({
-          code: 'OPD_001',
-          message: 'Patient already registered with this Aadhaar number',
-          details: {
-            existingUhid: existingByAadhaar.uhid,
-          },
+          code: 'PATIENT_AADHAAR_EXISTS',
+          message: 'A patient with this Aadhaar number already exists',
         });
       }
     }
 
-    // Rule 3: Auto-calculate age if DOB provided
-    let age = dto.age;
-    let ageUnit = dto.ageUnit ?? 'years';
+    // 3. Atomic UHID Generation + Record Creation
+    return await this.prisma.$transaction(async (tx) => {
+      // Generate guaranteed sequential UHID inside transaction
+      const uhid = await this.patientsRepository.generateUhid(tenantId, tx);
 
-    if (dto.dateOfBirth && !dto.age) {
-      const calculated = this.calculateAge(new Date(dto.dateOfBirth));
-      age = calculated.age;
-      ageUnit = calculated.unit;
-    }
+      // Create Patient
+      const patient = await this.patientsRepository.create(
+        {
+          ...dto,
+          tenantId,
+          uhid,
+          dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+          insuranceValidTill: dto.insuranceValidTill
+            ? new Date(dto.insuranceValidTill)
+            : undefined,
+          registeredBy: registeredByUserId,
+        },
+        tx,
+      );
 
-    // Rule 4: Generate UHID (atomic, race-condition safe)
-    const uhid =
-      await this.patientsRepository.generateUhid(tenantId);
-
-    this.logger.log(
-      `Registering patient with UHID: ${uhid} for tenant: ${tenantId}`,
-    );
-
-    // Rule 5: Create patient
-    const patient = await this.patientsRepository.create({
-      tenantId,
-      uhid,
-      firstName: dto.firstName,
-      lastName: dto.lastName,
-      gender: dto.gender,
-      dateOfBirth: dto.dateOfBirth
-        ? new Date(dto.dateOfBirth)
-        : undefined,
-      age,
-      ageUnit,
-      bloodGroup: dto.bloodGroup,
-      maritalStatus: dto.maritalStatus,
-      mobile: dto.mobile,
-      alternateMobile: dto.alternateMobile,
-      email: dto.email,
-      address: dto.address,
-      city: dto.city,
-      district: dto.district,
-      state: dto.state,
-      pincode: dto.pincode,
-      aadhaarNumber: dto.aadhaarNumber,
-      abhaId: dto.abhaId,
-      guardianName: dto.guardianName,
-      guardianRelation: dto.guardianRelation,
-      guardianMobile: dto.guardianMobile,
-      insuranceProvider: dto.insuranceProvider,
-      insurancePolicyNo: dto.insurancePolicyNo,
-      insuranceValidTill: dto.insuranceValidTill
-        ? new Date(dto.insuranceValidTill)
-        : undefined,
-      allergies: dto.allergies,
-      chronicDiseases: dto.chronicDiseases,
-      registeredBy,
+      return patient;
     });
-
-    return PatientResponseDto.fromEntity(patient);
   }
-
   // ─── SEARCH PATIENTS ─────────────────────────────────────────────
   async search(
     tenantId: string,

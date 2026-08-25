@@ -8,6 +8,10 @@ import { JwtService } from '@nestjs/jwt';
 
 import { UserRepository } from '../repositories/user.repository';
 import { RefreshTokenRepository } from '../repositories/refresh-token.repository';
+// === SECURITY ADDITION START ===
+import { AuthSecurityService } from '../../../common/auth/auth-security.service';
+import { SECURITY_FLAGS, securityFlag } from '../../../common/auth/security-config';
+// === SECURITY ADDITION END ===
 
 @Injectable()
 export class AuthService {
@@ -15,6 +19,9 @@ export class AuthService {
     private readonly refreshTokenRepository: RefreshTokenRepository,
     private readonly userRepository: UserRepository,
     private readonly jwtService: JwtService,
+    // === SECURITY ADDITION START ===
+    private readonly authSecurityService: AuthSecurityService,
+    // === SECURITY ADDITION END ===
   ) {}
 
   async login(email: string, password: string) {
@@ -24,13 +31,42 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // === SECURITY ADDITION START ===
+    if (securityFlag(SECURITY_FLAGS.loginAttemptLimit)) {
+      await this.authSecurityService.assertLoginAllowed(user.id, false);
+    }
+    // === SECURITY ADDITION END ===
+
     const isValid = await bcrypt.compare(password, user.passwordHash);
 
     if (!isValid) {
+      // === SECURITY ADDITION START ===
+      if (securityFlag(SECURITY_FLAGS.loginAttemptLimit)) {
+        const result = await this.authSecurityService.recordFailedLogin(user.id, false);
+        if (result.lockedUntil) {
+          throw new UnauthorizedException('Account locked. Locked for 30 min');
+        }
+        throw new UnauthorizedException(`Invalid credentials. ${5 - result.attempts} attempts left`);
+      }
+      // === SECURITY ADDITION END ===
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const tokens = await this.generateTokens(user);
+    // === SECURITY ADDITION START ===
+    if (securityFlag(SECURITY_FLAGS.loginAttemptLimit)) {
+      await this.authSecurityService.resetLoginAttempts(user.id, false);
+    }
+    if (securityFlag(SECURITY_FLAGS.twoFactor) && ['SUPER_ADMIN', 'PLATFORM_ADMIN'].includes(user.role)) {
+      const otp = await this.authSecurityService.createOtp({ platformUserId: user.id, email: user.email });
+      const otpToken = await this.jwtService.signAsync({ otpId: otp.id, purpose: 'login-otp' }, { secret: process.env.JWT_ACCESS_SECRET!, expiresIn: '10m' });
+      return { message: 'OTP sent', otpToken, userId: user.id };
+    }
+    const session = securityFlag(SECURITY_FLAGS.sessionManagement)
+      ? await this.authSecurityService.createSession({ platformUserId: user.id })
+      : undefined;
+    // === SECURITY ADDITION END ===
+
+    const tokens = await this.generateTokens(user, session?.id);
 
     await this.refreshTokenRepository.create({
       userId: user.id,
@@ -41,7 +77,22 @@ export class AuthService {
     return tokens;
   }
 
-  private async generateTokens(user: any) {
+  // === SECURITY ADDITION START ===
+  async verifyOtp(otpToken: string, code: string) {
+    const payload = await this.jwtService.verifyAsync(otpToken, { secret: process.env.JWT_ACCESS_SECRET! });
+    const otp = await this.authSecurityService.verifyOtp(payload.otpId, code);
+    const user = await this.userRepository.findById(otp.platformUserId!);
+    if (!user) throw new UnauthorizedException('Invalid OTP user');
+    const session = securityFlag(SECURITY_FLAGS.sessionManagement)
+      ? await this.authSecurityService.createSession({ platformUserId: user.id })
+      : undefined;
+    const tokens = await this.generateTokens(user, session?.id);
+    await this.refreshTokenRepository.create({ userId: user.id, token: tokens.refreshToken, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) });
+    return { ...tokens, user };
+  }
+  // === SECURITY ADDITION END ===
+
+  private async generateTokens(user: any, sessionId?: string) {
     // 1. "user.roles" ab Prisma schema mein nahi hai, 
     // Isliye hum yahan hardcoded role denge kyunki platform admin ek hi hai.
     const roles = ['PLATFORM_ADMIN']; 
@@ -54,6 +105,9 @@ export class AuthService {
       // hardcoded `roles` claim so existing consumers keep working.
       role: user.role ?? 'PLATFORM_ADMIN',
       userType: 'platform', // Ye future mein Hospital User se distinguish karne mein kaam aayega
+      // === SECURITY ADDITION START ===
+      ...(sessionId ? { sessionId } : {}),
+      // === SECURITY ADDITION END ===
     };
 
     const accessToken = await this.jwtService.signAsync(payload, {

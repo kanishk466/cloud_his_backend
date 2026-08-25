@@ -18,13 +18,12 @@ import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { CancelAppointmentDto } from './dto/cancel-appointment.dto';
 import { GetSlotsDto } from './dto/get-slots.dto';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
-import { HospitalJwtStrategy } from '../../identity/strategies/hospital-jwt.strategy';
 import { CurrentTenant } from '../../core/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../core/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../core/decorators/current-user.decorator';
 
 @Controller('opd/appointments')
-@UseGuards(HospitalJwtAuthGuard, HospitalJwtStrategy)
+@UseGuards(HospitalJwtAuthGuard)
 export class AppointmentsController {
   constructor(
     private readonly appointmentsService: AppointmentsService,

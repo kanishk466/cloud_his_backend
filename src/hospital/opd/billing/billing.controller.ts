@@ -8,13 +8,12 @@ import { CollectPaymentDto } from './dto/collect-payment.dto';
 import { ApplyDiscountDto } from './dto/apply-discount.dto';
 import { CancelBillDto } from './dto/cancel-bill.dto';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
-import { HospitalJwtStrategy } from '../../identity/strategies/hospital-jwt.strategy';
 import { CurrentTenant } from '../../core/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../core/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../core/decorators/current-user.decorator';
 
 @Controller('opd/billing')
-@UseGuards(HospitalJwtAuthGuard, HospitalJwtStrategy)
+@UseGuards(HospitalJwtAuthGuard)
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}
 
