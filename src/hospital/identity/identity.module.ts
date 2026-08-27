@@ -11,10 +11,12 @@ import { HospitalLookupRepository } from './repositories/hospital-lookup.reposit
 
 import { HospitalJwtStrategy } from './strategies/hospital-jwt.strategy';
 import { SharedModule } from '../../shared/shared.module';
+import { AuditModule } from '../../Platform/audit/audit.module';
 
 @Module({
   imports: [
     SharedModule,
+    AuditModule,
     JwtModule.register({}), // we use jwtService.signAsync with secrets from env
   ],
   controllers: [HospitalAuthController],

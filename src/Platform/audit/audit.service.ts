@@ -9,6 +9,9 @@ export interface AuditLogInput {
   actorEmail: string;
   targetType: string;
   targetName: string;
+  tenantId?: string;
+  targetId?: string;
+  metadata?: Record<string, unknown>;
   detail?: string;
 }
 
@@ -24,7 +27,21 @@ export class AuditService {
    */
   async log(dto: AuditLogInput) {
     try {
-      return await this.prisma.auditLog.create({ data: dto });
+      return await this.prisma.auditLog.create({
+        data: {
+          tenantId: dto.tenantId,
+          userId: dto.actorId,
+          action: dto.action,
+          entity: dto.targetType,
+          entityId: dto.targetId,
+          metadata: {
+            actorEmail: dto.actorEmail,
+            targetName: dto.targetName,
+            ...dto.metadata,
+            ...(dto.detail ? { detail: dto.detail } : {}),
+          },
+        },
+      });
     } catch (error) {
       this.logger.error(
         `Failed to write audit log ${dto.action} on ${dto.targetType} "${dto.targetName}"`,
@@ -40,7 +57,9 @@ export class AuditService {
 
     const where: Prisma.AuditLogWhereInput = {
       ...(query.action ? { action: query.action } : {}),
-      ...(query.actorEmail ? { actorEmail: query.actorEmail } : {}),
+      ...(query.actorEmail
+        ? { metadata: { path: ['actorEmail'], equals: query.actorEmail } }
+        : {}),
     };
 
     const [data, total] = await Promise.all([

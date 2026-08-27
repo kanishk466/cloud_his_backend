@@ -12,6 +12,7 @@ import { RefreshTokenRepository } from '../repositories/refresh-token.repository
 import { AuthSecurityService } from '../../../common/auth/auth-security.service';
 import { SECURITY_FLAGS, securityFlag } from '../../../common/auth/security-config';
 // === SECURITY ADDITION END ===
+import { AuditService } from '../../audit/audit.service';
 
 @Injectable()
 export class AuthService {
@@ -22,6 +23,7 @@ export class AuthService {
     // === SECURITY ADDITION START ===
     private readonly authSecurityService: AuthSecurityService,
     // === SECURITY ADDITION END ===
+    private readonly auditService: AuditService,
   ) {}
 
   async login(email: string, password: string) {
@@ -68,6 +70,15 @@ export class AuthService {
 
     const tokens = await this.generateTokens(user, session?.id);
 
+    await this.auditService.log({
+      action: 'AUTH_LOGIN_SUCCEEDED',
+      actorId: user.id,
+      actorEmail: user.email,
+      targetType: 'PlatformUser',
+      targetName: user.email,
+      detail: 'Platform login succeeded',
+    });
+
     await this.refreshTokenRepository.create({
       userId: user.id,
       token: tokens.refreshToken,
@@ -87,6 +98,14 @@ export class AuthService {
       ? await this.authSecurityService.createSession({ platformUserId: user.id })
       : undefined;
     const tokens = await this.generateTokens(user, session?.id);
+    await this.auditService.log({
+      action: 'AUTH_OTP_VERIFIED',
+      actorId: user.id,
+      actorEmail: user.email,
+      targetType: 'PlatformUser',
+      targetName: user.email,
+      detail: 'Platform login OTP verified',
+    });
     await this.refreshTokenRepository.create({ userId: user.id, token: tokens.refreshToken, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) });
     return { ...tokens, user };
   }

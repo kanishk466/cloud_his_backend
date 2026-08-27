@@ -11,10 +11,12 @@ import { UserRepository } from './repositories/user.repository';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RefreshTokenRepository } from './repositories/refresh-token.repository';
 import { SharedModule } from '../../shared/shared.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
     SharedModule,
+    AuditModule,
     JwtModule.register({
       secret:
         process.env.JWT_ACCESS_SECRET,
