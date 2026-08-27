@@ -33,10 +33,26 @@ export class HospitalRoleController {
     return this.service.findAll(req.user.tenantId);
   }
 
-  @Get('entitlements/modules')
-  getEntitledModules(@Req() req: any) {
-    return this.service.getEntitledModules(req.user.tenantId);
-  }
+  // @Get('entitlements/modules')
+  // getEntitledModules(@Req() req: any) {
+  //   return this.service.getEntitledModules(req.user.tenantId);
+  // }
+
+  // src/hospital/core/entitlements/entitlements.controller.ts
+
+@Get('entitlements/modules')
+async getEntitledModules(
+  @Req() req: any // Contains your JWT payload
+) {
+  const userId = req.user.sub || req.user.userId;
+  const userType = req.user.userType;
+
+  return this.service.getEntitledModulesForUser(
+    req.user.tenantId,
+    userId,
+    userType,
+  );
+}
 
   @Get(':id')
   getById(@Req() req: any, @Param('id', ParseIntPipe) id: number) {

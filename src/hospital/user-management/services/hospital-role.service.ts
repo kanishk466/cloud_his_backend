@@ -174,7 +174,20 @@ export class HospitalRoleService {
 
   // ─── Get Entitlements (UI dropdown) ─────────────────────────────────────────
 
-  getEntitledModules(tenantId: string) {
-    return this.entitlementRepo.getEntitledModulesWithFeatures(tenantId);
+  // getEntitledModules(tenantId: string) {
+  //   return this.entitlementRepo.getEntitledModulesWithFeatures(tenantId);
+  // }
+
+
+    getEntitledModulesForUser(
+    tenantId: string,
+    userId: string,
+    userType?: string,
+  ) {
+    return this.entitlementRepo.getModulesWithFeaturesForUser(
+      tenantId,
+      userId,
+      userType,
+    );
   }
 }
