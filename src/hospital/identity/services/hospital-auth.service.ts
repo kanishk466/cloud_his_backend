@@ -12,6 +12,7 @@ import { HospitalAuthUserRepository } from '../repositories/hospital-auth-user.r
 import { AuthSecurityService, assertPasswordPolicy } from '../../../common/auth/auth-security.service';
 import { SECURITY_FLAGS, securityFlag } from '../../../common/auth/security-config';
 // === SECURITY ADDITION END ===
+import { AuditService } from '../../../Platform/audit/audit.service';
 
 @Injectable()
 export class HospitalAuthService {
@@ -22,6 +23,7 @@ export class HospitalAuthService {
     // === SECURITY ADDITION START ===
     private readonly authSecurityService: AuthSecurityService,
     // === SECURITY ADDITION END ===
+    private readonly auditService: AuditService,
   ) {}
 
   // async login(hospitalCode: string, email: string, password: string) {
@@ -105,6 +107,16 @@ export class HospitalAuthService {
       tenantId: user.tenantId,
     }, session?.id);
 
+    await this.auditService.log({
+      action: 'AUTH_LOGIN_SUCCEEDED',
+      actorId: user.id,
+      actorEmail: user.email,
+      tenantId: user.tenantId,
+      targetType: 'HospitalUser',
+      targetName: user.email,
+      detail: 'Hospital login succeeded',
+    });
+
     const refreshHash = await bcrypt.hash(tokens.refreshToken, 10);
     await this.hospitalAuthUserRepository.setRefreshTokenHash(
       user.id,
@@ -139,6 +151,15 @@ export class HospitalAuthService {
     if (!user) throw new UnauthorizedException('Invalid OTP user');
     const session = securityFlag(SECURITY_FLAGS.sessionManagement) ? await this.authSecurityService.createSession({ hospitalUserId: user.id }) : undefined;
     const tokens = await this.generateTokens({ userId: user.id, code: '', email: user.email, userType: user.userType, tenantId: user.tenantId }, session?.id);
+    await this.auditService.log({
+      action: 'AUTH_OTP_VERIFIED',
+      actorId: user.id,
+      actorEmail: user.email,
+      tenantId: user.tenantId,
+      targetType: 'HospitalUser',
+      targetName: user.email,
+      detail: 'Hospital login OTP verified',
+    });
     const refreshHash = await bcrypt.hash(tokens.refreshToken, 10);
     await this.hospitalAuthUserRepository.setRefreshTokenHash(user.id, refreshHash);
     return { ...tokens, user: { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, userType: user.userType } };
