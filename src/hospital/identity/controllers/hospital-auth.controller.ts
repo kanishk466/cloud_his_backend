@@ -40,10 +40,12 @@ export class HospitalAuthController {
     });
 
    return res.json({
-      accessToken: result.accessToken,
-      forcePasswordChange: result.forcePasswordChange,
-      hospital: result.hospital,
-      user: result.user,
+        data: {
+          accessToken: result.accessToken,
+          forcePasswordChange: result.forcePasswordChange,
+          hospital: result.hospital,
+          user: result.user,
+        },
       });
   }
 
