@@ -39,12 +39,12 @@ export class HospitalAuthController {
       path: '/',
     });
 
-    return {
+   return res.json({
       accessToken: result.accessToken,
       forcePasswordChange: result.forcePasswordChange,
       hospital: result.hospital,
       user: result.user,
-    };
+      });
   }
 
   // === SECURITY ADDITION START ===
