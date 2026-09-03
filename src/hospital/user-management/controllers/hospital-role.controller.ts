@@ -47,11 +47,12 @@ async getEntitledModules(
   const userId = req.user.sub || req.user.userId;
   const userType = req.user.userType;
 
-  return this.service.getEntitledModulesForUser(
+ return {
+  data: await this.service.getEntitledModulesForUser(
     req.user.tenantId,
     userId,
     userType,
-  );
+  ),
 }
 
   @Get(':id')
