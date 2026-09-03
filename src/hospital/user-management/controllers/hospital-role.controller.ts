@@ -9,6 +9,7 @@ import {
   Put,
   Req,
   UseGuards,
+  UseInterceptors ,
 } from '@nestjs/common';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
 import { HospitalRoleService } from '../services/hospital-role.service';
@@ -17,11 +18,13 @@ import { UpdateHospitalRoleDto } from '../dto/update-hospital-role.dto';
 import { SetRolePermissionsDto } from '../dto/set-role-permissions.dto';
 import { ToggleActiveDto } from '../../masters/dto/toggle-active.dto';
 import { HospitalJwtStrategy } from 'src/hospital/identity/strategies/hospital-jwt.strategy';
+import {TransformInterceptor} from 'src/common/filters/transform.interceptor';
 
 @Controller('hospital/roles')
 @UseGuards(HospitalJwtAuthGuard)
+@UseInterceptors(TransformInterceptor)
 export class HospitalRoleController {
-  constructor(private readonly service: HospitalRoleService) {}
+  constructor(private readonly service: HospitalRoleService) {} 
 
   @Post()
   create(@Req() req: any, @Body() dto: CreateHospitalRoleDto) {
@@ -47,12 +50,11 @@ async getEntitledModules(
   const userId = req.user.sub || req.user.userId;
   const userType = req.user.userType;
 
- return {
-  data: await this.service.getEntitledModulesForUser(
+  return this.service.getEntitledModulesForUser(
     req.user.tenantId,
     userId,
     userType,
-  ),
+  );
 }
 
   @Get(':id')
