@@ -18,26 +18,87 @@ export class HospitalRoleService {
     private readonly entitlementRepo: EntitlementRepository,
   ) {}
 
-  // ─── Create ─────────────────────────────────────────────────────────────────
+
+
+
+    // ─── Create Role (From Master OR Custom) ───────────────────────────────────
+  //
+  // Scenario A: roleNameId provided → Use existing master role
+  // Scenario B: roleName provided   → Create new master role + hospital role
 
   async create(tenantId: string, dto: CreateHospitalRoleDto) {
-    // Check duplicate: same roleName already used in this hospital
-    const existing = await this.roleRepo.findByHospitalAndRoleName(
-      tenantId,
-      dto.roleNameId,
-    );
-
-    if (existing) {
-      throw new ConflictException(
-        'A role with this name already exists for your hospital',
+    // Validation: At least one must be provided
+    if (!dto.roleNameId && !dto.roleName) {
+      throw new BadRequestException(
+        'Either roleNameId (existing master role) or roleName (custom role) must be provided',
       );
     }
 
-    return this.roleRepo.create({
-      tenantId: tenantId,
-      roleNameId: dto.roleNameId,
-      description: dto.description,
-    });
+    // Validation: Don't provide both
+    if (dto.roleNameId && dto.roleName) {
+      throw new BadRequestException(
+        'Provide either roleNameId OR roleName, not both',
+      );
+    }
+
+    try {
+      if (dto.roleNameId) {
+        // ─── SCENARIO A: Activate existing master role in hospital ──────
+        return await this.roleRepo.createFromExistingMaster(tenantId, {
+          roleNameId: dto.roleNameId,
+          description: dto.description,
+          cloneFromRoleId: dto.cloneFromRoleId,
+        });
+      } else {
+        // ─── SCENARIO B: Create custom role (new master + hospital) ─────
+        const roleCode =
+          dto.roleCode ??
+          dto.roleName!
+            .trim()
+            .toUpperCase()
+            .replace(/\s+/g, '_')
+            .replace(/[^A-Z0-9_]/g, '');
+
+        return await this.roleRepo.createWithCustomMasterRoleName(tenantId, {
+          roleName: dto.roleName!.trim(),
+          roleCode,
+          description: dto.description,
+          cloneFromRoleId: dto.cloneFromRoleId,
+        });
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        if (err.message === 'ROLE_ALREADY_EXISTS_IN_HOSPITAL') {
+          throw new ConflictException(
+            'This role is already active in your hospital',
+          );
+        }
+        if (err.message === 'MASTER_ROLE_NOT_FOUND') {
+          throw new NotFoundException(
+            `Master role with ID ${dto.roleNameId} not found`,
+          );
+        }
+        if (err.message === 'CLONE_ROLE_NOT_FOUND') {
+          throw new NotFoundException(
+            `Clone source role (ID: ${dto.cloneFromRoleId}) not found in your hospital`,
+          );
+        }
+      }
+      throw err;
+    }
+  }
+
+
+
+
+  // ─── NEW: Master Catalog (All master roles with hospital activation flag) ──
+  //
+  // Returns ALL roles from master table.
+  // Each role has `isActivatedInHospital: true/false` flag.
+  // Frontend uses this for dropdown — shows which are available to activate.
+
+  async getMasterCatalog(tenantId: string) {
+    return this.roleRepo.getMasterCatalog(tenantId);
   }
 
   // ─── List ───────────────────────────────────────────────────────────────────
