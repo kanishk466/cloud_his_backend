@@ -199,9 +199,4 @@ export class CreateHospitalUserDto {
   @IsArray()
   @IsInt({ each: true })
   departmentIds?: number[];
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ModuleFeaturePairDto)
-  permissions!: ModuleFeaturePairDto[];
 }

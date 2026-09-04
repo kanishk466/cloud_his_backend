@@ -399,7 +399,6 @@ model Hospital {
   departments          Department[]
   shifts               ShiftMaster[]
   roleNamesCreated     RoleName[]
-  permissionCopyLogs   PermissionCopyLog[]
   doctorProfiles       DoctorProfile[]
   doctorAvailabilities DoctorAvailability[]
   doctorLeaveBlocks    DoctorLeaveBlock[]
@@ -588,8 +587,7 @@ model HospitalUser {
   managedStaff  StaffProfile[]                @relation("ReportingManager")
   doctorProfile DoctorProfile?
 
-  performedCopyLogs PermissionCopyLog[] @relation("PermissionCopyPerformedBy")
-  sourceCopyLogs    PermissionCopyLog[] @relation("PermissionCopySource")
+  
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -684,25 +682,7 @@ model UserModuleFeaturePermission {
   @@map("user_module_feature_permissions")
 }
 
-model PermissionCopyLog {
-  id       Int    @id @default(autoincrement())
-  tenantId String
 
-  performedByUserId String
-  sourceUserId      String
-
-  targetUserIds       String[]
-  targetDepartmentIds Int[]
-
-  hospital        Hospital     @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
-  performedByUser HospitalUser @relation("PermissionCopyPerformedBy", fields: [performedByUserId], references: [id], onDelete: Restrict)
-  sourceUser      HospitalUser @relation("PermissionCopySource", fields: [sourceUserId], references: [id], onDelete: Restrict)
-
-  createdAt DateTime @default(now())
-
-  @@index([tenantId])
-  @@map("permission_copy_logs")
-}
 
 // ============================================
 // DOCTOR SCHEDULING

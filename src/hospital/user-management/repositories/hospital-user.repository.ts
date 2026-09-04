@@ -11,10 +11,6 @@ export class HospitalUserRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   // ─── Employee ID Generation ─────────────────────────────────────────────────
-  //
-  // NOTE: This has a known race condition under concurrent requests.
-  // Two simultaneous creates can get the same ID.
-  // Fix later with DB sequence or SELECT FOR UPDATE inside transaction.
 
   async generateEmployeeId(tenantId: string): Promise<string> {
     const last = await this.prisma.staffProfile.findFirst({
@@ -29,15 +25,11 @@ export class HospitalUserRepository {
   }
 
   // ─── Find By Email (tenant-scoped) ──────────────────────────────────────────
-  //
-  // FIXED: Was checking globally, now scoped to hospitalId.
-  // Email is unique per hospital, not globally unique.
-  // Composite unique constraint: (hospitalId, email)
 
   findByEmailWithHospital(tenantId: string, email: string) {
     return this.prisma.hospitalUser.findUnique({
       where: {
-        tenantId_email: { tenantId, email }, // ← tenant scope enforced
+        tenantId_email: { tenantId, email },
       },
       include: {
         hospital: {
@@ -57,15 +49,13 @@ export class HospitalUserRepository {
 
   // ─── Find By Id ─────────────────────────────────────────────────────────────
   //
-  // hospitalId is included in WHERE clause.
-  // If user does not belong to this hospital, Prisma returns null.
+  // ❌ REMOVED: permissions include
+  // Ab user pe direct permissions nahi hain, to include ki zarurat nahi.
+  // Permissions role ke through aati hain (getEffectivePermissions use karo).
 
   findById(id: string, tenantId: string) {
     return this.prisma.hospitalUser.findUnique({
-      where: {
-        id,
-        tenantId, // ← tenant scope enforced at query level
-      },
+      where: { id, tenantId },
       include: {
         staffProfile: true,
         roles: {
@@ -74,18 +64,11 @@ export class HospitalUserRepository {
         departments: {
           include: { department: true },
         },
-        permissions: {
-          include: {
-            moduleFeature: {
-              include: { module: true, feature: true },
-            },
-          },
-        },
       },
     });
   }
 
-  // ─── Find All (list with filters) ───────────────────────────────────────────
+  // ─── Find All ───────────────────────────────────────────────────────────────
 
   findAll(
     tenantId: string,
@@ -103,9 +86,7 @@ export class HospitalUserRepository {
         ...(filters.search
           ? {
               OR: [
-                {
-                  firstName: { contains: filters.search, mode: 'insensitive' },
-                },
+                { firstName: { contains: filters.search, mode: 'insensitive' } },
                 { lastName: { contains: filters.search, mode: 'insensitive' } },
                 { email: { contains: filters.search, mode: 'insensitive' } },
               ],
@@ -133,7 +114,84 @@ export class HospitalUserRepository {
     });
   }
 
-  // ─── Create Full (6-step transaction) ───────────────────────────────────────
+  // ─── NEW: Effective Permissions (Role-based Resolution) ─────────────────────
+  //
+  // Queries all ACTIVE roles assigned to this user, collects their permissions,
+  // and returns the deduplicated UNION.
+  // This is the single source of truth for "what can this user do?"
+
+  async getEffectivePermissions(userId: string, tenantId: string) {
+    const assignments = await this.prisma.userRoleAssignment.findMany({
+      where: {
+        userId,
+        hospitalRole: {
+          tenantId,
+          isActive: true,
+        },
+      },
+      include: {
+        hospitalRole: {
+          include: {
+            roleName: { select: { id: true, name: true, code: true } },
+            permissions: {
+              include: {
+                moduleFeature: {
+                  include: {
+                    module: { select: { id: true, code: true, name: true } },
+                    feature: { select: { id: true, code: true, name: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Deduplicate across roles (same permission from 2 roles = 1 entry)
+    const uniqueMap = new Map<
+      string,
+      {
+        moduleId: number;
+        featureId: number;
+        moduleCode: string;
+        moduleName: string;
+        featureCode: string;
+        featureName: string;
+        inheritedFromRoles: string[];
+      }
+    >();
+
+    for (const assignment of assignments) {
+      const roleName = assignment.hospitalRole.roleName.name;
+
+      for (const perm of assignment.hospitalRole.permissions) {
+        const key = `${perm.moduleId}:${perm.featureId}`;
+
+        if (!uniqueMap.has(key)) {
+          uniqueMap.set(key, {
+            moduleId: perm.moduleId,
+            featureId: perm.featureId,
+            moduleCode: perm.moduleFeature.module.code,
+            moduleName: perm.moduleFeature.module.name,
+            featureCode: perm.moduleFeature.feature.code,
+            featureName: perm.moduleFeature.feature.name,
+            inheritedFromRoles: [roleName],
+          });
+        } else {
+          // Same permission from another role — track it
+          uniqueMap.get(key)!.inheritedFromRoles.push(roleName);
+        }
+      }
+    }
+
+    return Array.from(uniqueMap.values());
+  }
+
+  // ─── Create Full (5-step transaction) ───────────────────────────────────────
+  //
+  // ❌ REMOVED: Step 6 (UserModuleFeaturePermission.createMany)
+  // Permissions ab role ke through aati hain, user pe direct nahi.
 
   async createFull(data: {
     tenantId: string;
@@ -178,9 +236,9 @@ export class HospitalUserRepository {
     primaryRoleId: number;
     additionalRoleIds: number[];
     departmentIds: number[];
-    permissions: { moduleId: number; featureId: number }[];
   }) {
     return this.prisma.$transaction(async (tx) => {
+      // Step 1: Create user
       const user = await tx.hospitalUser.create({
         data: {
           tenantId: data.tenantId,
@@ -203,6 +261,7 @@ export class HospitalUserRepository {
         },
       });
 
+      // Step 2: Staff profile
       await tx.staffProfile.create({
         data: {
           userId: user.id,
@@ -229,6 +288,7 @@ export class HospitalUserRepository {
         },
       });
 
+      // Step 3: Primary role
       await tx.userRoleAssignment.create({
         data: {
           userId: user.id,
@@ -237,6 +297,7 @@ export class HospitalUserRepository {
         },
       });
 
+      // Step 4: Additional roles
       if (data.additionalRoleIds.length > 0) {
         await tx.userRoleAssignment.createMany({
           data: data.additionalRoleIds.map((roleId) => ({
@@ -248,6 +309,7 @@ export class HospitalUserRepository {
         });
       }
 
+      // Step 5: Departments
       if (data.departmentIds.length > 0) {
         await tx.userDepartmentMapping.createMany({
           data: data.departmentIds.map((deptId) => ({
@@ -258,28 +320,14 @@ export class HospitalUserRepository {
         });
       }
 
-      if (data.permissions.length > 0) {
-        await tx.userModuleFeaturePermission.createMany({
-          data: data.permissions.map((p) => ({
-            userId: user.id,
-            moduleId: p.moduleId,
-            featureId: p.featureId,
-          })),
-          skipDuplicates: true,
-        });
-      }
+      // ❌ REMOVED: Step 6 — UserModuleFeaturePermission.createMany
+      // Permissions ab ROLE ke through aayengi.
 
       return user;
     });
   }
 
   // ─── Update Profile ─────────────────────────────────────────────────────────
-  //
-  // Tenant scope on HospitalUser update.
-  // StaffProfile is scoped implicitly — its userId must match the userId
-  // that was just verified in the first update.
-  // If HospitalUser update throws P2025, the transaction rolls back and
-  // StaffProfile update never executes.
 
   async updateProfile(
     id: string,
@@ -313,12 +361,8 @@ export class HospitalUserRepository {
     }>,
   ) {
     return this.prisma.$transaction(async (tx) => {
-      // Step 1 — update HospitalUser (tenant-scoped)
       const user = await tx.hospitalUser.update({
-        where: {
-          id,
-          tenantId, // ← tenant scope enforced at query level
-        },
+        where: { id, tenantId },
         data: {
           ...(userInfo.firstName && { firstName: userInfo.firstName }),
           ...(userInfo.lastName !== undefined && {
@@ -335,10 +379,6 @@ export class HospitalUserRepository {
         },
       });
 
-      // Step 2 — update StaffProfile (implicitly scoped via userId)
-      // staffProfile.userId is FK to hospitalUser.id
-      // Since user.id was just verified as belonging to hospitalId,
-      // this update is safe from cross-tenant writes
       await tx.staffProfile.update({
         where: { userId: id },
         data: profileInfo,
@@ -348,56 +388,15 @@ export class HospitalUserRepository {
     });
   }
 
-  // ─── Set Permissions (replace all) ──────────────────────────────────────────
-  //
-  // Ownership verified inside transaction.
-  // If user does not belong to this hospital, throws before any write.
-
-  async setPermissions(
-    userId: string,
-    tenantId: string,
-    permissions: { moduleId: number; featureId: number }[],
-  ) {
-    return this.prisma.$transaction(async (tx) => {
-      // Step 1 — ownership check (atomic with writes)
-      const user = await tx.hospitalUser.findUnique({
-        where: {
-          id: userId,
-          tenantId: tenantId, // ← tenant scope enforced at query level
-        },
-        select: { id: true },
-      });
-
-      if (!user) {
-        throw new Error('USER_NOT_FOUND'); // service maps to NotFoundException
-      }
-
-      // Step 2 — delete existing permissions
-      await tx.userModuleFeaturePermission.deleteMany({
-        where: { userId },
-      });
-
-      // Step 3 — insert new permissions
-      if (permissions.length > 0) {
-        await tx.userModuleFeaturePermission.createMany({
-          data: permissions.map((p) => ({
-            userId,
-            moduleId: p.moduleId,
-            featureId: p.featureId,
-          })),
-        });
-      }
-    });
-  }
+  // ❌ REMOVED: setPermissions()
+  // User-level direct permissions ab nahi hain.
+  // Use HospitalRoleRepository.setPermissions() instead.
 
   // ─── Update Status ──────────────────────────────────────────────────────────
 
   updateStatus(id: string, tenantId: string, status: HospitalUserStatus) {
     return this.prisma.hospitalUser.update({
-      where: {
-        id,
-        tenantId: tenantId, // ← tenant scope enforced at query level
-      },
+      where: { id, tenantId },
       data: { status },
     });
   }
@@ -406,10 +405,7 @@ export class HospitalUserRepository {
 
   resetPassword(id: string, tenantId: string, passwordHash: string) {
     return this.prisma.hospitalUser.update({
-      where: {
-        id,
-        tenantId: tenantId, // ← tenant scope enforced at query level
-      },
+      where: { id, tenantId },
       data: {
         passwordHash,
         isTemporaryPassword: true,
@@ -419,14 +415,11 @@ export class HospitalUserRepository {
   }
 
   // ─── Count Active SUPER_ADMINs ──────────────────────────────────────────────
-  //
-  // NEW: Dedicated count method instead of loading all users into memory.
-  // Used to prevent deactivating the last active admin.
 
   countActiveSuperAdmins(tenantId: string): Promise<number> {
     return this.prisma.hospitalUser.count({
       where: {
-        tenantId: tenantId,
+        tenantId,
         userType: HospitalUserType.SUPER_ADMIN,
         status: HospitalUserStatus.ACTIVE,
       },

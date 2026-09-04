@@ -14,7 +14,6 @@ import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/ho
 import { HospitalUserService } from '../services/hospital-user.service';
 import { CreateHospitalUserDto } from '../dto/create-hospital-user.dto';
 import { UpdateHospitalUserProfileDto } from '../dto/update-hospital-user-profile.dto';
-import { SetUserPermissionsDto } from '../dto/set-user-permissions.dto';
 import { ListUsersDto } from '../dto/list-users.dto';
 
 @Controller('hospital/users')
@@ -46,14 +45,12 @@ export class HospitalUserController {
     return this.service.updateProfile(req.user.tenantId, id, dto);
   }
 
-  @Put(':id/permissions')
-  setPermissions(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Body() dto: SetUserPermissionsDto,
-  ) {
-    return this.service.setPermissions(req.user.tenantId, id, dto);
+  
+  @Get(':id/effective-permissions')
+  getEffectivePermissions(@Req() req: any, @Param('id') id: string) {
+    return this.service.getEffectivePermissions(req.user.tenantId, id);
   }
+
 
   @Post(':id/deactivate')
   deactivate(@Req() req: any, @Param('id') id: string) {
