@@ -9,7 +9,7 @@ import {
   Put,
   Req,
   UseGuards,
-  UseInterceptors ,
+  UseInterceptors,
 } from '@nestjs/common';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
 import { HospitalRoleService } from '../services/hospital-role.service';
@@ -17,14 +17,13 @@ import { CreateHospitalRoleDto } from '../dto/create-hospital-role.dto';
 import { UpdateHospitalRoleDto } from '../dto/update-hospital-role.dto';
 import { SetRolePermissionsDto } from '../dto/set-role-permissions.dto';
 import { ToggleActiveDto } from '../../masters/dto/toggle-active.dto';
-import { HospitalJwtStrategy } from 'src/hospital/identity/strategies/hospital-jwt.strategy';
-import {TransformInterceptor} from 'src/common/filters/transform.interceptor';
+import { TransformInterceptor } from 'src/common/filters/transform.interceptor';
 
 @Controller('hospital/roles')
 @UseGuards(HospitalJwtAuthGuard)
 @UseInterceptors(TransformInterceptor)
 export class HospitalRoleController {
-  constructor(private readonly service: HospitalRoleService) {} 
+  constructor(private readonly service: HospitalRoleService) {}
 
   @Post()
   create(@Req() req: any, @Body() dto: CreateHospitalRoleDto) {
@@ -36,26 +35,20 @@ export class HospitalRoleController {
     return this.service.findAll(req.user.tenantId);
   }
 
-  // @Get('entitlements/modules')
-  // getEntitledModules(@Req() req: any) {
-  //   return this.service.getEntitledModules(req.user.tenantId);
-  // }
+  // ─── NEW: Master Catalog ──────────────────────────────────────────────
+  // Returns all master roles with isActivatedInHospital flag
+  @Get('master-catalog')
+  getMasterCatalog(@Req() req: any) {
+    return this.service.getMasterCatalog(req.user.tenantId);
+  }
 
-  // src/hospital/core/entitlements/entitlements.controller.ts
-
-@Get('entitlements/modules')
-async getEntitledModules(
-  @Req() req: any // Contains your JWT payload
-) {
-  const userId = req.user.sub || req.user.userId;
-  const userType = req.user.userType;
-
-  return this.service.getEntitledModulesForUser(
-    req.user.tenantId,
-    userId,
-    userType,
-  );
-}
+  @Get('entitlements/modules')
+  async getEntitledModules(@Req() req: any) {
+    const userId = req.user.sub || req.user.userId;
+    return this.service.getEntitledModulesForUser(
+      req.user.tenantId, userId, req.user.userType,
+    );
+  }
 
   @Get(':id')
   getById(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
@@ -93,4 +86,6 @@ async getEntitledModules(
   getPermissions(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
     return this.service.getPermissions(req.user.tenantId, id);
   }
+
+ 
 }
