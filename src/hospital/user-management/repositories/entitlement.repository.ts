@@ -3,130 +3,85 @@ import { PrismaService } from '../../../shared/prisma/prisma.service';
 
 @Injectable()
 export class EntitlementRepository {
-  
   constructor(private readonly prisma: PrismaService) {}
 
-  // Returns all moduleIds available to this hospital via active package
+  // ─── Get Entitled Module IDs ────────────────────────────────────────────────
+
   async getEntitledModuleIds(tenantId: string): Promise<number[]> {
-    const assignedPackages =
-      await this.prisma.assignedPackage.findMany({
-        where: {
-          tenantId,
-          status: 'ACTIVE',
-        },
-        include: {
-          package: {
-            include: {
-              modules: {
-                select: { moduleId: true },
-              },
-            },
+    const assignedPackages = await this.prisma.assignedPackage.findMany({
+      where: { tenantId, status: 'ACTIVE' },
+      include: {
+        package: {
+          include: {
+            modules: { select: { moduleId: true } },
           },
         },
-      });
+      },
+    });
 
     const moduleIds = new Set<number>();
-
     for (const ap of assignedPackages) {
       for (const pm of ap.package.modules) {
         moduleIds.add(pm.moduleId);
       }
     }
-
     return Array.from(moduleIds);
   }
 
-  // Returns all entitled modules with their features
+  // ─── Get Entitled Modules With Features ─────────────────────────────────────
+
   async getEntitledModulesWithFeatures(tenantId: string) {
     const moduleIds = await this.getEntitledModuleIds(tenantId);
-
     if (moduleIds.length === 0) return [];
 
     return this.prisma.module.findMany({
-      where: {
-        id: { in: moduleIds },
-        isActive: true,
-      },
+      where: { id: { in: moduleIds }, isActive: true },
       include: {
-        features: {
-          include: {
-            feature: true,
-          },
-        },
+        features: { include: { feature: true } },
       },
       orderBy: { sortOrder: 'asc' },
     });
   }
 
-  // Check if a specific moduleId is entitled for this hospital
-  async isModuleEntitled(
-    tenantId: string,
-    moduleId: number,
-  ): Promise<boolean> {
+  // ─── Check Single Module ────────────────────────────────────────────────────
+
+  async isModuleEntitled(tenantId: string, moduleId: number): Promise<boolean> {
     const moduleIds = await this.getEntitledModuleIds(tenantId);
     return moduleIds.includes(moduleId);
   }
 
+  // ─── Get Licensed Module IDs (alias) ────────────────────────────────────────
 
-
-
-  
-  // ─── 1. FETCH LICENSED MODULE IDS IN HOSPITAL'S ACTIVE PACKAGE ─────
   async getLicensedModuleIds(tenantId: string): Promise<number[]> {
-    const assignedPackages = await this.prisma.assignedPackage.findMany({
-      where: {
-        tenantId,
-        status: 'ACTIVE',
-      },
-      include: {
-        package: {
-          include: {
-            modules: {
-              select: { moduleId: true },
-            },
-          },
-        },
-      },
-    });
-
-    const moduleIds = new Set<number>();
-    for (const ap of assignedPackages) {
-      for (const pm of ap.package.modules) {
-        moduleIds.add(pm.moduleId);
-      }
-    }
-    return Array.from(moduleIds);
+    return this.getEntitledModuleIds(tenantId);
   }
 
-  // ─── 2. GET MODULES & FEATURES FOR USER (ROLE & PRIVILEGE AWARE) ──
+  // ─── Get Modules & Features For User (ROLE-BASED ONLY) ─────────────────────
+  //
+  // ✅ CHANGED: Removed direct user permissions (userAuthData.permissions).
+  // Now ONLY resolves permissions through assigned roles.
+  // SUPER_ADMIN still gets full access to all licensed modules.
+
   async getModulesWithFeaturesForUser(
     tenantId: string,
     userId: string,
     userType?: string,
   ) {
     try {
-      // Step A: Get all modules licensed under hospital's active subscription
+      // Step A: Licensed modules for this hospital
       const licensedModuleIds = await this.getLicensedModuleIds(tenantId);
       if (licensedModuleIds.length === 0) return [];
 
-      // Step B: Fetch base licensed modules from DB
+      // Step B: Fetch full module/feature tree
       const availableModules = await this.prisma.module.findMany({
-        where: {
-          id: { in: licensedModuleIds },
-          isActive: true,
-        },
+        where: { id: { in: licensedModuleIds }, isActive: true },
         include: {
-          features: {
-            include: {
-              feature: true,
-            },
-          },
+          features: { include: { feature: true } },
         },
         orderBy: { sortOrder: 'asc' },
       });
 
-      // ─── SUPER ADMIN CASE ──────────────────────────────────────────
-      // If user is SUPER_ADMIN, grant full access to all licensed features
+      // ─── SUPER ADMIN: Full access ──────────────────────────────────────────
       if (userType === 'SUPER_ADMIN') {
         return availableModules.map((mod) => ({
           id: mod.id,
@@ -145,13 +100,9 @@ export class EntitlementRepository {
         }));
       }
 
-      // ─── REGULAR USER & DOCTOR CASE ───────────────────────────────
-      // Query specific role assignments and direct custom permissions
+      // ─── REGULAR USER / DOCTOR: Role-based only ────────────────────────────
       const userAuthData = await this.prisma.hospitalUser.findFirst({
-        where: {
-          tenantId,
-          id: userId,
-        },
+        where: { tenantId, id: userId },
         select: {
           roles: {
             where: {
@@ -170,46 +121,35 @@ export class EntitlementRepository {
               },
             },
           },
-          permissions: {
-            select: {
-              moduleId: true,
-              featureId: true,
-            },
-          },
+          // ❌ REMOVED: permissions (direct user-level)
+          // Ab sirf roles ke through permissions aayengi
         },
       });
 
       if (!userAuthData) return [];
 
-      // Build a set of authorized feature IDs per module
+      // Build authorized features map from ROLES ONLY
       const authorizedFeaturesByModule = new Map<number, Set<number>>();
 
-      const registerPermission = (moduleId: number, featureId: number) => {
-        if (licensedModuleIds.includes(moduleId)) {
-          if (!authorizedFeaturesByModule.has(moduleId)) {
-            authorizedFeaturesByModule.set(moduleId, new Set<number>());
-          }
-          authorizedFeaturesByModule.get(moduleId).add(featureId);
-        }
-      };
-
-      // Add features from assigned roles
       for (const assignment of userAuthData.roles) {
         for (const perm of assignment.hospitalRole.permissions) {
-          registerPermission(perm.moduleId, perm.featureId);
+          if (licensedModuleIds.includes(perm.moduleId)) {
+            if (!authorizedFeaturesByModule.has(perm.moduleId)) {
+              authorizedFeaturesByModule.set(perm.moduleId, new Set<number>());
+            }
+            authorizedFeaturesByModule.get(perm.moduleId)!.add(perm.featureId);
+          }
         }
       }
 
-      // Add direct feature overrides
-      for (const perm of userAuthData.permissions) {
-        registerPermission(perm.moduleId, perm.featureId);
-      }
+      // ❌ REMOVED: Direct user permissions loop
+      // for (const perm of userAuthData.permissions) { ... }
 
-      // Filter and return only the permitted modules and features
+      // Filter and return
       return availableModules
         .filter((mod) => authorizedFeaturesByModule.has(mod.id))
         .map((mod) => {
-          const allowedFeatureIds = authorizedFeaturesByModule.get(mod.id);
+          const allowedFeatureIds = authorizedFeaturesByModule.get(mod.id)!;
           const filteredFeatures = mod.features
             .filter((f) => allowedFeatureIds.has(f.featureId))
             .map((f) => ({
