@@ -26,6 +26,11 @@ export class HospitalAuthUserRepository {
         roles: {
           include: { hospitalRole: { include: { roleName: true } } },
         },
+        doctorProfile:{
+          select:{
+            id:true
+          }
+        }
       },
     });
   }
