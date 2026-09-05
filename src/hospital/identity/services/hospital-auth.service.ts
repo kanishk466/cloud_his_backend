@@ -13,6 +13,7 @@ import { AuthSecurityService, assertPasswordPolicy } from '../../../common/auth/
 import { SECURITY_FLAGS, securityFlag } from '../../../common/auth/security-config';
 // === SECURITY ADDITION END ===
 import { AuditService } from '../../../Platform/audit/audit.service';
+import { DoctorListResponseDto } from 'src/hospital/opd/doctors/dto/doctor-response.dto';
 
 @Injectable()
 export class HospitalAuthService {
@@ -138,6 +139,7 @@ export class HospitalAuthService {
         lastName: user.lastName,
         email: user.email,
         userType: user.userType, // SUPER_ADMIN | REGULAR_USER — used by frontend for basic RBAC bypass/full menu
+        doctorProfileId: user.doctorProfile?.id ?? null, // used by frontend to determine if user is a doctor
       },
     };
   }
