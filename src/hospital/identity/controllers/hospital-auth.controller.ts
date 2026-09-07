@@ -1,117 +1,213 @@
 import {
   Body,
   Controller,
+  HttpCode,
+  HttpStatus,
   Post,
-  UseGuards,
-  Req,
   Res,
   UnauthorizedException,
-  // === SECURITY ADDITION START ===
-  Headers,
-  // === SECURITY ADDITION END ===
+  UseGuards,
+  Req
 } from '@nestjs/common';
+import type { Response , Request } from 'express';
+
 import { HospitalAuthService } from '../services/hospital-auth.service';
 import { HospitalLoginDto } from '../dto/hospital-login.dto/hospital-login.dto';
-import { HospitalRefreshDto } from '../dto/hospital-refresh.dto/hospital-refresh.dto';
-import { HospitalJwtAuthGuard } from '../guards/hospital-jwt-auth/hospital-jwt-auth.guard';
 import { HospitalChangePasswordDto } from '../dto/hospital-change-password.dto/hospital-change-password.dto';
-import type { Request, Response } from 'express';
+import { VerifyOtpDto } from '../dto/verify-otp.dto';
+import { ForgotPasswordDto } from '../dto/forgot-password.dto';
+import { ResetPasswordDto } from '../dto/reset-password.dto';
+import { HospitalJwtAuthGuard } from '../guards/hospital-jwt-auth/hospital-jwt-auth.guard';
+import { CurrentUser } from '../../core/decorators/current-user.decorator';
+import { Cookies } from '../../core/decorators/cookies.decorator';
+import {
+  REFRESH_COOKIE_NAME,
+  getRefreshCookieOptions,
+} from '../../constants/cookie.config';
+
+
+
+interface RequestWithCookies extends Request {
+  cookies: Record<string, string | undefined>;
+}
 
 @Controller('hospital/auth')
 export class HospitalAuthController {
-  constructor(private readonly authService: HospitalAuthService) { }
+  constructor(private readonly authService: HospitalAuthService) {}
+
+  /* ======================== LOGIN ======================== */
 
   @Post('login')
+  @HttpCode(HttpStatus.OK)
   async login(
     @Body() dto: HospitalLoginDto,
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.login(dto.email, dto.password);
 
-    // === SECURITY ADDITION START ===
-    if (!result.accessToken) return result;
-    // === SECURITY ADDITION END ===
+    // 2FA required — no tokens yet, frontend shows OTP screen
+    if (!('accessToken' in result)) {
+      return result;
+    }
 
-
-    res.cookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie(
+      REFRESH_COOKIE_NAME,
+      result.refreshToken,
+      getRefreshCookieOptions(),
+    );
 
     return {
       data: {
         accessToken: result.accessToken,
-        expiresAt: result.expiresAt, // ISO date — frontend refreshes accessToken before this
+        expiresAt: result.expiresAt,
         forcePasswordChange: result.forcePasswordChange,
         hospital: result.hospital,
         user: result.user,
-      }
-
+      },
     };
-
   }
 
-  // === SECURITY ADDITION START ===
+  /* ====================== VERIFY OTP ===================== */
+
   @Post('verify-otp')
-  verifyOtp(@Body() body: { otpToken: string; code: string }) {
-    return this.authService.verifyOtp(body.otpToken, body.code);
-  }
-  // === SECURITY ADDITION END ===
-
-  @Post('refresh')
-  async refresh(
-    @Req() req: Request,
+  @HttpCode(HttpStatus.OK)
+  async verifyOtp(
+    @Body() dto: VerifyOtpDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const refreshToken = req.cookies?.refreshToken;
+    const result = await this.authService.verifyOtp(dto.otpToken, dto.code);
 
-    if (!refreshToken) {
-      throw new UnauthorizedException('Refresh token missing');
-    }
-
-    const tokens = await this.authService.refresh(refreshToken);
-
-    // Refresh-token rotation
-    res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    // Now set the cookie — 2FA passed
+    res.cookie(
+      REFRESH_COOKIE_NAME,
+      result.refreshToken,
+      getRefreshCookieOptions(),
+    );
 
     return {
-      accessToken: tokens.accessToken,
-      expiresAt: tokens.expiresAt, // ISO date — frontend schedules next refresh from this
+      data: {
+        accessToken: result.accessToken,
+        expiresAt: result.expiresAt,
+        forcePasswordChange: result.forcePasswordChange,
+        hospital: result.hospital,
+        user: result.user,
+      },
     };
   }
 
+  /* ======================= REFRESH ======================= */
+
+  // @Post('refresh')
+  // @HttpCode(HttpStatus.OK)
+  // async refresh(
+  //   @Cookies(REFRESH_COOKIE_NAME) refreshToken: string | undefined,
+  //   @Res({ passthrough: true }) res: Response,
+  // ) {
+  //   if (!refreshToken) {
+  //     throw new UnauthorizedException('Refresh token missing');
+  //   }
+
+  //   const tokens = await this.authService.refresh(refreshToken);
+
+  //   // Rotation — new refresh token in cookie
+  //   res.cookie(
+  //     REFRESH_COOKIE_NAME,
+  //     tokens.refreshToken,
+  //     getRefreshCookieOptions(),
+  //   );
+
+  //   return {
+  //     accessToken: tokens.accessToken,
+  //     expiresAt: tokens.expiresAt,
+  //   };
+  // }
+
+
+
+
+
+@Post('refresh')
+@HttpCode(HttpStatus.OK)
+async refresh(
+  @Req() req: RequestWithCookies,
+  @Body() body: { refreshToken?: string }, 
+  @Res({ passthrough: true }) res: Response,
+) {
+  // 1. Pehle Cookie check karo, agar cookie nahi mili toh Body check karo
+  const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME] || body?.refreshToken;
+
+  // Debug log (Console me check karne ke liye)
+  if (!refreshToken) {
+    console.log('❌ [Refresh Debug] Cookies received:', req.cookies);
+    console.log('❌ [Refresh Debug] Cookie Header:', req.headers.cookie);
+    console.log('❌ [Refresh Debug] Body received:', body);
+    throw new UnauthorizedException('Refresh token missing');
+  }
+
+  const tokens = await this.authService.refresh(refreshToken);
+
+  // 2. Cookie update karo (Rotation)
+  res.cookie(
+    REFRESH_COOKIE_NAME,
+    tokens.refreshToken,
+    getRefreshCookieOptions(),
+  );
+
+  // 3. Response me accessToken aur refreshToken dono bhejo
+  return {
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken, // Frontend body se bhi save kar sake
+    expiresAt: tokens.expiresAt,
+  };
+}
+
+
+
+
+  /* =================== CHANGE PASSWORD =================== */
+
   @Post('change-password')
+  @HttpCode(HttpStatus.OK)
   @UseGuards(HospitalJwtAuthGuard)
-  changePassword(@Req() req: any, @Body() dto: HospitalChangePasswordDto) {
-    // req.user comes from HospitalJwtStrategy validate()
+  async changePassword(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: HospitalChangePasswordDto,
+  ) {
     return this.authService.changePassword(
-      req.user.userId,
+      userId,
       dto.oldPassword,
       dto.newPassword,
     );
   }
 
-  @Post('logout')
-  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const refreshToken = req.cookies?.refreshToken;
+  /* ================== FORGOT PASSWORD ==================== */
 
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto.email);
+  }
+
+  /* ================== RESET PASSWORD ===================== */
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto.resetToken, dto.newPassword);
+  }
+
+  /* ======================= LOGOUT ======================== */
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  async logout(
+    @Cookies(REFRESH_COOKIE_NAME) refreshToken: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const result = await this.authService.logout(refreshToken);
 
-    res.clearCookie('refreshToken', {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      path: '/',
-    });
+    // Options MUST match what was used in res.cookie()
+    res.clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions());
 
     return result;
   }

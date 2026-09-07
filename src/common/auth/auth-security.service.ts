@@ -60,16 +60,37 @@ export class AuthSecurityService {
     if (sessionId) await this.prisma.authSession.updateMany({ where: { id: sessionId }, data: { isActive: false } });
   }
 
-  async createOtp(input: { platformUserId?: string; hospitalUserId?: string; email: string }) {
-    const where = input.platformUserId ? { platformUserId: input.platformUserId } : { hospitalUserId: input.hospitalUserId };
-    const existing = await this.prisma.loginOtp.findFirst({ where });
-    if (existing && Date.now() - existing.lastSentAt.getTime() < 60000) throw new UnauthorizedException('Please wait 60 seconds before requesting another OTP');
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    const data = { otpHash: await bcrypt.hash(code, 10), attempts: 0, expiresAt: new Date(Date.now() + 5 * 60000), lastSentAt: new Date() };
-    const otp = existing ? await this.prisma.loginOtp.update({ where: { id: existing.id }, data }) : await this.prisma.loginOtp.create({ data: { ...input, ...data } });
-    await this.mailService.sendMail(input.email, 'Your verification code', `<div style="font-family:Arial,sans-serif"><h2>Verification code</h2><p>Your code is:</p><strong style="font-size:32px;letter-spacing:8px">${code}</strong><p>This code expires in 5 minutes.</p></div>`);
-    return otp;
+// auth-security.service.ts
+
+async createOtp(input: { platformUserId?: string; hospitalUserId?: string; email: string }) {
+  const where = input.platformUserId 
+    ? { platformUserId: input.platformUserId } 
+    : { hospitalUserId: input.hospitalUserId };
+    
+  const existing = await this.prisma.loginOtp.findFirst({ where });
+  
+  if (existing && Date.now() - existing.lastSentAt.getTime() < 60000) {
+    throw new UnauthorizedException('Please wait 60 seconds before requesting another OTP');
   }
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  
+  const data = {
+    otpHash: await bcrypt.hash(code, 10),
+    attempts: 0,
+    expiresAt: new Date(Date.now() + 5 * 60000),
+    lastSentAt: new Date(),
+  };
+
+  const otp = existing
+    ? await this.prisma.loginOtp.update({ where: { id: existing.id }, data })
+    : await this.prisma.loginOtp.create({ data: { ...input, ...data } });
+
+  // ✉️ Clean Dedicated OTP Sender
+  await this.mailService.sendOtpMail(input.email, code);
+
+  return otp;
+}
 
   async verifyOtp(id: string, code: string) {
     const otp = await this.prisma.loginOtp.findUnique({ where: { id } });
@@ -98,3 +119,6 @@ async function clientReset(prisma: PrismaService, userId: string, hospital: bool
   return prisma.platformUser.update({ where: { id: userId }, data: { failedLoginAttempts: 0, lockedUntil: null } });
 }
 // === SECURITY ADDITION END ===
+
+
+

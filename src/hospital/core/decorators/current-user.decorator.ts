@@ -1,3 +1,4 @@
+// src/common/decorators/current-user.decorator.ts
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
 export interface CurrentUserPayload {
@@ -5,14 +6,30 @@ export interface CurrentUserPayload {
   tenantId: string;
   email: string;
   roles: string[];
-  permissions: string[];
+  permissions?: string[];
+  code?: string;        // Hospital code
+  userType?: string;    // SUPER_ADMIN | REGULAR_USER
+  sessionId?: string;
+  [key: string]: any;   // Extra fields safety
 }
 
-// Extracts full user from JWT payload
-// Usage: @CurrentUser() user: CurrentUserPayload
+/**
+ * Extracts full user or specific user properties from request.user
+ * 
+ * Usage:
+ *  1. Full Object:    @CurrentUser() user: CurrentUserPayload
+ *  2. Specific Key:   @CurrentUser('userId') userId: string
+ *  3. Specific Key:   @CurrentUser('tenantId') tenantId: string
+ */
 export const CurrentUser = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext): CurrentUserPayload => {
+  (data: keyof CurrentUserPayload | undefined, ctx: ExecutionContext) => {
     const request = ctx.switchToHttp().getRequest();
-    return request.user;
+    const user = request.user as CurrentUserPayload | undefined;
+
+    if (!user) {
+      return null;
+    }
+
+    return data ? user[data] : user;
   },
 );

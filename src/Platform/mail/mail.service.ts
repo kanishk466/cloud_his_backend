@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 
-interface ActivationEmailInput {
+export interface ActivationEmailInput {
   hospitalName: string;
   hospitalCode: string;
   adminEmail: string;
@@ -10,29 +11,63 @@ interface ActivationEmailInput {
 }
 
 @Injectable()
-export class MailService {
+export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
-  private transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? 'smtp.resend.com',
-    port: Number(process.env.SMTP_PORT ?? 465),
-    secure: true,
-    auth: { user: 'resend', pass: process.env.RESEND_API_KEY ?? '' },
-  });
+  private transporter: Transporter;
 
-  async sendMail(to: string, subject: string, html: string): Promise<void> {
+  constructor() {
+    const isSecurePort = Number(process.env.SMTP_PORT) === 465;
+
+    this.transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: process.env.SMTP_SECURE === 'true' || isSecurePort, // true for 465, false for 587/STARTTLS
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+      pool: true,          // Connection pooling
+      maxConnections: 5,
+      maxMessages: 100,
+    });
+  }
+
+  // App start hone par SMTP check karega
+  async onModuleInit() {
     try {
-      await this.transporter.sendMail({
-        from: process.env.MAIL_FROM ?? 'MediOps <noreply@mediops.in>',
-        to,
-        subject,
-        html,
-      });
-      this.logger.log(`Email sent to ${to}`);
-    } catch (err) {
-      this.logger.error(`Failed to send email to ${to}`, err);
+      await this.transporter.verify();
+      this.logger.log('✅ Nodemailer SMTP Server connected successfully');
+    } catch (error) {
+      this.logger.error('❌ Nodemailer SMTP connection failed. Check your .env credentials', error);
     }
   }
 
+  /* ========================================================================= */
+  /* 1. CORE SENDER (Exact old signature: to, subject, html, optional text)   */
+  /* ========================================================================= */
+  async sendMail(to: string, subject: string, html: string, text?: string): Promise<void> {
+    try {
+      const from = process.env.MAIL_FROM || `"MediOps" <${process.env.SMTP_USER}>`;
+
+      const info = await this.transporter.sendMail({
+        from,
+        to,
+        subject,
+        html,
+        text,
+      });
+
+      this.logger.log(`✉️ Email sent to ${to} [MessageId: ${info.messageId}]`);
+    } catch (err) {
+      this.logger.error(`❌ Failed to send email to ${to}`, err);
+      // Agar kisi background service ko crash hone se bachana hai to error throw na karein,
+      // sirf error log karein.
+    }
+  }
+
+  /* ========================================================================= */
+  /* 2. EXISTING METHOD: HOSPITAL ACTIVATION (No changes, 100% same)          */
+  /* ========================================================================= */
   async sendHospitalActivation(
     input: ActivationEmailInput & { to: string },
   ): Promise<void> {
@@ -43,8 +78,88 @@ export class MailService {
       html,
     );
   }
+
+  /* ========================================================================= */
+  /* 3. NEW METHOD: 2FA LOGIN OTP                                             */
+  /* ========================================================================= */
+  async sendOtpMail(to: string, otpCode: string): Promise<void> {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc; margin: 0; padding: 0; }
+          .container { max-width: 500px; margin: 30px auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; }
+          .header { background: #0f172a; padding: 24px; text-align: center; color: #ffffff; font-size: 20px; font-weight: bold; }
+          .content { padding: 32px; }
+          .otp-box { background: #f1f5f9; border-radius: 8px; text-align: center; padding: 20px; margin: 24px 0; border: 1px dashed #cbd5e1; }
+          .otp-code { font-family: monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #0f172a; }
+          .footer { background: #f8fafc; padding: 16px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">MediOps Security</div>
+          <div class="content">
+            <h2 style="color: #0f172a; margin-top: 0;">Verification Code</h2>
+            <p style="color: #64748b; font-size: 14px; line-height: 1.5;">
+              Use the following One-Time Password (OTP) to complete your login:
+            </p>
+            <div class="otp-box">
+              <span class="otp-code">${otpCode}</span>
+            </div>
+            <p style="color: #64748b; font-size: 13px;">
+              ⏱️ This code will expire in <strong>5 minutes</strong>.
+            </p>
+            <p style="color: #94a3b8; font-size: 12px; margin-top: 20px;">
+              If you did not request this login, please notify your administrator.
+            </p>
+          </div>
+          <div class="footer">
+            © ${new Date().getFullYear()} MediOps. All rights reserved.
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    await this.sendMail(
+      to,
+      `Your MediOps Verification Code: ${otpCode}`,
+      html,
+      `Your verification code is: ${otpCode}. It expires in 5 minutes.`,
+    );
+  }
+
+  /* ========================================================================= */
+  /* 4. NEW METHOD: FORGOT PASSWORD RESET LINK                                */
+  /* ========================================================================= */
+  async sendPasswordResetMail(to: string, resetToken: string): Promise<void> {
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+    
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
+        <h2 style="color: #0f172a;">Password Reset Request</h2>
+        <p style="color: #64748b; font-size: 14px; line-height: 1.6;">
+          We received a request to reset your password. Click the button below to proceed.
+        </p>
+        <div style="margin: 24px 0;">
+          <a href="${resetUrl}" style="background: #0f172a; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">
+            Reset My Password
+          </a>
+        </div>
+        <p style="color: #94a3b8; font-size: 12px;">
+          This link will expire in 30 minutes. If you did not request this, please ignore this email.
+        </p>
+      </div>
+    `;
+
+    await this.sendMail(to, 'Reset Your MediOps Password', html);
+  }
 }
 
+// ------------------- EXISTING TEMPLATE BUILDER (Untouched) -------------------
 function buildActivationEmail(input: ActivationEmailInput): string {
   return `<!DOCTYPE html>
 <html>
