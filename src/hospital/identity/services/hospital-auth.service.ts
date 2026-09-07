@@ -25,7 +25,7 @@ export class HospitalAuthService {
     private readonly authSecurityService: AuthSecurityService,
     // === SECURITY ADDITION END ===
     private readonly auditService: AuditService,
-  ) {}
+  ) { }
 
   // async login(hospitalCode: string, email: string, password: string) {
   //   const hospital = await this.hospitalLookupRepository.findByCode(hospitalCode);
@@ -127,6 +127,7 @@ export class HospitalAuthService {
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
+      expiresAt: tokens.expiresAt, // ISO date — frontend refreshes accessToken before this
       forcePasswordChange: user.forcePasswordChange,
       hospital: {
         id: user.hospital.id,
@@ -271,6 +272,11 @@ export class HospitalAuthService {
       expiresIn: '7d',
     });
 
-    return { accessToken, refreshToken };
+    // === SECURITY ADDITION START ===
+    // expiresAt lets the frontend schedule proactive refresh (e.g. 1 min before expiry)
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // matches accessToken expiresIn: '15m'
+    // === SECURITY ADDITION END ===
+
+    return { accessToken, refreshToken, expiresAt };
   }
 }

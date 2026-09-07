@@ -19,7 +19,7 @@ import type { Request, Response } from 'express';
 
 @Controller('hospital/auth')
 export class HospitalAuthController {
-  constructor(private readonly authService: HospitalAuthService) {}
+  constructor(private readonly authService: HospitalAuthService) { }
 
   @Post('login')
   async login(
@@ -39,24 +39,17 @@ export class HospitalAuthController {
       path: '/',
     });
 
-   // return 
-   //      data: {
-   //        accessToken: result.accessToken,
-   //        forcePasswordChange: result.forcePasswordChange,
-   //        hospital: result.hospital,
-   //        user: result.user,
-   //      },
+    return {
+      data: {
+        accessToken: result.accessToken,
+        expiresAt: result.expiresAt, // ISO date — frontend refreshes accessToken before this
+        forcePasswordChange: result.forcePasswordChange,
+        hospital: result.hospital,
+        user: result.user,
+      }
 
-        return {
-          data:{
-              accessToken: result.accessToken,
-      forcePasswordChange: result.forcePasswordChange,
-      hospital: result.hospital,
-      user: result.user,
-          }
-    
     };
-    
+
   }
 
   // === SECURITY ADDITION START ===
@@ -89,6 +82,7 @@ export class HospitalAuthController {
 
     return {
       accessToken: tokens.accessToken,
+      expiresAt: tokens.expiresAt, // ISO date — frontend schedules next refresh from this
     };
   }
 
