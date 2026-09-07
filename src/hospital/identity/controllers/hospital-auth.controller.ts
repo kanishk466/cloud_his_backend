@@ -32,11 +32,13 @@ export class HospitalAuthController {
     if (!result.accessToken) return result;
     // === SECURITY ADDITION END ===
 
+
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
       path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     return {
@@ -75,9 +77,10 @@ export class HospitalAuthController {
     // Refresh-token rotation
     res.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
       path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     return {
