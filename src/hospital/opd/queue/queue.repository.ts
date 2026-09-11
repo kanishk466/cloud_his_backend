@@ -57,38 +57,30 @@ export class QueueRepository {
   // ─── GENERATE TOKEN NUMBER ──────────────────────────────────────
   // Sequential per doctor per day per tenant
   // Uses DB transaction + FOR UPDATE to prevent race conditions
-  async generateTokenNumber(
-    tenantId: string,
-    doctorProfileId: string,
-    tokenDate: Date,
-  ): Promise<number> {
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const dateStr = format(tokenDate, 'yyyy-MM-dd');
+async generateTokenNumber(
+  tenantId: string,
+  doctorProfileId: string,
+  tokenDate: Date,
+): Promise<number> {
+  try {
+    // Transaction support
+    const result = await this.prisma.opdToken.aggregate({
+      _max: {
+        tokenNumber: true,
+      },
+      where: {
+        tenantId,
+        doctorProfileId,
+        tokenDate,
+      },
+    });
 
-        // Lock and get the highest token number
-        const result = await tx.$queryRaw<{ token_number: number }[]>`
-          SELECT token_number
-          FROM opd_tokens
-          WHERE tenant_id = ${tenantId}
-            AND doctor_profile_id = ${doctorProfileId}
-            AND token_date = ${dateStr}::date
-          ORDER BY token_number DESC
-          LIMIT 1
-          FOR UPDATE SKIP LOCKED
-        `;
-
-        const lastToken = result[0]?.token_number ?? 0;
-        return lastToken + 1;
-      });
-    } catch (error) {
-      this.logger.error('Token number generation failed', error);
-      throw new InternalServerErrorException({
-        code: 'OPD_QUE_000',
-        message: 'Failed to generate token number',
-      });
-    }
+    return (result._max.tokenNumber ?? 0) + 1;
+  } catch (error) {
+    this.logger.error('Token number generation failed', error);
+    throw error;
   }
+}
 
   // ─── CREATE TOKEN ───────────────────────────────────────────────
   async create(data: {
@@ -117,12 +109,28 @@ export class QueueRepository {
   }
 
   // ─── FIND TOKEN BY ID ──────────────────────────────────────────
+
+
   async findById(tenantId: string, id: string) {
-    return this.prisma.opdToken.findFirst({
-      where: { id, tenantId },
-      include: tokenWithDetails,
-    });
-  }
+  return this.prisma.opdToken.findFirst({
+    where: {
+      id,
+      tenantId,
+    },
+    include: {
+      appointment: {
+        include: {
+          patient: true,
+        },
+      },
+      doctorProfile: {
+        include: {
+          hospitalUser: true,
+        },
+      },
+    },
+  });
+}
 
   // ─── FIND TOKEN BY APPOINTMENT ID ──────────────────────────────
   async findByAppointmentId(tenantId: string, appointmentId: string) {
@@ -133,48 +141,48 @@ export class QueueRepository {
   }
 
   // ─── GET DOCTOR QUEUE ──────────────────────────────────────────
-  // Main query: get all tokens for a doctor on a date
+
+
   async getDoctorQueue(
-    tenantId: string,
-    doctorProfileId: string,
-    date: Date,
-    status?: string,
-    page: number = 1,
-    limit: number = 50,
-  ) {
-    const dateOnly = new Date(date);
-    dateOnly.setHours(0, 0, 0, 0);
+  tenantId: string,
+  doctorProfileId: string,
+  date: Date,
+  status?: string,
+  page: number = 1,
+  limit: number = 100,
+) {
+  const where: any = {
+    tenantId,
+    doctorProfileId,
+    tokenDate: date,
+  };
 
-    const where: Prisma.OpdTokenWhereInput = {
-      tenantId,
-      doctorProfileId,
-      tokenDate: dateOnly,
-    };
-
-    if (status) {
-      where.status = status as any;
-    }
-
-    const skip = (page - 1) * limit;
-
-    const [tokens, total] = await Promise.all([
-      this.prisma.opdToken.findMany({
-        where,
-        include: tokenWithDetails,
-        orderBy: [
-          // Emergency/urgent first (via appointment priority)
-          { appointment: { priority: 'desc' } },
-          // Then by token number
-          { tokenNumber: 'asc' },
-        ],
-        skip,
-        take: limit,
-      }),
-      this.prisma.opdToken.count({ where }),
-    ]);
-
-    return { tokens, total };
+  if (status) {
+    where.status = status;
   }
+
+  const [tokens, total] = await Promise.all([
+    this.prisma.opdToken.findMany({
+      where,
+      include: {
+        appointment: {
+          include: {
+            patient: true,
+          },
+        },
+      },
+      orderBy: [
+        { appointment: { priority: 'desc' } },
+        { tokenNumber: 'asc' },
+      ],
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    this.prisma.opdToken.count({ where }),
+  ]);
+
+  return { tokens, total };
+}
 
   // ─── GET QUEUE STATS ────────────────────────────────────────────
   async getQueueStats(
@@ -279,28 +287,45 @@ export class QueueRepository {
   }
 
   // ─── GET NEXT WAITING TOKEN ─────────────────────────────────────
-  async getNextWaitingToken(
-    tenantId: string,
-    doctorProfileId: string,
-    date: Date,
-  ) {
-    const dateOnly = new Date(date);
-    dateOnly.setHours(0, 0, 0, 0);
 
-    return this.prisma.opdToken.findFirst({
-      where: {
-        tenantId,
-        doctorProfileId,
-        tokenDate: dateOnly,
-        status: 'WAITING',
-      },
-      orderBy: [
-        { appointment: { priority: 'desc' } },
-        { tokenNumber: 'asc' },
-      ],
-      include: tokenWithDetails,
-    });
+
+// queue.repository.ts — Update method signature
+
+async getNextWaitingToken(
+  tenantId: string,
+  doctorProfileId: string,
+  date: Date,
+  requiredAppointmentStatus?: string,
+) {
+  const where: any = {
+    tenantId,
+    doctorProfileId,
+    tokenDate: date,
+    status: 'WAITING',
+  };
+
+  if (requiredAppointmentStatus) {
+    where.appointment = {
+      status: requiredAppointmentStatus,
+    };
   }
+
+  return this.prisma.opdToken.findFirst({
+    where,
+    include: {
+      appointment: {
+        include: {
+          patient: true,
+        },
+      },
+    },
+    orderBy: [
+      { appointment: { priority: 'desc' } },
+      { tokenNumber: 'asc' },
+    ],
+  });
+}
+
 
   // ─── UPDATE TOKEN STATUS ────────────────────────────────────────
   async updateStatus(

@@ -48,6 +48,5 @@ export const CONSULTATION_NO_CONFIG = {
 } as const;
 
 export const CONSULTATION_ELIGIBLE_STATUSES = [
-  'IN_CONSULTATION',
-  'IN_QUEUE',
+  'IN_CONSULTATION'
 ] as const;
