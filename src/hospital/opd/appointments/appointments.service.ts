@@ -302,41 +302,45 @@ export class AppointmentsService {
   }
 
   // ─── CHECK-IN PATIENT ───────────────────────────────────────────
+
+
   async checkIn(
-    tenantId: string,
-    id: string,
-    checkedInBy: string,
-  ): Promise<AppointmentResponseDto> {
-    const appointment =
-      await this.appointmentsRepository.findById(tenantId, id);
+  tenantId: string,
+  id: string,
+  checkedInBy: string,
+): Promise<AppointmentResponseDto> {
+  const appointment =
+    await this.appointmentsRepository.findById(tenantId, id);
 
-    if (!appointment) {
-      throw new NotFoundException(APPOINTMENT_ERRORS.NOT_FOUND);
-    }
-
-    if (appointment.status !== 'BOOKED') {
-      throw new BadRequestException({
-        ...APPOINTMENT_ERRORS.CANNOT_CHECKIN,
-        details: { currentStatus: appointment.status },
-      });
-    }
-
-    const updated = await this.appointmentsRepository.updateStatus(
-      tenantId,
-      id,
-      'CHECKED_IN',
-      {
-        checkedInAt: new Date(),
-        checkedInBy,
-      },
-    );
-
-    this.logger.log(
-      `Patient checked in for appointment ${appointment.appointmentNo}`,
-    );
-
-    return AppointmentResponseDto.fromEntity(updated);
+  if (!appointment) {
+    throw new NotFoundException(APPOINTMENT_ERRORS.NOT_FOUND);
   }
+
+  // ✅ FIX: Patient must have a token (IN_QUEUE) before nurse can check-in
+  if (appointment.status !== 'IN_QUEUE') {
+    throw new BadRequestException({
+      code: 'OPD_APT_020',
+      message: 'Patient must be in queue before check-in. Generate token first.',
+      details: { currentStatus: appointment.status },
+    });
+  }
+
+  const updated = await this.appointmentsRepository.updateStatus(
+    tenantId,
+    id,
+    'CHECKED_IN',
+    {
+      checkedInAt: new Date(),
+      checkedInBy,
+    },
+  );
+
+  this.logger.log(
+    `Patient checked in for appointment ${appointment.appointmentNo}`,
+  );
+
+  return AppointmentResponseDto.fromEntity(updated);
+}
 
   // ─── CANCEL APPOINTMENT ─────────────────────────────────────────
   async cancel(

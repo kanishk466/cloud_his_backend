@@ -124,43 +124,66 @@ export class ConsultationsService {
     return ConsultationResponseDto.fromEntity(updated);
   }
 
-  // ─── COMPLETE CONSULTATION ──────────────────────────────────────
-  async complete(tenantId: string, id: string): Promise<ConsultationResponseDto> {
-    const existing = await this.consultationsRepository.findById(tenantId, id);
-    if (!existing) {
-      throw new NotFoundException(CONSULTATION_ERRORS.NOT_FOUND);
-    }
-
-    if (existing.status !== 'IN_PROGRESS') {
-      throw new BadRequestException(CONSULTATION_ERRORS.NOT_IN_PROGRESS);
-    }
-
-    // Rule: Must have at least provisional or final diagnosis
-    if (!existing.provisionalDiagnosis && !existing.finalDiagnosis) {
-      throw new BadRequestException(CONSULTATION_ERRORS.DIAGNOSIS_REQUIRED);
-    }
-
-    // Determine status
-    const status = existing.referredToDoctorId ? 'REFERRED' : 'COMPLETED';
-
-    // Update consultation
-    const updated = await this.consultationsRepository.update(id, {
-      status,
-      completedAt: new Date(),
-    });
-
-    // Update appointment to COMPLETED
-    await this.consultationsRepository.updateAppointmentStatus(existing.appointmentId, 'COMPLETED');
-
-    // Update token to COMPLETED
-    await this.consultationsRepository.updateTokenStatus(existing.appointmentId, 'COMPLETED', {
-      completedAt: new Date(),
-    });
-
-    this.logger.log(`Consultation ${existing.consultationNo} completed`);
-
-    return ConsultationResponseDto.fromEntity(updated);
+async complete(tenantId: string, id: string): Promise<ConsultationResponseDto> {
+  const existing = await this.consultationsRepository.findById(tenantId, id);
+  if (!existing) {
+    throw new NotFoundException(CONSULTATION_ERRORS.NOT_FOUND);
   }
+
+  if (existing.status !== 'IN_PROGRESS') {
+    throw new BadRequestException(CONSULTATION_ERRORS.NOT_IN_PROGRESS);
+  }
+
+  if (!existing.provisionalDiagnosis && !existing.finalDiagnosis) {
+    throw new BadRequestException(CONSULTATION_ERRORS.DIAGNOSIS_REQUIRED);
+  }
+
+  const status = existing.referredToDoctorId ? 'REFERRED' : 'COMPLETED';
+
+  const updated = await this.consultationsRepository.update(id, {
+    status,
+    completedAt: new Date(),
+  });
+
+  await this.consultationsRepository.updateAppointmentStatus(
+    existing.appointmentId,
+    'COMPLETED',
+  );
+
+  await this.consultationsRepository.updateTokenStatus(
+    existing.appointmentId,
+    'COMPLETED',
+    { completedAt: new Date() },
+  );
+
+  // ✅ FIX: Trigger PDF generation (async, non-blocking)
+  if (status === 'COMPLETED') {
+    this.triggerPrescriptionPdf(tenantId, existing).catch((err) => {
+      this.logger.error(
+        `Failed to generate PDF for consultation ${existing.consultationNo}: ${err.message}`,
+      );
+    });
+  }
+
+  this.logger.log(`Consultation ${existing.consultationNo} completed`);
+
+  return ConsultationResponseDto.fromEntity(updated);
+}
+
+// ✅ NEW: PDF trigger method (implement based on your PDF service)
+private async triggerPrescriptionPdf(
+  tenantId: string,
+  consultation: any,
+): Promise<void> {
+  // TODO: Replace with your actual PDF service call
+  // Example options:
+  // 1. this.pdfService.generatePrescription(tenantId, consultation.id)
+  // 2. this.eventEmitter.emit('prescription.completed', { tenantId, consultationId: consultation.id })
+  // 3. this.bullQueue.add('generate-pdf', { tenantId, consultationId: consultation.id })
+  this.logger.log(
+    `PDF generation triggered for consultation ${consultation.consultationNo}`,
+  );
+}
 
   // ─── ADD PRESCRIPTION ───────────────────────────────────────────
 // ─── ADD PRESCRIPTION ───────────────────────────────────────────

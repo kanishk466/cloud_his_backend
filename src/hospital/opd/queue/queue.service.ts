@@ -193,131 +193,135 @@ export class QueueService {
 
   // ─── CALL NEXT PATIENT ──────────────────────────────────────────
   // Doctor clicks "Call Next"
+
+
   async callNext(
-    tenantId: string,
-    doctorProfileId: string,
-  ): Promise<QueueTokenDto | null> {
-    const today = startOfDay(new Date());
+  tenantId: string,
+  doctorProfileId: string,
+): Promise<QueueTokenDto | null> {
+  const today = startOfDay(new Date());
 
-    // Rule 1: Check if another patient is IN_PROGRESS
-    const currentToken =
-      await this.queueRepository.getCurrentToken(
-        tenantId,
-        doctorProfileId,
-        today,
-      );
+  const currentToken =
+    await this.queueRepository.getCurrentToken(
+      tenantId,
+      doctorProfileId,
+      today,
+    );
 
-    if (currentToken) {
-      throw new BadRequestException({
-        ...QUEUE_ERRORS.ANOTHER_IN_PROGRESS,
-        details: {
-          currentTokenNumber: currentToken.tokenNumber,
-          patientName:
-            currentToken.appointment?.patient?.firstName ?? 'Unknown',
-        },
-      });
-    }
-
-    // Rule 2: Get next waiting token (priority-aware)
-    const nextToken =
-      await this.queueRepository.getNextWaitingToken(
-        tenantId,
-        doctorProfileId,
-        today,
-      );
-
-    if (!nextToken) {
-      return null; // No more patients waiting
-    }
-
-    // Rule 3: Update token to IN_PROGRESS
-    const updatedToken = await this.queueRepository.updateStatus(
-      nextToken.id,
-      'IN_PROGRESS',
-      {
-        calledAt: new Date(),
-        startedAt: new Date(),
+  if (currentToken) {
+    throw new BadRequestException({
+      ...QUEUE_ERRORS.ANOTHER_IN_PROGRESS,
+      details: {
+        currentTokenNumber: currentToken.tokenNumber,
+        patientName:
+          currentToken.appointment?.patient?.firstName ?? 'Unknown',
       },
-    );
-
-    // Rule 4: Update appointment to IN_CONSULTATION
-    await this.queueRepository.updateAppointmentStatus(
-      nextToken.appointmentId,
-      'IN_CONSULTATION',
-    );
-
-    this.logger.log(
-      `Token #${nextToken.tokenNumber} called by doctor ${doctorProfileId}`,
-    );
-
-    return this.toQueueToken(updatedToken);
+    });
   }
 
+  // ✅ FIX: Only pick patients who are CHECKED_IN (nurse has confirmed presence)
+  const nextToken =
+    await this.queueRepository.getNextWaitingToken(
+      tenantId,
+      doctorProfileId,
+      today,
+      'CHECKED_IN',  // ← ✅ NEW parameter
+    );
+
+  if (!nextToken) {
+    return null;
+  }
+
+  const updatedToken = await this.queueRepository.updateStatus(
+    nextToken.id,
+    'IN_PROGRESS',
+    {
+      calledAt: new Date(),
+      startedAt: new Date(),
+    },
+  );
+
+  await this.queueRepository.updateAppointmentStatus(
+    nextToken.appointmentId,
+    'IN_CONSULTATION',
+  );
+
+  this.logger.log(
+    `Token #${nextToken.tokenNumber} called by doctor ${doctorProfileId}`,
+  );
+
+  return this.toQueueToken(updatedToken);
+}
   // ─── CALL SPECIFIC TOKEN ───────────────────────────────────────
   // Doctor calls a specific patient (out of order)
-  async callToken(
-    tenantId: string,
-    tokenId: string,
-  ): Promise<QueueTokenDto> {
-    const token = await this.queueRepository.findById(
-      tenantId,
-      tokenId,
-    );
+async callToken(
+  tenantId: string,
+  tokenId: string,
+): Promise<QueueTokenDto> {
+  const token = await this.queueRepository.findById(
+    tenantId,
+    tokenId,
+  );
 
-    if (!token) {
-      throw new NotFoundException(QUEUE_ERRORS.TOKEN_NOT_FOUND);
-    }
-
-    if (token.tenantId !== tenantId) {
-      throw new ForbiddenException(QUEUE_ERRORS.CROSS_TENANT);
-    }
-
-    // Check if WAITING
-    if (!CALLABLE_STATUSES.includes(token.status as any)) {
-      throw new BadRequestException({
-        ...QUEUE_ERRORS.CANNOT_CALL,
-        details: { currentStatus: token.status },
-      });
-    }
-
-    // Check no other IN_PROGRESS
-    const today = startOfDay(new Date());
-    const currentToken =
-      await this.queueRepository.getCurrentToken(
-        tenantId,
-        token.doctorProfileId,
-        today,
-      );
-
-    if (currentToken) {
-      throw new BadRequestException({
-        ...QUEUE_ERRORS.ANOTHER_IN_PROGRESS,
-        details: {
-          currentTokenNumber: currentToken.tokenNumber,
-        },
-      });
-    }
-
-    // Update token
-    const updatedToken = await this.queueRepository.updateStatus(
-      tokenId,
-      'IN_PROGRESS',
-      {
-        calledAt: new Date(),
-        startedAt: new Date(),
-      },
-    );
-
-    // Update appointment
-    await this.queueRepository.updateAppointmentStatus(
-      token.appointmentId,
-      'IN_CONSULTATION',
-    );
-
-    this.logger.log(`Token #${token.tokenNumber} called directly`);
-
-    return this.toQueueToken(updatedToken);
+  if (!token) {
+    throw new NotFoundException(QUEUE_ERRORS.TOKEN_NOT_FOUND);
   }
+
+  if (token.tenantId !== tenantId) {
+    throw new ForbiddenException(QUEUE_ERRORS.CROSS_TENANT);
+  }
+
+  if (!CALLABLE_STATUSES.includes(token.status as any)) {
+    throw new BadRequestException({
+      ...QUEUE_ERRORS.CANNOT_CALL,
+      details: { currentStatus: token.status },
+    });
+  }
+
+  // ✅ FIX: Verify nurse has checked-in this patient
+  if (token.appointment?.status !== 'CHECKED_IN') {
+    throw new BadRequestException({
+      code: 'OPD_QUE_015',
+      message: 'Patient must be checked-in by nurse before doctor can call',
+      details: { appointmentStatus: token.appointment?.status },
+    });
+  }
+
+  const today = startOfDay(new Date());
+  const currentToken =
+    await this.queueRepository.getCurrentToken(
+      tenantId,
+      token.doctorProfileId,
+      today,
+    );
+
+  if (currentToken) {
+    throw new BadRequestException({
+      ...QUEUE_ERRORS.ANOTHER_IN_PROGRESS,
+      details: {
+        currentTokenNumber: currentToken.tokenNumber,
+      },
+    });
+  }
+
+  const updatedToken = await this.queueRepository.updateStatus(
+    tokenId,
+    'IN_PROGRESS',
+    {
+      calledAt: new Date(),
+      startedAt: new Date(),
+    },
+  );
+
+  await this.queueRepository.updateAppointmentStatus(
+    token.appointmentId,
+    'IN_CONSULTATION',
+  );
+
+  this.logger.log(`Token #${token.tokenNumber} called directly`);
+
+  return this.toQueueToken(updatedToken);
+}
 
   // ─── SKIP TOKEN ─────────────────────────────────────────────────
   // Patient not present → move to end of queue
@@ -398,43 +402,33 @@ export class QueueService {
 
   // ─── COMPLETE TOKEN ─────────────────────────────────────────────
   // Doctor finishes consultation
-  async completeToken(
-    tenantId: string,
-    tokenId: string,
-  ): Promise<QueueTokenDto> {
-    const token = await this.queueRepository.findById(
-      tenantId,
-      tokenId,
-    );
+async completeToken(
+  tenantId: string,
+  tokenId: string,
+): Promise<QueueTokenDto> {
+  const token = await this.queueRepository.findById(
+    tenantId,
+    tokenId,
+  );
 
-    if (!token) {
-      throw new NotFoundException(QUEUE_ERRORS.TOKEN_NOT_FOUND);
-    }
-
-    if (!COMPLETABLE_STATUSES.includes(token.status as any)) {
-      throw new BadRequestException({
-        ...QUEUE_ERRORS.CANNOT_COMPLETE,
-        details: { currentStatus: token.status },
-      });
-    }
-
-    // Update token
-    const updatedToken = await this.queueRepository.updateStatus(
-      tokenId,
-      'COMPLETED',
-      { completedAt: new Date() },
-    );
-
-    // Update appointment
-    await this.queueRepository.updateAppointmentStatus(
-      token.appointmentId,
-      'COMPLETED',
-    );
-
-    this.logger.log(`Token #${token.tokenNumber} completed`);
-
-    return this.toQueueToken(updatedToken);
+  if (!token) {
+    throw new NotFoundException(QUEUE_ERRORS.TOKEN_NOT_FOUND);
   }
+
+  if (!COMPLETABLE_STATUSES.includes(token.status as any)) {
+    throw new BadRequestException({
+      ...QUEUE_ERRORS.CANNOT_COMPLETE,
+      details: { currentStatus: token.status },
+    });
+  }
+
+  // ✅ FIX: Block direct completion — force through ConsultationService
+  // which validates diagnosis, prescriptions, and cascades properly
+  throw new BadRequestException({
+    code: 'OPD_QUE_020',
+    message: 'Cannot complete token directly. Use PATCH /opd/consultations/:id/complete from the doctor console to ensure diagnosis is recorded.',
+  });
+}
 
   // ─── CANCEL TOKEN ──────────────────────────────────────────────
   async cancelToken(
@@ -593,68 +587,75 @@ export class QueueService {
   }
 
   // Map DB entity to response DTO
+
+
   private toQueueToken(token: any): QueueTokenDto {
-    const appointment = token.appointment;
-    const patient = appointment?.patient;
+  const appointment = token.appointment;
+  const patient = appointment?.patient;
 
-    // Calculate wait time
-    let waitTimeMins: number | null = null;
-    if (token.calledAt && token.createdAt) {
-      const diffMs =
-        new Date(token.calledAt).getTime() -
-        new Date(token.createdAt).getTime();
-      waitTimeMins = Math.round(diffMs / (1000 * 60));
-    }
+  // ✅ FIX: Nurse check-in ke baad vitals record ho jate hain
+  // Agar status CHECKED_IN, IN_CONSULTATION ya COMPLETED hai, matlab vitals step ho chuka hai
+  const vitalsRecorded = ['CHECKED_IN', 'IN_CONSULTATION', 'COMPLETED'].includes(
+    appointment?.status ?? '',
+  );
 
-    return {
-      id: token.id,
-      tokenNumber: token.tokenNumber,
-      status: token.status,
-      originalPosition: token.originalPosition,
-      estimatedTime: token.estimatedTime,
-      calledAt: token.calledAt,
-      startedAt: token.startedAt,
-      completedAt: token.completedAt,
-      roomNo: token.roomNo,
-      appointmentId: appointment?.id ?? token.appointmentId,
-      appointmentNo: appointment?.appointmentNo ?? '',
-      appointmentType: appointment?.appointmentType ?? '',
-      visitType: appointment?.visitType ?? '',
-      priority: appointment?.priority ?? 0,
-      reasonForVisit: appointment?.reasonForVisit ?? null,
-      patient: patient
-        ? {
-            id: patient.id,
-            uhid: patient.uhid,
-            firstName: patient.firstName,
-            lastName: patient.lastName,
-            fullName: [patient.firstName, patient.lastName]
-              .filter(Boolean)
-              .join(' '),
-            mobile: patient.mobile,
-            age: patient.age,
-            ageUnit: patient.ageUnit,
-            gender: patient.gender,
-            allergies: patient.allergies,
-            chronicDiseases: patient.chronicDiseases,
-          }
-        : {
-            id: '',
-            uhid: '',
-            firstName: 'Unknown',
-            lastName: null,
-            fullName: 'Unknown',
-            mobile: '',
-            age: null,
-            ageUnit: null,
-            gender: '',
-            allergies: null,
-            chronicDiseases: null,
-          },
-      vitalsRecorded: false, // Will be updated in Step 4
-      waitTimeMins,
-    };
+  let waitTimeMins: number | null = null;
+  if (token.calledAt && token.createdAt) {
+    const diffMs =
+      new Date(token.calledAt).getTime() -
+      new Date(token.createdAt).getTime();
+    waitTimeMins = Math.round(diffMs / (1000 * 60));
   }
+
+  return {
+    id: token.id,
+    tokenNumber: token.tokenNumber,
+    status: token.status,
+    originalPosition: token.originalPosition,
+    estimatedTime: token.estimatedTime,
+    calledAt: token.calledAt,
+    startedAt: token.startedAt,
+    completedAt: token.completedAt,
+    roomNo: token.roomNo,
+    appointmentId: appointment?.id ?? token.appointmentId,
+    appointmentNo: appointment?.appointmentNo ?? '',
+    appointmentType: appointment?.appointmentType ?? '',
+    visitType: appointment?.visitType ?? '',
+    priority: appointment?.priority ?? 0,
+    reasonForVisit: appointment?.reasonForVisit ?? null,
+    patient: patient
+      ? {
+          id: patient.id,
+          uhid: patient.uhid,
+          firstName: patient.firstName,
+          lastName: patient.lastName,
+          fullName: [patient.firstName, patient.lastName]
+            .filter(Boolean)
+            .join(' '),
+          mobile: patient.mobile,
+          age: patient.age,
+          ageUnit: patient.ageUnit,
+          gender: patient.gender,
+          allergies: patient.allergies,
+          chronicDiseases: patient.chronicDiseases,
+        }
+      : {
+          id: '',
+          uhid: '',
+          firstName: 'Unknown',
+          lastName: null,
+          fullName: 'Unknown',
+          mobile: '',
+          age: null,
+          ageUnit: null,
+          gender: '',
+          allergies: null,
+          chronicDiseases: null,
+        },
+    vitalsRecorded,
+    waitTimeMins,
+  };
+}
 
   // Map to simple token response
   private toTokenResponse(token: any): TokenResponseDto {
