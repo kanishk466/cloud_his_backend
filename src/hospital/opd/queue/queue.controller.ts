@@ -147,4 +147,27 @@ export class QueueController {
   ) {
     return this.queueService.cancelToken(tenantId, tokenId);
   }
+
+
+
+
+  // src/hospital/opd/queue/queue.controller.ts
+
+// ─── GET /opd/queue/nurse ───────────────────────────────────────
+// Nurse Workstation Queue — Multi-doctor pool list (Waiting vs Vitals Done)
+@Get('nurse')
+async getNurseQueue(
+  @CurrentTenant() tenantId: string,
+  @Query('date') date?: string,
+  @Query('tab') tab: 'waiting' | 'vitals_done' = 'waiting',
+  @Query('doctorProfileId') doctorProfileId?: string,
+  @Query('departmentId') departmentId?: string,
+) {
+  return this.queueService.getNurseQueue(tenantId, {
+    date,
+    tab,
+    doctorProfileId: doctorProfileId !== 'all' ? doctorProfileId : undefined,
+    departmentId: departmentId ? parseInt(departmentId) : undefined,
+  });
+}
 }
