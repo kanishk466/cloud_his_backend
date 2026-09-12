@@ -687,4 +687,102 @@ async completeToken(
       },
     };
   }
+
+
+
+// src/hospital/opd/queue/queue.service.ts
+
+// 1. Service class ke andar ye helper method add karein:
+private parseQueryDate(dateParam?: any): Date {
+  if (!dateParam) return new Date();
+
+  // Handle array if query param is sent multiple times in URL
+  let dateStr = Array.isArray(dateParam) ? dateParam[0] : dateParam;
+
+  if (typeof dateStr !== 'string') return new Date();
+
+  // Try parsing
+  const parsedDate = new Date(dateStr.trim());
+
+  // If invalid date string, fallback to today
+  if (isNaN(parsedDate.getTime())) {
+    return new Date();
+  }
+
+  return parsedDate;
+}
+
+
+
+
+
+
+
+
+async getNurseQueue(
+  tenantId: string,
+  filter: {
+    date?: any;
+    tab?: 'waiting' | 'vitals_done';
+    doctorProfileId?: string;
+    departmentId?: number;
+  },
+) {
+  // 1. Extract Date String "YYYY-MM-DD"
+  let dateStr = '2026-09-12';
+  if (filter.date) {
+    dateStr = Array.isArray(filter.date) ? filter.date[0] : filter.date;
+  } else {
+    dateStr = new Date().toISOString().split('T')[0];
+  }
+
+  // Clean string (e.g. "2026-09-12")
+  dateStr = dateStr.trim();
+  const parts = dateStr.split('-');
+  const year = parseInt(parts[0], 10) || 2026;
+  const month = parseInt(parts[1], 10) || 9;
+  const day = parseInt(parts[2], 10) || 12;
+
+  // 2. Create Start of Day & End of Day UTC Range
+  const dayStart = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+  const dayEnd = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+
+  const isVitalsDoneTab = filter.tab === 'vitals_done';
+
+  const [tokens, waitingCount, vitalsDoneCount] = await Promise.all([
+    this.queueRepository.getNurseQueue(tenantId, {
+      dayStart,
+      dayEnd,
+      isVitalsDone: isVitalsDoneTab,
+      doctorProfileId: filter.doctorProfileId,
+      departmentId: filter.departmentId,
+    }),
+    this.queueRepository.countNurseQueue(
+      tenantId,
+      dayStart,
+      dayEnd,
+      false,
+      filter.doctorProfileId,
+      filter.departmentId,
+    ),
+    this.queueRepository.countNurseQueue(
+      tenantId,
+      dayStart,
+      dayEnd,
+      true,
+      filter.doctorProfileId,
+      filter.departmentId,
+    ),
+  ]);
+
+  return {
+    summary: {
+      waitingCount,
+      vitalsDoneCount,
+    },
+    queue: tokens.map((t) => this.toQueueToken(t)),
+  };
+}
+
+
 }
