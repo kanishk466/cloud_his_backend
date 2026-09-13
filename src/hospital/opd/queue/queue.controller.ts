@@ -76,15 +76,19 @@ export class QueueController {
   }
 
   // ─── PATCH /opd/queue/call-next/:doctorProfileId ────────────────
-  // Doctor calls next patient (auto-picks highest priority waiting)
+
+
+    // Doctor calls next patient (auto-picks highest priority waiting)
   @Patch('call-next/:doctorProfileId')
   async callNext(
     @Param('doctorProfileId', ParseUUIDPipe) doctorProfileId: string,
+    @Query('date') date: string, // 👈 Captures date parameter safely from URL query
     @CurrentTenant() tenantId: string,
   ) {
     const result = await this.queueService.callNext(
       tenantId,
       doctorProfileId,
+      date, // 👈 Passes the dynamic date to the service layer
     );
 
     if (!result) {

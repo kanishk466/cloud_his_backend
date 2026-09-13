@@ -1,3 +1,4 @@
+
 import {
   Injectable,
   InternalServerErrorException,
@@ -287,65 +288,49 @@ async getQueueStats(
   };
 }
 
+
+
   // ─── GET CURRENT IN-PROGRESS TOKEN ──────────────────────────────
   async getCurrentToken(
     tenantId: string,
     doctorProfileId: string,
-    date: Date,
+    targetDate: Date, // 👈 Accepts target date object
   ) {
-    const dateOnly = new Date(date);
-    dateOnly.setHours(0, 0, 0, 0);
-
     return this.prisma.opdToken.findFirst({
       where: {
         tenantId,
         doctorProfileId,
-        tokenDate: dateOnly,
+        tokenDate: targetDate, // 👈 Exact strict UTC standard Date match
         status: 'IN_PROGRESS',
       },
-      include: tokenWithDetails,
+       include: tokenWithDetails,
     });
   }
 
   // ─── GET NEXT WAITING TOKEN ─────────────────────────────────────
-
-
-// queue.repository.ts — Update method signature
-
-async getNextWaitingToken(
-  tenantId: string,
-  doctorProfileId: string,
-  date: Date,
-  requiredAppointmentStatus?: string,
-) {
-  const where: any = {
-    tenantId,
-    doctorProfileId,
-    tokenDate: date,
-    status: 'WAITING',
-  };
-
-  if (requiredAppointmentStatus) {
-    where.appointment = {
-      status: requiredAppointmentStatus,
-    };
-  }
-
-  return this.prisma.opdToken.findFirst({
-    where,
-    include: {
-      appointment: {
-        include: {
-          patient: true,
+  async getNextWaitingToken(
+    tenantId: string,
+    doctorProfileId: string,
+    targetDate: Date, // 👈 Accepts target date object
+    allowedAppointmentStatuses: string[] = ['CHECKED_IN', 'IN_QUEUE'],
+  ) {
+    return this.prisma.opdToken.findFirst({
+      where: {
+        tenantId,
+        doctorProfileId,
+        tokenDate: targetDate, // 👈 Strict UTC matching standard (no time shifts)
+        status: 'WAITING',
+        appointment: {
+          status: { in: allowedAppointmentStatuses as any },
         },
       },
-    },
-    orderBy: [
-      { appointment: { priority: 'desc' } },
-      { tokenNumber: 'asc' },
-    ],
-  });
-}
+      include: tokenWithDetails,
+      orderBy: [
+        { appointment: { priority: 'desc' } }, // Emergency/High Priority first
+        { tokenNumber: 'asc' },               // Oldest sequential Token first
+      ],
+    });
+  }
 
 
   // ─── UPDATE TOKEN STATUS ────────────────────────────────────────
