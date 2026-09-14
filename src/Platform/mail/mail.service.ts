@@ -15,7 +15,14 @@ export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
   private transporter: Transporter;
 
-  private readonly isConfigured: boolean;
+  /** Resend HTTP API key — when present, Resend is used as the primary sender. */
+  private readonly resendApiKey?: string;
+  /** SMTP credentials — used as fallback when Resend is not configured. */
+  private readonly isSmtpConfigured: boolean;
+  /** True when either Resend or SMTP can send mail. */
+  private get isConfigured(): boolean {
+    return Boolean(this.resendApiKey || this.isSmtpConfigured);
+  }
 
   constructor() {
     const host = process.env.SMTP_HOST || 'smtp.gmail.com';
@@ -23,13 +30,16 @@ export class MailService implements OnModuleInit {
     const user = process.env.SMTP_USER?.trim();
     const pass = process.env.SMTP_PASS?.trim();
 
-    this.isConfigured = Boolean(user && pass);
+    this.resendApiKey = process.env.RESEND_API_KEY?.trim() || undefined;
+    this.isSmtpConfigured = Boolean(user && pass);
 
     if (!this.isConfigured) {
       this.logger.error(
-        '❌ SMTP is not configured: SMTP_USER / SMTP_PASS are missing from .env. ' +
+        '❌ Email is not configured: set RESEND_API_KEY (preferred) or SMTP_USER / SMTP_PASS in .env. ' +
         'Email sending (OTP, activation, password reset) will be skipped.',
       );
+    } else if (this.resendApiKey) {
+      this.logger.log('✅ MailService using Resend HTTP API');
     }
 
     this.transporter = nodemailer.createTransport({
@@ -45,9 +55,13 @@ export class MailService implements OnModuleInit {
     });
   }
 
-  // App start hone par SMTP check karega
+  // App start hone par SMTP check karega (skipped when Resend is the sender)
   async onModuleInit() {
-    if (!this.isConfigured) {
+    if (this.resendApiKey) {
+      // Resend needs no connection pre-check — its HTTP endpoint is stateless.
+      return;
+    }
+    if (!this.isSmtpConfigured) {
       return;
     }
     try {
@@ -61,16 +75,68 @@ export class MailService implements OnModuleInit {
   /* ========================================================================= */
   /* 1. CORE SENDER (Exact old signature: to, subject, html, optional text)   */
   /* ========================================================================= */
-  async sendMail(to: string, subject: string, html: string, text?: string): Promise<void> {
+  async sendMail(
+    to: string,
+    subject: string,
+    html: string,
+    text?: string,
+    throwOnError = false,
+  ): Promise<void> {
     if (!this.isConfigured) {
-      this.logger.warn(`⚠️ Skipped email to ${to}: SMTP_USER / SMTP_PASS are not set in .env`);
+      this.logger.warn(`⚠️ Skipped email to ${to}: RESEND_API_KEY / SMTP credentials are not set in .env`);
+      if (throwOnError) {
+        throw new Error('Email transport is not configured (RESEND_API_KEY / SMTP credentials missing)');
+      }
       return;
     }
-    try {
-      const from = process.env.MAIL_FROM || `"MediOps" <${process.env.SMTP_USER}>`;
 
+    // Preferred transport: Resend HTTP API
+    if (this.resendApiKey) {
+      // Resend only accepts a verified domain, or its shared test sender
+      // "onboarding@resend.dev". SMTP's MAIL_FROM (often a Gmail address) is
+      // NOT valid here and returns 403 "domain is not verified".
+      const resendFrom =
+        process.env.RESEND_FROM?.trim() || '"MediOps" <onboarding@resend.dev>';
+      try {
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.resendApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ from: resendFrom, to, subject, html, text }),
+        });
+
+        if (!res.ok) {
+          const detail = await res.text().catch(() => '');
+          throw new Error(`Resend API ${res.status} ${res.statusText}${detail ? `: ${detail}` : ''}`);
+        }
+
+        const data = (await res.json().catch(() => ({}))) as { id?: string };
+        this.logger.log(`✉️ Email sent to ${to} via Resend [Id: ${data?.id ?? 'n/a'}]`);
+        return;
+      } catch (err) {
+        this.logger.error(`❌ Resend failed to send email to ${to}`, err);
+        // Only fall back when SMTP is actually configured.
+        if (!this.isSmtpConfigured) {
+          if (throwOnError) {
+            throw err instanceof Error ? err : new Error(String(err));
+          }
+          return;
+        }
+        this.logger.warn(`↩️ Falling back to SMTP for ${to}`);
+      }
+    }
+
+    // Fallback transport: SMTP (unchanged legacy behaviour)
+    if (!this.isSmtpConfigured) {
+      return;
+    }
+    const smtpFrom =
+      process.env.MAIL_FROM || `"MediOps" <${process.env.SMTP_USER}>`;
+    try {
       const info = await this.transporter.sendMail({
-        from,
+        from: smtpFrom,
         to,
         subject,
         html,
@@ -82,6 +148,9 @@ export class MailService implements OnModuleInit {
       this.logger.error(`❌ Failed to send email to ${to}`, err);
       // Agar kisi background service ko crash hone se bachana hai to error throw na karein,
       // sirf error log karein.
+      if (throwOnError) {
+        throw err instanceof Error ? err : new Error(String(err));
+      }
     }
   }
 
@@ -149,6 +218,7 @@ export class MailService implements OnModuleInit {
       `Your MediOps Verification Code: ${otpCode}`,
       html,
       `Your verification code is: ${otpCode}. It expires in 5 minutes.`,
+      true, // throw on failure — a silent OTP failure locks the user out
     );
   }
 
@@ -215,6 +285,7 @@ export class MailService implements OnModuleInit {
       `Your MediOps Verification Code: ${otpCode}`,
       html,
       `Your verification code is: ${otpCode}. It expires in 5 minutes.`,
+      true, // throw on failure — a silent OTP failure locks the user out
     );
   }
 
