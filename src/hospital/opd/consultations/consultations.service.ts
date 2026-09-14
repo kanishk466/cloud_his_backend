@@ -51,6 +51,7 @@ export class ConsultationsService {
 
     // Rule 4: Generate consultation number
     const consultationNo = await this.consultationsRepository.generateConsultationNo(tenantId);
+    console.log('consultationNo', consultationNo);
 
     // Rule 5: Create consultation
     const consultation = await this.consultationsRepository.create({
