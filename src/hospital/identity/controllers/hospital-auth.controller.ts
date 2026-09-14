@@ -24,6 +24,8 @@ import {
   REFRESH_COOKIE_NAME,
   getRefreshCookieOptions,
 } from '../../constants/cookie.config';
+import { ResetPasswordWithCodeDto } from '../dto/resetPassworwithcode.dto';
+import { SendResetCodeDto } from '../dto/SendResetCode.dto';
 
 
 
@@ -210,5 +212,31 @@ async refresh(
     res.clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions());
 
     return result;
+  }
+
+   /**
+   * STEP 1 — "Send Reset Code" button.
+   * Emails a 6-digit verification code to the hospital admin's work email.
+   * Completely separate from the token-based forgot-password above.
+   */
+  @Post('send-reset-code')
+  @HttpCode(HttpStatus.OK)
+  async sendResetCode(@Body() dto: SendResetCodeDto) {
+    return this.authService.sendResetCode(dto.email);
+  }
+
+  /**
+   * STEP 2 — "Verify code + set new password" form submit.
+   * Admin enters the emailed 6-digit code together with the new password.
+   * Completely separate from the token-based reset-password above.
+   */
+  @Post('reset-password-with-code')
+  @HttpCode(HttpStatus.OK)
+  async resetPasswordWithCode(@Body() dto: ResetPasswordWithCodeDto) {
+    return this.authService.resetPasswordWithCode(
+      dto.email,
+      dto.code,
+      dto.newPassword,
+    );
   }
 }

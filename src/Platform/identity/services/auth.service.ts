@@ -59,7 +59,7 @@ export class AuthService {
       await this.authSecurityService.resetLoginAttempts(user.id, false);
     }
     if (securityFlag(SECURITY_FLAGS.twoFactor) && ['SUPER_ADMIN', 'PLATFORM_ADMIN'].includes(user.role)) {
-      const otp = await this.authSecurityService.createOtp({ platformUserId: user.id, email: user.email });
+      const otp = await this.authSecurityService.createOtpHospital({ platformUserId: user.id, email: user.email, purpose: 'login' });
       const otpToken = await this.jwtService.signAsync({ otpId: otp.id, purpose: 'login-otp' }, { secret: process.env.JWT_ACCESS_SECRET!, expiresIn: '10m' });
       return { message: 'OTP sent', otpToken, userId: user.id };
     }

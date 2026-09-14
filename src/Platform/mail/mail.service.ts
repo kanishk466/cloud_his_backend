@@ -15,17 +15,30 @@ export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
   private transporter: Transporter;
 
+  private readonly isConfigured: boolean;
+
   constructor() {
-    const isSecurePort = Number(process.env.SMTP_PORT) === 465;
+    const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const port = Number(process.env.SMTP_PORT || 587);
+    const user = process.env.SMTP_USER?.trim();
+    const pass = process.env.SMTP_PASS?.trim();
+
+    this.isConfigured = Boolean(user && pass);
+
+    if (!this.isConfigured) {
+      this.logger.error(
+        '❌ SMTP is not configured: SMTP_USER / SMTP_PASS are missing from .env. ' +
+        'Email sending (OTP, activation, password reset) will be skipped.',
+      );
+    }
 
     this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: process.env.SMTP_SECURE === 'true' || isSecurePort, // true for 465, false for 587/STARTTLS
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
+      host,
+      port,
+      secure: process.env.SMTP_SECURE === 'true' || port === 465, // true for 465, false for 587/STARTTLS
+      // Only attach auth when credentials exist — otherwise Gmail replies
+      // "530-5.7.0 Authentication Required" on every send.
+      ...(this.isConfigured ? { auth: { user, pass } } : {}),
       pool: true,          // Connection pooling
       maxConnections: 5,
       maxMessages: 100,
@@ -34,6 +47,9 @@ export class MailService implements OnModuleInit {
 
   // App start hone par SMTP check karega
   async onModuleInit() {
+    if (!this.isConfigured) {
+      return;
+    }
     try {
       await this.transporter.verify();
       this.logger.log('✅ Nodemailer SMTP Server connected successfully');
@@ -46,6 +62,10 @@ export class MailService implements OnModuleInit {
   /* 1. CORE SENDER (Exact old signature: to, subject, html, optional text)   */
   /* ========================================================================= */
   async sendMail(to: string, subject: string, html: string, text?: string): Promise<void> {
+    if (!this.isConfigured) {
+      this.logger.warn(`⚠️ Skipped email to ${to}: SMTP_USER / SMTP_PASS are not set in .env`);
+      return;
+    }
     try {
       const from = process.env.MAIL_FROM || `"MediOps" <${process.env.SMTP_USER}>`;
 
@@ -132,12 +152,78 @@ export class MailService implements OnModuleInit {
     );
   }
 
+
+  /* ========================================================================= */
+  /* 3. NEW METHOD: OTP EMAIL (login + password reset)                         */
+  /* ========================================================================= */
+  async sendOtpMailHospital(to: string, otpCode: string, purpose: 'login' | 'password-reset' = 'login'): Promise<void> {
+    const copy =
+      purpose === 'password-reset'
+        ? {
+          heading: 'Password Reset Code',
+          line: 'Use the following One-Time Password (OTP) to reset your password:',
+          note: 'If you did not request a password reset, please notify your administrator immediately.',
+        }
+        : {
+          heading: 'Verification Code',
+          line: 'Use the following One-Time Password (OTP) to complete your login:',
+          note: 'If you did not request this login, please notify your administrator.',
+        };
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc; margin: 0; padding: 0; }
+          .container { max-width: 500px; margin: 30px auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; }
+          .header { background: #0f172a; padding: 24px; text-align: center; color: #ffffff; font-size: 20px; font-weight: bold; }
+          .content { padding: 32px; }
+          .otp-box { background: #f1f5f9; border-radius: 8px; text-align: center; padding: 20px; margin: 24px 0; border: 1px dashed #cbd5e1; }
+          .otp-code { font-family: monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #0f172a; }
+          .footer { background: #f8fafc; padding: 16px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">MediOps Security</div>
+          <div class="content">
+            <h2 style="color: #0f172a; margin-top: 0;">${copy.heading}</h2>
+            <p style="color: #64748b; font-size: 14px; line-height: 1.5;">
+              ${copy.line}
+            </p>
+            <div class="otp-box">
+              <span class="otp-code">${otpCode}</span>
+            </div>
+            <p style="color: #64748b; font-size: 13px;">
+              ⏱️ This code will expire in <strong>5 minutes</strong>.
+            </p>
+            <p style="color: #94a3b8; font-size: 12px; margin-top: 20px;">
+              ${copy.note}
+            </p>
+          </div>
+          <div class="footer">
+            © ${new Date().getFullYear()} MediOps. All rights reserved.
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    await this.sendMail(
+      to,
+      `Your MediOps Verification Code: ${otpCode}`,
+      html,
+      `Your verification code is: ${otpCode}. It expires in 5 minutes.`,
+    );
+  }
+
   /* ========================================================================= */
   /* 4. NEW METHOD: FORGOT PASSWORD RESET LINK                                */
   /* ========================================================================= */
   async sendPasswordResetMail(to: string, resetToken: string): Promise<void> {
     const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
-    
+
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px;">
         <h2 style="color: #0f172a;">Password Reset Request</h2>
@@ -160,6 +246,7 @@ export class MailService implements OnModuleInit {
 }
 
 // ------------------- EXISTING TEMPLATE BUILDER (Untouched) -------------------
+
 function buildActivationEmail(input: ActivationEmailInput): string {
   return `<!DOCTYPE html>
 <html>

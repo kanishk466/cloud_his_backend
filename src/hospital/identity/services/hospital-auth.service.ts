@@ -98,9 +98,10 @@ export class HospitalAuthService {
         roleNames.some((r) => r === 'admin' || r === 'doctor');
 
       if (requires2fa) {
-        const otp = await this.authSecurityService.createOtp({
+        const otp = await this.authSecurityService.createOtpHospital({
           hospitalUserId: user.id,
           email: user.email,
+          purpose: 'login',
         });
         const otpToken = await this.jwtService.signAsync(
           { otpId: otp.id, purpose: 'login-otp' },
@@ -369,8 +370,8 @@ export class HospitalAuthService {
   private async issueTokensForUser(user: any) {
     const session = securityFlag(SECURITY_FLAGS.sessionManagement)
       ? await this.authSecurityService.createSession({
-          hospitalUserId: user.id,
-        })
+        hospitalUserId: user.id,
+      })
       : undefined;
 
     const tokens = await this.generateTokens(
@@ -452,4 +453,85 @@ export class HospitalAuthService {
       expiresAt: new Date(Date.now() + 15 * 60 * 1000),
     };
   }
+
+  /* ============ FORGOT PASSWORD WITH CODE (NEW FLOW) ============ */
+  /*
+   * Completely separate from the token-based forgotPassword/resetPassword
+   * above. Uses the emailed 6-digit verification code (LoginOtp table):
+   *
+   *   Step 1: sendResetCode(email)                 → POST send-reset-code
+   *   Step 2: resetPasswordWithCode(email, code,
+   *                                newPassword)    → POST reset-password-with-code
+   */
+
+  /**
+   * Step 1: admin submits work email → 6-digit verification code is emailed
+   * via AuthSecurityService.createOtpHospital (bcrypt-hashed in DB, 5 min expiry,
+   * 60 s resend cooldown, max 3 attempts). Generic response either way
+   * to prevent email-enumeration attacks.
+   */
+  async sendResetCode(email: string) {
+    const user =
+      await this.hospitalAuthUserRepository.findActiveByEmail(email);
+
+    if (user) {
+      await this.authSecurityService.createOtpHospital({
+        hospitalUserId: user.id,
+        email: user.email,
+        purpose: 'password-reset',
+      });
+    }
+
+    // Always the same message — prevents email enumeration
+    return {
+      message:
+        'If an account with that email exists, a verification code has been sent. It expires in 5 minutes.',
+    };
+  }
+
+  /**
+   * Step 2: admin submits email + verification code + new password.
+   * On success: password updated, all sessions invalidated (refreshTokenHash
+   * cleared → forced re-login everywhere), reset audit-logged.
+   */
+  async resetPasswordWithCode(email: string, code: string, newPassword: string) {
+    const user =
+      await this.hospitalAuthUserRepository.findActiveByEmailWithPassword(
+        email,
+      );
+
+    // Same error for unknown email and wrong code — no account enumeration
+    if (!user)
+      throw new UnauthorizedException('Invalid or expired verification code');
+
+    // Cheap validations first — must not consume one of the 3 code attempts
+    if (securityFlag(SECURITY_FLAGS.passwordPolicy)) {
+      assertPasswordPolicy(newPassword);
+    }
+    const samePassword = await bcrypt.compare(newPassword, user.passwordHash);
+    if (samePassword)
+      throw new BadRequestException(
+        'New password must be different from the current password',
+      );
+
+    // Verifies code (wrong/expired/locked → 401) and deletes it (single-use)
+    await this.authSecurityService.verifyHospitalUserOtp(user.id, code);
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.hospitalAuthUserRepository.updatePassword(user.id, passwordHash);
+    // ↑ also clears refreshTokenHash → all sessions invalidated
+
+    await this.auditService.log({
+      action: 'AUTH_PASSWORD_RESET',
+      actorId: user.id,
+      actorEmail: user.email,
+      tenantId: user.tenantId,
+      targetType: 'HospitalUser',
+      targetName: user.email,
+      detail: 'Password reset via forgot-password with email verification code',
+    });
+
+    return { message: 'Password reset successfully. Please log in with your new password.' };
+  }
+  /* ============ END FORGOT PASSWORD WITH CODE (NEW FLOW) ============ */
 }

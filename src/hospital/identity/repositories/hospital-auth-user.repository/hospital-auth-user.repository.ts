@@ -5,7 +5,7 @@ import { PrismaService } from '../../../../shared/prisma/prisma.service';
 
 @Injectable()
 export class HospitalAuthUserRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Full user lookup with hospital, roles and doctor profile.
@@ -64,6 +64,19 @@ export class HospitalAuthUserRepository {
     return this.prisma.hospitalUser.findFirst({
       where: { email, status: 'ACTIVE' },
       select: { id: true, email: true, firstName: true, tenantId: true },
+    });
+  }
+
+
+  /**
+   * Forgot-password-with-code flow (separate from the token-based
+   * findActiveByEmail flow). Needs passwordHash to block reusing the
+   * same password when resetting via verification code.
+   */
+  findActiveByEmailWithPassword(email: string) {
+    return this.prisma.hospitalUser.findFirst({
+      where: { email, status: 'ACTIVE' },
+      select: { id: true, email: true, firstName: true, tenantId: true, passwordHash: true },
     });
   }
 
