@@ -28,24 +28,27 @@ export class ConsultationsRepository {
 
   // ─── GENERATE CONSULTATION NUMBER ──────────────────────────────
   async generateConsultationNo(tenantId: string): Promise<string> {
+    console.log('tenantId', tenantId);
     try {
       return await this.prisma.$transaction(async (tx) => {
         const today = format(new Date(), 'yyyyMMdd');
         const prefix = `${CONSULTATION_NO_CONFIG.PREFIX}-${today}-`;
-
-        const result = await tx.$queryRaw<{ consultation_no: string }[]>`
-          SELECT consultation_no FROM consultations
-          WHERE tenant_id = ${tenantId} AND consultation_no LIKE ${`${prefix}%`}
-          ORDER BY consultation_no DESC LIMIT 1
+        console.log('prefix', prefix);
+        const result = await tx.$queryRaw<{ consultationNo: string }[]>`
+          SELECT "consultationNo" FROM "consultations"
+          WHERE "tenantId" = ${tenantId} AND "consultationNo" LIKE ${`${prefix}%`}
+          ORDER BY "consultationNo" DESC LIMIT 1
           FOR UPDATE SKIP LOCKED
         `;
-
-        const lastNo = result[0]?.consultation_no;
+        console.log('result', result);
+        const lastNo = result[0]?.consultationNo;
+        console.log('lastNo', lastNo);
         let seq = 1;
         if (lastNo) {
           const parts = lastNo.split('-');
           seq = parseInt(parts[parts.length - 1], 10) + 1;
         }
+        console.log('seq', seq);
 
         return `${prefix}${seq.toString().padStart(CONSULTATION_NO_CONFIG.SEQUENCE_LENGTH, '0')}`;
       });
