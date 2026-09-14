@@ -13,6 +13,7 @@ import { AddPrescriptionDto } from './dto/add-prescription.dto';
 import { AddInvestigationDto } from './dto/add-investigation.dto';
 import { ConsultationResponseDto } from './dto/consultation-response.dto';
 import { CONSULTATION_ERRORS, CONSULTATION_ELIGIBLE_STATUSES } from './constants/consultations.constants';
+import { SearchConsultationsDto } from './dto/search-consultations.dto';
 
 @Injectable()
 export class ConsultationsService {
@@ -66,6 +67,33 @@ export class ConsultationsService {
     this.logger.log(`Consultation ${consultationNo} started for appointment ${appointment.appointmentNo}`);
 
     return ConsultationResponseDto.fromEntity(consultation);
+  }
+
+
+
+  
+  async searchConsultations(tenantId: string, dto: SearchConsultationsDto) {
+    const { consultations, total } =
+      await this.consultationsRepository.findMany(tenantId, dto);
+
+    const stats = await this.consultationsRepository.getDashboardStats(
+      tenantId,
+      dto.doctorProfileId,
+    );
+
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 8;
+
+    return {
+      stats, // Drives top badges: "0 in progress", "1 completed", "1 visits awaiting start"
+      data: consultations.map((c) => ConsultationResponseDto.fromEntity(c)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   // ─── GET CONSULTATION ───────────────────────────────────────────

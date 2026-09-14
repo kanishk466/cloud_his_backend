@@ -10,6 +10,8 @@ import { AddPrescriptionDto } from './dto/add-prescription.dto';
 import { AddInvestigationDto } from './dto/add-investigation.dto';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
 import { CurrentTenant } from '../../core/decorators/current-tenant.decorator';
+import { SearchService } from 'src/Platform/search/search.service';
+import { SearchConsultationsDto } from './dto/search-consultations.dto';
 
 @Controller('opd/consultations')
 @UseGuards(HospitalJwtAuthGuard)
@@ -26,6 +28,15 @@ export class ConsultationsController {
     return this.consultationsService.startConsultation(tenantId, dto);
   }
 
+
+  // GET /opd/consultations/search
+  @Get()
+  async searchConsultations(
+    @Query() dto: SearchConsultationsDto,
+    @CurrentTenant() tenantId: string){
+      return this.consultationsService.searchConsultations(tenantId, dto);
+    }
+  
   // GET /opd/consultations/appointment/:appointmentId
   @Get('appointment/:appointmentId')
   async findByAppointment(
