@@ -76,7 +76,12 @@ async function main() {
   // ========================
   console.log('\n📌 Seeding Modules...');
 
+
+  // ========================
+  // 2. MODULES (Updated additions)
+  // ========================
   const modulesData = [
+    // ... existing modules ...
     {
       name: 'Dashboard',
       code: 'DASHBOARD',
@@ -164,30 +169,37 @@ async function main() {
     {
       name: 'User Management',
       code: 'USER_MANAGEMENT',
-      route: '/user-management',
-      icon: 'users',
+      route: '/users/new',
+      icon: 'user-plus',
       sortOrder: 13,
+    },
+    {
+      name: 'Roles & Permissions',
+      code: 'ROLES_PERMISSIONS',
+      route: '/roles',
+      icon: 'shield-check',
+      sortOrder: 14,
     },
     {
       name: 'Insurance & Panel',
       code: 'INSURANCE_PANEL',
       route: '/insurance',
       icon: 'shield',
-      sortOrder: 14,
+      sortOrder: 15,
     },
     {
       name: 'Discharge Summary',
       code: 'DISCHARGE_SUMMARY',
       route: '/discharge',
       icon: 'document',
-      sortOrder: 15,
+      sortOrder: 16,
     },
     {
       name: 'IPD Management',
       code: 'IPD_MANAGEMENT',
       route: '/ipd',
       icon: 'bed',
-      sortOrder: 16,
+      sortOrder: 17,
     },
   ];
 
@@ -209,7 +221,9 @@ async function main() {
     string,
     { name: string; code: string; description?: string }[]
   > = {
-    DASHBOARD: [{ name: 'View Dashboard', code: 'DASHBOARD_VIEW' }],
+    // ... existing features ...
+
+    // Update existing PATIENT_REGISTRATION (already there, kept as-is)
     PATIENT_REGISTRATION: [
       { name: 'View Patients', code: 'PATIENT_REG_VIEW' },
       { name: 'Register Patient', code: 'PATIENT_REG_CREATE' },
@@ -218,75 +232,40 @@ async function main() {
       { name: 'Print Patient Card', code: 'PATIENT_REG_PRINT' },
       { name: 'Export Patients', code: 'PATIENT_REG_EXPORT' },
       { name: 'Bulk Upload', code: 'PATIENT_REG_BULK_UPLOAD' },
+      { name: 'Search Patient', code: 'PATIENT_REG_SEARCH' },
+      { name: 'View Patient History', code: 'PATIENT_REG_HISTORY' },
     ],
-    APPOINTMENTS: [
-      { name: 'View Appointments', code: 'APPT_VIEW' },
-      { name: 'Create Appointment', code: 'APPT_CREATE' },
-      { name: 'Edit Appointment', code: 'APPT_EDIT' },
-      { name: 'Cancel Appointment', code: 'APPT_CANCEL' },
-      { name: 'Print Appointment', code: 'APPT_PRINT' },
-      { name: 'Send SMS / WhatsApp', code: 'APPT_SEND_SMS' },
+
+    // Updated USER_MANAGEMENT (route /users/new - Add User focus)
+    USER_MANAGEMENT: [
+      { name: 'View Users', code: 'USER_MGMT_VIEW' },
+      { name: 'Add User', code: 'USER_MGMT_CREATE' },
+      { name: 'Edit User', code: 'USER_MGMT_EDIT' },
+      { name: 'Delete User', code: 'USER_MGMT_DELETE' },
+      { name: 'Deactivate User', code: 'USER_MGMT_DEACTIVATE' },
+      { name: 'Activate User', code: 'USER_MGMT_ACTIVATE' },
+      { name: 'Reset Password', code: 'USER_MGMT_RESET_PASSWORD' },
+      { name: 'Assign Role', code: 'USER_MGMT_ASSIGN_ROLE' },
+      { name: 'Export Users', code: 'USER_MGMT_EXPORT' },
+      { name: 'View User Activity', code: 'USER_MGMT_ACTIVITY' },
     ],
-    OPD_EXAMINATION: [
-      { name: 'View OPD', code: 'OPD_VIEW' },
-      { name: 'Add Vitals', code: 'OPD_ADD_VITALS' },
-      { name: 'Edit Vitals', code: 'OPD_EDIT_VITALS' },
-      { name: 'Print OPD Sheet', code: 'OPD_PRINT' },
+
+    // NEW: Roles & Permissions module
+    ROLES_PERMISSIONS: [
+      { name: 'View Roles', code: 'ROLES_VIEW' },
+      { name: 'Create Role', code: 'ROLES_CREATE' },
+      { name: 'Edit Role', code: 'ROLES_EDIT' },
+      { name: 'Delete Role', code: 'ROLES_DELETE' },
+      { name: 'Clone Role', code: 'ROLES_CLONE' },
+      { name: 'View Permissions', code: 'PERMISSIONS_VIEW' },
+      { name: 'Assign Permissions', code: 'PERMISSIONS_ASSIGN' },
+      { name: 'Revoke Permissions', code: 'PERMISSIONS_REVOKE' },
+      { name: 'Manage Module Access', code: 'PERMISSIONS_MODULE_ACCESS' },
+      { name: 'Manage Feature Access', code: 'PERMISSIONS_FEATURE_ACCESS' },
+      { name: 'Export Role Matrix', code: 'ROLES_EXPORT' },
     ],
-    CONSULTATION: [
-      { name: 'View Consultation', code: 'CONSULT_VIEW' },
-      { name: 'Create Consultation', code: 'CONSULT_CREATE' },
-      { name: 'Edit Consultation', code: 'CONSULT_EDIT' },
-      { name: 'Write Prescription', code: 'CONSULT_PRESCRIPTION' },
-      { name: 'Print Prescription', code: 'CONSULT_PRINT' },
-      { name: 'Reopen Closed Record', code: 'CONSULT_REOPEN' },
-    ],
-    TELECONSULTATION: [
-      { name: 'View Teleconsultation', code: 'TELECONSULT_VIEW' },
-      { name: 'Start Teleconsultation', code: 'TELECONSULT_START' },
-      { name: 'Write Prescription', code: 'TELECONSULT_PRESCRIPTION' },
-    ],
-    BILLING: [
-      { name: 'View Bills', code: 'BILLING_VIEW' },
-      { name: 'Create Bill', code: 'BILLING_CREATE' },
-      { name: 'Edit Bill', code: 'BILLING_EDIT' },
-      { name: 'Delete Bill', code: 'BILLING_DELETE' },
-      { name: 'Print Bill', code: 'BILLING_PRINT' },
-      { name: 'Export Bills', code: 'BILLING_EXPORT' },
-      { name: 'Approve / Verify', code: 'BILLING_APPROVE' },
-      { name: 'Cancel / Void', code: 'BILLING_CANCEL' },
-      { name: 'Refund', code: 'BILLING_REFUND' },
-      { name: 'Discount Approval', code: 'BILLING_DISCOUNT' },
-      { name: 'View Financial Data', code: 'BILLING_VIEW_FINANCIAL' },
-      { name: 'Override Rate', code: 'BILLING_OVERRIDE_RATE' },
-    ],
-    PHARMACY: [
-      { name: 'View Pharmacy', code: 'PHARMACY_VIEW' },
-      { name: 'Dispense Medicine', code: 'PHARMACY_DISPENSE' },
-      { name: 'Edit Dispensing', code: 'PHARMACY_EDIT' },
-      { name: 'Return Medicine', code: 'PHARMACY_RETURN' },
-      { name: 'Print Receipt', code: 'PHARMACY_PRINT' },
-      { name: 'View Stock', code: 'PHARMACY_VIEW_STOCK' },
-    ],
-    LAB_RADIOLOGY: [
-      { name: 'View Lab Reports', code: 'LAB_VIEW' },
-      { name: 'Create Lab Order', code: 'LAB_CREATE' },
-      { name: 'Enter Results', code: 'LAB_ENTER_RESULTS' },
-      { name: 'Approve Results', code: 'LAB_APPROVE' },
-      { name: 'Print Report', code: 'LAB_PRINT' },
-      { name: 'Export Reports', code: 'LAB_EXPORT' },
-    ],
-    PATIENTS: [
-      { name: 'View Patient Records', code: 'PATIENTS_VIEW' },
-      { name: 'Edit Patient Records', code: 'PATIENTS_EDIT' },
-      { name: 'View Medical History', code: 'PATIENTS_HISTORY' },
-      { name: 'Export Patient Data', code: 'PATIENTS_EXPORT' },
-    ],
-    REPORTS: [
-      { name: 'View Reports', code: 'REPORTS_VIEW' },
-      { name: 'Export Reports', code: 'REPORTS_EXPORT' },
-      { name: 'Access Audit Log', code: 'REPORTS_AUDIT_LOG' },
-    ],
+
+    // Updated MASTER_CONFIG with more features
     MASTER_CONFIG: [
       { name: 'View Master Config', code: 'MASTER_VIEW' },
       { name: 'Manage Departments', code: 'MASTER_DEPARTMENTS' },
@@ -294,37 +273,14 @@ async function main() {
       { name: 'Manage Services', code: 'MASTER_SERVICES' },
       { name: 'Manage Charges', code: 'MASTER_CHARGES' },
       { name: 'Hospital Settings', code: 'MASTER_SETTINGS' },
-    ],
-    USER_MANAGEMENT: [
-      { name: 'View Users', code: 'USER_MGMT_VIEW' },
-      { name: 'Create User', code: 'USER_MGMT_CREATE' },
-      { name: 'Edit User', code: 'USER_MGMT_EDIT' },
-      { name: 'Deactivate User', code: 'USER_MGMT_DEACTIVATE' },
-      { name: 'Reset Password', code: 'USER_MGMT_RESET_PASSWORD' },
-      { name: 'Manage Roles', code: 'USER_MGMT_ROLES' },
-      { name: 'Assign Permissions', code: 'USER_MGMT_PERMISSIONS' },
-    ],
-    INSURANCE_PANEL: [
-      { name: 'View Insurance', code: 'INSURANCE_VIEW' },
-      { name: 'Create Claim', code: 'INSURANCE_CREATE' },
-      { name: 'Edit Claim', code: 'INSURANCE_EDIT' },
-      { name: 'Approve Claim', code: 'INSURANCE_APPROVE' },
-      { name: 'Export Claims', code: 'INSURANCE_EXPORT' },
-    ],
-    DISCHARGE_SUMMARY: [
-      { name: 'View Discharge Summary', code: 'DISCHARGE_VIEW' },
-      { name: 'Create Discharge Summary', code: 'DISCHARGE_CREATE' },
-      { name: 'Edit Discharge Summary', code: 'DISCHARGE_EDIT' },
-      { name: 'Print Discharge Summary', code: 'DISCHARGE_PRINT' },
-      { name: 'Approve Discharge', code: 'DISCHARGE_APPROVE' },
-    ],
-    IPD_MANAGEMENT: [
-      { name: 'View IPD', code: 'IPD_VIEW' },
-      { name: 'Admit Patient', code: 'IPD_ADMIT' },
-      { name: 'Edit Admission', code: 'IPD_EDIT' },
-      { name: 'Discharge Patient', code: 'IPD_DISCHARGE' },
-      { name: 'Manage Bed', code: 'IPD_BED_MANAGE' },
-      { name: 'Print IPD Sheet', code: 'IPD_PRINT' },
+      { name: 'Manage Doctors', code: 'MASTER_DOCTORS' },
+      { name: 'Manage Specializations', code: 'MASTER_SPECIALIZATIONS' },
+      { name: 'Manage Branches', code: 'MASTER_BRANCHES' },
+      { name: 'Manage Wards & Beds', code: 'MASTER_WARDS_BEDS' },
+      { name: 'Manage Taxes', code: 'MASTER_TAXES' },
+      { name: 'Manage Payment Modes', code: 'MASTER_PAYMENT_MODES' },
+      { name: 'Manage Templates', code: 'MASTER_TEMPLATES' },
+      { name: 'Backup & Restore', code: 'MASTER_BACKUP' },
     ],
   };
 

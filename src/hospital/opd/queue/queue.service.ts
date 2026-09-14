@@ -168,7 +168,7 @@ export class QueueService {
       this.queueRepository.getCurrentToken(
         tenantId,
         doctorProfileId,
-        dateOnly,
+        dateOnly
       ),
     ]);
 
@@ -192,66 +192,79 @@ export class QueueService {
   }
 
   // ─── CALL NEXT PATIENT ──────────────────────────────────────────
+  
+  // ─── CALL NEXT PATIENT ──────────────────────────────────────────
   // Doctor clicks "Call Next"
-
-
   async callNext(
-  tenantId: string,
-  doctorProfileId: string,
-): Promise<QueueTokenDto | null> {
-  const today = startOfDay(new Date());
+    tenantId: string,
+    doctorProfileId: string,
+    dateParam?: any, // 👈 Dynamic Date parameter support
+  ): Promise<QueueTokenDto | null> {
+    
+    // 1. Safe UTC parser: constructs pure YYYY-MM-DD Date representation
+    let targetDate: Date;
+    if (dateParam) {
+      const rawDateStr = Array.isArray(dateParam) ? dateParam[0] : dateParam;
+      const cleanDateStr = rawDateStr.trim().split('T')[0].split(',')[0];
+      const [year, month, day] = cleanDateStr.split('-').map(Number);
+      targetDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    } else {
+      const now = new Date();
+      targetDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    }
 
-  const currentToken =
-    await this.queueRepository.getCurrentToken(
+    // 2. Check if another patient is already IN_PROGRESS for this exact target date
+    const currentToken = await this.queueRepository.getCurrentToken(
       tenantId,
       doctorProfileId,
-      today,
+      targetDate, // 👈 Target Date passed down
     );
 
-  if (currentToken) {
-    throw new BadRequestException({
-      ...QUEUE_ERRORS.ANOTHER_IN_PROGRESS,
-      details: {
-        currentTokenNumber: currentToken.tokenNumber,
-        patientName:
-          currentToken.appointment?.patient?.firstName ?? 'Unknown',
+    if (currentToken) {
+      throw new BadRequestException({
+        ...QUEUE_ERRORS.ANOTHER_IN_PROGRESS,
+        details: {
+          currentTokenNumber: currentToken.tokenNumber,
+          patientName: currentToken.appointment?.patient?.firstName ?? 'Unknown',
+        },
+      });
+    }
+
+    // 3. Fetch the next waiting token (Checked-In patients first)
+    const nextToken = await this.queueRepository.getNextWaitingToken(
+      tenantId,
+      doctorProfileId,
+      targetDate, // 👈 Target Date passed down
+      ['CHECKED_IN', 'IN_QUEUE'], // Pick both eligible waiting states
+    );
+
+    if (!nextToken) {
+      return null;
+    }
+
+    // 4. Update Token to IN_PROGRESS
+    const updatedToken = await this.queueRepository.updateStatus(
+      nextToken.id,
+      'IN_PROGRESS',
+      {
+        calledAt: new Date(),
+        startedAt: new Date(),
       },
-    });
-  }
-
-  // ✅ FIX: Only pick patients who are CHECKED_IN (nurse has confirmed presence)
-  const nextToken =
-    await this.queueRepository.getNextWaitingToken(
-      tenantId,
-      doctorProfileId,
-      today,
-      'CHECKED_IN',  // ← ✅ NEW parameter
     );
 
-  if (!nextToken) {
-    return null;
+    // 5. Update Appointment status to IN_CONSULTATION
+    await this.queueRepository.updateAppointmentStatus(
+      nextToken.appointmentId,
+      'IN_CONSULTATION',
+    );
+
+    this.logger.log(
+      `Token #${nextToken.tokenNumber} called by doctor ${doctorProfileId} for date: ${targetDate.toISOString()}`,
+    );
+
+    return this.toQueueToken(updatedToken);
   }
 
-  const updatedToken = await this.queueRepository.updateStatus(
-    nextToken.id,
-    'IN_PROGRESS',
-    {
-      calledAt: new Date(),
-      startedAt: new Date(),
-    },
-  );
-
-  await this.queueRepository.updateAppointmentStatus(
-    nextToken.appointmentId,
-    'IN_CONSULTATION',
-  );
-
-  this.logger.log(
-    `Token #${nextToken.tokenNumber} called by doctor ${doctorProfileId}`,
-  );
-
-  return this.toQueueToken(updatedToken);
-}
   // ─── CALL SPECIFIC TOKEN ───────────────────────────────────────
   // Doctor calls a specific patient (out of order)
 async callToken(
@@ -292,7 +305,7 @@ async callToken(
     await this.queueRepository.getCurrentToken(
       tenantId,
       token.doctorProfileId,
-      today,
+      today
     );
 
   if (currentToken) {
@@ -589,73 +602,91 @@ async completeToken(
   // Map DB entity to response DTO
 
 
-  private toQueueToken(token: any): QueueTokenDto {
-  const appointment = token.appointment;
-  const patient = appointment?.patient;
 
-  // ✅ FIX: Nurse check-in ke baad vitals record ho jate hain
-  // Agar status CHECKED_IN, IN_CONSULTATION ya COMPLETED hai, matlab vitals step ho chuka hai
-  const vitalsRecorded = ['CHECKED_IN', 'IN_CONSULTATION', 'COMPLETED'].includes(
-    appointment?.status ?? '',
-  );
 
-  let waitTimeMins: number | null = null;
-  if (token.calledAt && token.createdAt) {
-    const diffMs =
-      new Date(token.calledAt).getTime() -
-      new Date(token.createdAt).getTime();
-    waitTimeMins = Math.round(diffMs / (1000 * 60));
+    private toQueueToken(token: any): QueueTokenDto {
+    const appointment = token.appointment;
+    const patient = appointment?.patient;
+    
+    // Extract actual vitals array from relation
+    const vitalsList = appointment?.vitalsRecords ?? [];
+    const latestVitals = vitalsList.length > 0 ? vitalsList[0] : null;
+
+    // ✅ ROBUST: Status string check karne ki jagah direct vitals list length check karein
+    const vitalsRecorded = vitalsList.length > 0;
+
+    let waitTimeMins: number | null = null;
+    if (token.calledAt && token.createdAt) {
+      const diffMs =
+        new Date(token.calledAt).getTime() -
+        new Date(token.createdAt).getTime();
+      waitTimeMins = Math.round(diffMs / (1000 * 60));
+    }
+
+    return {
+      id: token.id,
+      tokenNumber: token.tokenNumber,
+      status: token.status,
+      originalPosition: token.originalPosition,
+      estimatedTime: token.estimatedTime,
+      calledAt: token.calledAt,
+      startedAt: token.startedAt,
+      completedAt: token.completedAt,
+      roomNo: token.roomNo,
+      appointmentId: appointment?.id ?? token.appointmentId,
+      appointmentNo: appointment?.appointmentNo ?? '',
+      appointmentType: appointment?.appointmentType ?? '',
+      visitType: appointment?.visitType ?? '',
+      priority: appointment?.priority ?? 0,
+      reasonForVisit: appointment?.reasonForVisit ?? null,
+      patient: patient
+        ? {
+            id: patient.id,
+            uhid: patient.uhid,
+            firstName: patient.firstName,
+            lastName: patient.lastName,
+            fullName: [patient.firstName, patient.lastName]
+              .filter(Boolean)
+              .join(' '),
+            mobile: patient.mobile,
+            age: patient.age,
+            ageUnit: patient.ageUnit,
+            gender: patient.gender,
+            allergies: patient.allergies,
+            chronicDiseases: patient.chronicDiseases,
+          }
+        : {
+            id: '',
+            uhid: '',
+            firstName: 'Unknown',
+            lastName: null,
+            fullName: 'Unknown',
+            mobile: '',
+            age: null,
+            ageUnit: null,
+            gender: '',
+            allergies: null,
+            chronicDiseases: null,
+          },
+      vitalsRecorded, // 👈 true, because we found records in DB
+      vitals: latestVitals ? { // 👈 Pure nested records return ho rahe hain!
+        id: latestVitals.id,
+        heightCm: latestVitals.heightCm,
+        weightKg: latestVitals.weightKg,
+        bmi: latestVitals.bmi,
+        temperatureF: latestVitals.temperatureF,
+        bloodPressureSys: latestVitals.bloodPressureSys,
+        bloodPressureDia: latestVitals.bloodPressureDia,
+        pulseRate: latestVitals.pulseRate,
+        respiratoryRate: latestVitals.respiratoryRate,
+        spo2: latestVitals.spo2,
+        painScore: latestVitals.painScore,
+        chiefComplaints: latestVitals.chiefComplaints,
+        recordedAt: latestVitals.recordedAt,
+      } : null,
+      waitTimeMins,
+    } as any; // Cast as any if you need to update QueueTokenDto later
   }
-
-  return {
-    id: token.id,
-    tokenNumber: token.tokenNumber,
-    status: token.status,
-    originalPosition: token.originalPosition,
-    estimatedTime: token.estimatedTime,
-    calledAt: token.calledAt,
-    startedAt: token.startedAt,
-    completedAt: token.completedAt,
-    roomNo: token.roomNo,
-    appointmentId: appointment?.id ?? token.appointmentId,
-    appointmentNo: appointment?.appointmentNo ?? '',
-    appointmentType: appointment?.appointmentType ?? '',
-    visitType: appointment?.visitType ?? '',
-    priority: appointment?.priority ?? 0,
-    reasonForVisit: appointment?.reasonForVisit ?? null,
-    patient: patient
-      ? {
-          id: patient.id,
-          uhid: patient.uhid,
-          firstName: patient.firstName,
-          lastName: patient.lastName,
-          fullName: [patient.firstName, patient.lastName]
-            .filter(Boolean)
-            .join(' '),
-          mobile: patient.mobile,
-          age: patient.age,
-          ageUnit: patient.ageUnit,
-          gender: patient.gender,
-          allergies: patient.allergies,
-          chronicDiseases: patient.chronicDiseases,
-        }
-      : {
-          id: '',
-          uhid: '',
-          firstName: 'Unknown',
-          lastName: null,
-          fullName: 'Unknown',
-          mobile: '',
-          age: null,
-          ageUnit: null,
-          gender: '',
-          allergies: null,
-          chronicDiseases: null,
-        },
-    vitalsRecorded,
-    waitTimeMins,
-  };
-}
 
   // Map to simple token response
   private toTokenResponse(token: any): TokenResponseDto {
