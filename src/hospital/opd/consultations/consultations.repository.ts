@@ -2,6 +2,8 @@ import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 import { format } from 'date-fns';
 import { CONSULTATION_NO_CONFIG } from './constants/consultations.constants';
+import { SearchConsultationsDto } from './dto/search-consultations.dto';
+import { Prisma } from '@prisma/client';
 
 const consultationWithRelations = {
   patient: {
@@ -28,24 +30,27 @@ export class ConsultationsRepository {
 
   // ─── GENERATE CONSULTATION NUMBER ──────────────────────────────
   async generateConsultationNo(tenantId: string): Promise<string> {
+    console.log('tenantId', tenantId);
     try {
       return await this.prisma.$transaction(async (tx) => {
         const today = format(new Date(), 'yyyyMMdd');
         const prefix = `${CONSULTATION_NO_CONFIG.PREFIX}-${today}-`;
-
-        const result = await tx.$queryRaw<{ consultation_no: string }[]>`
-          SELECT consultation_no FROM consultations
-          WHERE tenant_id = ${tenantId} AND consultation_no LIKE ${`${prefix}%`}
-          ORDER BY consultation_no DESC LIMIT 1
+        console.log('prefix', prefix);
+        const result = await tx.$queryRaw<{ consultationNo: string }[]>`
+          SELECT "consultationNo" FROM "consultations"
+          WHERE "tenantId" = ${tenantId} AND "consultationNo" LIKE ${`${prefix}%`}
+          ORDER BY "consultationNo" DESC LIMIT 1
           FOR UPDATE SKIP LOCKED
         `;
-
-        const lastNo = result[0]?.consultation_no;
+        console.log('result', result);
+        const lastNo = result[0]?.consultationNo;
+        console.log('lastNo', lastNo);
         let seq = 1;
         if (lastNo) {
           const parts = lastNo.split('-');
           seq = parseInt(parts[parts.length - 1], 10) + 1;
         }
+        console.log('seq', seq);
 
         return `${prefix}${seq.toString().padStart(CONSULTATION_NO_CONFIG.SEQUENCE_LENGTH, '0')}`;
       });
@@ -80,6 +85,146 @@ export class ConsultationsRepository {
       include: consultationWithRelations,
     });
   }
+
+
+
+
+    // ─── SEARCH & LIST CONSULTATIONS (FOR UI TABLE) ─────────────────
+    async findMany(tenantId: string, dto: SearchConsultationsDto) {
+      const {
+        search,
+        doctorProfileId,
+        status,
+        fromDate,
+        toDate,
+        page = 1,
+        limit = 8,
+      } = dto;
+  
+      const where: Prisma.ConsultationWhereInput = { tenantId };
+  
+      if (doctorProfileId) {
+        where.doctorProfileId = doctorProfileId;
+      }
+  
+      if (status) {
+        where.status = status as any;
+      }
+  
+      if (fromDate || toDate) {
+        where.startedAt = {};
+        if (fromDate) {
+          const start = new Date(fromDate);
+          start.setHours(0, 0, 0, 0);
+          where.startedAt.gte = start;
+        }
+        if (toDate) {
+          const end = new Date(toDate);
+          end.setHours(23, 59, 59, 999);
+          where.startedAt.lte = end;
+        }
+      }
+  
+      if (search) {
+        where.OR = [
+          { consultationNo: { contains: search, mode: 'insensitive' } },
+          { finalDiagnosis: { contains: search, mode: 'insensitive' } },
+          { provisionalDiagnosis: { contains: search, mode: 'insensitive' } },
+          {
+            patient: {
+              OR: [
+                { firstName: { contains: search, mode: 'insensitive' } },
+                { lastName: { contains: search, mode: 'insensitive' } },
+                { uhid: { contains: search, mode: 'insensitive' } },
+              ],
+            },
+          },
+        ];
+      }
+  
+      const skip = (page - 1) * limit;
+  
+      const [consultations, total] = await Promise.all([
+        this.prisma.consultation.findMany({
+          where,
+          include: {
+            patient: {
+              select: {
+                id: true,
+                uhid: true,
+                firstName: true,
+                lastName: true,
+                age: true,
+                ageUnit: true,
+                gender: true,
+              },
+            },
+            doctorProfile: {
+              select: {
+                id: true,
+                specialization: true,
+                hospitalUser: {
+                  select: { firstName: true, lastName: true },
+                },
+              },
+            },
+            prescriptions: { select: { id: true, medicineName: true } },
+            investigations: { select: { id: true, investigationName: true } },
+          },
+          orderBy: { startedAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        this.prisma.consultation.count({ where }),
+      ]);
+  
+      return { consultations, total };
+    }
+  
+    // ─── GET COUNTS FOR TOP BADGES ──────────────────────────────────
+    async getDashboardStats(tenantId: string, doctorProfileId?: string) {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+  
+      const todayEnd = new Date();
+      todayEnd.setHours(23, 59, 59, 999);
+  
+      const baseWhere: Prisma.ConsultationWhereInput = {
+        tenantId,
+        startedAt: { gte: todayStart, lte: todayEnd },
+      };
+  
+      if (doctorProfileId) {
+        baseWhere.doctorProfileId = doctorProfileId;
+      }
+  
+      const [inProgress, completed] = await Promise.all([
+        this.prisma.consultation.count({
+          where: { ...baseWhere, status: 'IN_PROGRESS' },
+        }),
+        this.prisma.consultation.count({
+          where: { ...baseWhere, status: 'COMPLETED' },
+        }),
+      ]);
+  
+      // Awaiting start count (Appointments in IN_QUEUE / CHECKED_IN for today)
+      const awaitingStart = await this.prisma.appointment.count({
+        where: {
+          tenantId,
+          appointmentDate: { gte: todayStart, lte: todayEnd },
+          status: { in: ['CHECKED_IN', 'IN_QUEUE'] },
+          ...(doctorProfileId ? { doctorProfileId } : {}),
+        },
+      });
+  
+      return {
+        inProgress,
+        completed,
+        awaitingStart,
+      };
+    }
+
+
 
   // ─── FIND BY ID ─────────────────────────────────────────────────
   async findById(tenantId: string, id: string) {
