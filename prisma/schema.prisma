@@ -418,6 +418,7 @@ model Hospital {
 
   // OPD Step 6
   opdBills    OpdBill[]
+  opdBillItems  OpdBillItem[]
   opdPayments OpdPayment[]
 
   patientVitals       PatientVitals[]
@@ -921,7 +922,7 @@ model Appointment {
   
   token         OpdToken?
   consultation  Consultation?
-  bill          OpdBill?
+  bills          OpdBill?
 
   vitalsRecords PatientVitals[]
 
@@ -1213,40 +1214,36 @@ model InvestigationOrder {
 
 
 
+
 // ============================================
 // OPD — STEP 6: OPD BILLING ✅
 // ============================================
+
+
 
 model OpdBill {
   id       String @id @default(uuid())
   tenantId String
 
-  // Format : BILL-{YYYYMMDD}-{0001}
-  // Example: BILL-20250610-0001
-  // Scope  : Per tenant, resets daily
   billNo String
 
-  // ─── LINKS ──────────────────────────────────────────────────────
   patientId     String
-  appointmentId String @unique
+  appointmentId String? @unique
 
-  // ─── CHARGES BREAKDOWN ──────────────────────────────────────────
-  consultationFee Decimal @db.Decimal(10, 2)
-  registrationFee Decimal @db.Decimal(10, 2) @default(0)
-  otherCharges    Decimal @db.Decimal(10, 2) @default(0)
+  // ─── CHARGES BREAKDOWN (Set @default(0) to prevent NULL errors) ───
+  consultationFee Decimal @default(0) @db.Decimal(10, 2)
+  registrationFee Decimal @default(0) @db.Decimal(10, 2)
+  otherCharges    Decimal @default(0) @db.Decimal(10, 2)
 
   // ─── CALCULATION ────────────────────────────────────────────────
-  // subtotal = consultationFee + registrationFee + otherCharges
   subtotal        Decimal @db.Decimal(10, 2)
-  discountPercent Decimal @db.Decimal(5, 2)  @default(0)
-  discountAmount  Decimal @db.Decimal(10, 2) @default(0)
-  taxPercent      Decimal @db.Decimal(5, 2)  @default(0)
-  taxAmount       Decimal @db.Decimal(10, 2) @default(0)
-  // totalAmount = subtotal - discountAmount + taxAmount
+  discountPercent Decimal @default(0) @db.Decimal(5, 2)
+  discountAmount  Decimal @default(0) @db.Decimal(10, 2)
+  taxPercent      Decimal @default(0) @db.Decimal(5, 2)
+  taxAmount       Decimal @default(0) @db.Decimal(10, 2)
   totalAmount     Decimal @db.Decimal(10, 2)
-  paidAmount      Decimal @db.Decimal(10, 2) @default(0)
-  // dueAmount = totalAmount - paidAmount
-  dueAmount       Decimal @db.Decimal(10, 2) @default(0)
+  paidAmount      Decimal @default(0) @db.Decimal(10, 2)
+  dueAmount       Decimal @default(0) @db.Decimal(10, 2)
 
   // ─── STATUS ─────────────────────────────────────────────────────
   paymentStatus PaymentStatus @default(PENDING)
@@ -1272,10 +1269,11 @@ model OpdBill {
   cancelReason String?
 
   // ─── RELATIONS ──────────────────────────────────────────────────
-  hospital    Hospital    @relation(fields: [tenantId], references: [tenantId])
-  patient     Patient     @relation(fields: [patientId], references: [id])
-  appointment Appointment @relation(fields: [appointmentId], references: [id])
+  hospital    Hospital     @relation(fields: [tenantId], references: [tenantId])
+  patient     Patient      @relation(fields: [patientId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
 
+  items    OpdBillItem[]
   payments OpdPayment[]
 
   createdAt DateTime @default(now())
@@ -1287,6 +1285,40 @@ model OpdBill {
   @@index([tenantId, billedAt])
   @@index([tenantId, paymentStatus])
   @@map("opd_bills")
+}
+
+
+
+// ============================================
+// OPD — STEP 6.1: OPD BILL LINE ITEMS ✅
+// ============================================
+
+model OpdBillItem {
+  id       String @id @default(uuid())
+  tenantId String
+
+  billId String
+
+  // ─── ITEM DETAILS ───────────────────────────────────────────────
+  itemCode    String?  // Links to future Service/Charge Master (e.g., LAB01)
+  itemName    String   // Description of the service
+  category    String   // 'Consultation', 'Lab', 'Pharmacy', 'Procedure'
+  
+  // ─── FINANCIALS ─────────────────────────────────────────────────
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  taxPercent  Decimal  @default(0) @db.Decimal(5, 2)
+  totalAmount Decimal  @db.Decimal(10, 2) // quantity * unitPrice
+
+  // ─── RELATIONS ──────────────────────────────────────────────────
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId])
+  bill     OpdBill  @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, billId])
+  @@map("opd_bill_items")
 }
 
 // ============================================

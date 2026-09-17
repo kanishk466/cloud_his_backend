@@ -17,7 +17,7 @@ import type { CurrentUserPayload } from '../../core/decorators/current-user.deco
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}
 
-  // POST /opd/billing — Generate bill
+  // POST /opd/billing — Generate bill (optionally with immediate payment)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async generateBill(
@@ -44,8 +44,8 @@ export class BillingController {
       date,
       billStatus,
       paymentStatus,
-      page: page ? parseInt(page) : 1,
-      limit: limit ? parseInt(limit) : 20,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 20,
     });
   }
 
@@ -58,14 +58,49 @@ export class BillingController {
     return this.billingService.getDailySummary(tenantId, date);
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // NEW: GET /opd/billing/payments — Payment history tab
+  // MUST be declared BEFORE @Get(':id')
+  // ──────────────────────────────────────────────────────────────
+  @Get('payments')
+  async findManyPayments(
+    @CurrentTenant() tenantId: string,
+    @Query('patientId') patientId?: string,
+    @Query('billId') billId?: string,
+    @Query('paymentMode') paymentMode?: string,
+    @Query('date') date?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.billingService.findManyPayments(tenantId, {
+      patientId,
+      billId,
+      paymentMode,
+      date,
+      from,
+      to,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 20,
+    });
+  }
+
   // GET /opd/billing/appointment/:appointmentId
   @Get('appointment/:appointmentId')
   async findByAppointment(
     @Param('appointmentId', ParseUUIDPipe) appointmentId: string,
     @CurrentTenant() tenantId: string,
   ) {
-    const result = await this.billingService.findByAppointmentId(tenantId, appointmentId);
-    return { success: true, data: result, message: result ? undefined : 'No bill found' };
+    const result = await this.billingService.findByAppointmentId(
+      tenantId,
+      appointmentId,
+    );
+    return {
+      success: true,
+      data: result,
+      message: result ? undefined : 'No bill found',
+    };
   }
 
   // GET /opd/billing/:id
@@ -77,7 +112,7 @@ export class BillingController {
     return this.billingService.findById(tenantId, id);
   }
 
-  // POST /opd/billing/:id/payments — Collect payment
+  // POST /opd/billing/:id/payments — Collect payment later
   @Post(':id/payments')
   @HttpCode(HttpStatus.CREATED)
   async collectPayment(
@@ -86,10 +121,15 @@ export class BillingController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.billingService.collectPayment(tenantId, id, user.userId, dto);
+    return this.billingService.collectPayment(
+      tenantId,
+      id,
+      user.userId,
+      dto,
+    );
   }
 
-  // PATCH /opd/billing/:id/discount — Apply discount
+  // PATCH /opd/billing/:id/discount
   @Patch(':id/discount')
   async applyDiscount(
     @Param('id', ParseUUIDPipe) id: string,
@@ -99,7 +139,7 @@ export class BillingController {
     return this.billingService.applyDiscount(tenantId, id, dto);
   }
 
-  // PATCH /opd/billing/:id/cancel — Cancel bill
+  // PATCH /opd/billing/:id/cancel
   @Patch(':id/cancel')
   async cancelBill(
     @Param('id', ParseUUIDPipe) id: string,
