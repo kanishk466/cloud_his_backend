@@ -1,3 +1,4 @@
+// billing.repository.ts
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
@@ -150,7 +151,7 @@ export class BillingRepository {
             category: it.category,
             quantity: it.quantity,
             unitPrice: it.unitPrice,
-            taxPercent: it.taxRate ,
+            taxPercent: it.taxRate ?? 0,
             totalAmount: it.quantity * it.unitPrice,
           })),
         },
@@ -251,6 +252,136 @@ export class BillingRepository {
     ]);
 
     return { bills, total };
+  }
+
+  // ─── LIST PAYMENTS (Payment History Tab) ─────────────────────────
+  async findManyPayments(
+    tenantId: string,
+    filter: {
+      patientId?: string;
+      billId?: string;
+      paymentMode?: string;
+      date?: string;
+      from?: string;
+      to?: string;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const where: Prisma.OpdPaymentWhereInput = { tenantId };
+
+    if (filter.billId) where.billId = filter.billId;
+    if (filter.paymentMode) where.paymentMode = filter.paymentMode as any;
+
+    if (filter.date) {
+      const start = new Date(filter.date);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(filter.date);
+      end.setHours(23, 59, 59, 999);
+      where.paidAt = { gte: start, lte: end };
+    } else if (filter.from || filter.to) {
+      where.paidAt = {};
+      if (filter.from) {
+        const start = new Date(filter.from);
+        start.setHours(0, 0, 0, 0);
+        where.paidAt.gte = start;
+      }
+      if (filter.to) {
+        const end = new Date(filter.to);
+        end.setHours(23, 59, 59, 999);
+        where.paidAt.lte = end;
+      }
+    }
+
+    if (filter.patientId) {
+      where.bill = { patientId: filter.patientId };
+    }
+
+    const page = filter.page ?? 1;
+    const limit = filter.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const [payments, total] = await Promise.all([
+      this.prisma.opdPayment.findMany({
+        where,
+        include: {
+          bill: {
+            select: {
+              id: true,
+              billNo: true,
+              totalAmount: true,
+              patientId: true,
+              patient: {
+                select: {
+                  id: true,
+                  uhid: true,
+                  firstName: true,
+                  lastName: true,
+                  mobile: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { paidAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.opdPayment.count({ where }),
+    ]);
+
+    return { payments, total, page, limit };
+  }
+
+  // ─── DAILY SUMMARY ──────────────────────────────────────────────
+  async getDailySummary(tenantId: string, date: Date) {
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(date);
+    end.setHours(23, 59, 59, 999);
+
+    const summary = await this.prisma.$queryRaw<any[]>`
+      SELECT
+        COUNT(*)::int as total_bills,
+        COALESCE(SUM(total_amount), 0)::numeric(10,2) as total_amount,
+        COALESCE(SUM(paid_amount), 0)::numeric(10,2) as total_collected,
+        COALESCE(SUM(due_amount), 0)::numeric(10,2) as total_due,
+        COALESCE(SUM(discount_amount), 0)::numeric(10,2) as total_discount
+      FROM opd_bills
+      WHERE tenant_id = ${tenantId}
+        AND billed_at >= ${start}
+        AND billed_at <= ${end}
+        AND bill_status != 'CANCELLED'
+    `;
+
+    const paymentBreakdown = await this.prisma.$queryRaw<any[]>`
+      SELECT
+        payment_mode as mode,
+        COUNT(*)::int as count,
+        COALESCE(SUM(amount), 0)::numeric(10,2) as amount
+      FROM opd_payments
+      WHERE tenant_id = ${tenantId}
+        AND paid_at >= ${start}
+        AND paid_at <= ${end}
+      GROUP BY payment_mode
+    `;
+
+    const statusBreakdown = await this.prisma.$queryRaw<any[]>`
+      SELECT
+        bill_status as status,
+        COUNT(*)::int as count
+      FROM opd_bills
+      WHERE tenant_id = ${tenantId}
+        AND billed_at >= ${start}
+        AND billed_at <= ${end}
+      GROUP BY bill_status
+    `;
+
+    return {
+      summary: summary[0],
+      paymentBreakdown,
+      statusBreakdown,
+    };
   }
 
   // ─── GET APPOINTMENT ────────────────────────────────────────────

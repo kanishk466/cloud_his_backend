@@ -11,6 +11,8 @@ import {
   IsArray,
   ArrayMinSize,
   ValidateNested,
+  IsEnum,
+  IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -26,7 +28,7 @@ export class CreateBillItemDto {
 
   @IsString()
   @IsNotEmpty()
-  category!: string; // 'Consultation' | 'Lab' | 'Pharmacy' | 'Procedure'
+  category!: string;
 
   @Type(() => Number)
   @IsNumber()
@@ -55,7 +57,6 @@ export class CreateBillDto {
   @IsUUID()
   appointmentId?: string;
 
-  // Line Items (Market Standard Array Entry)
   @IsArray()
   @ArrayMinSize(1, { message: 'A bill must contain at least one line item' })
   @ValidateNested({ each: true })
@@ -103,4 +104,25 @@ export class CreateBillDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   insuranceClaimed?: number;
+
+  // ─── OPTIONAL: Pay at time of bill creation ─────────────────────
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  paymentAmount?: number;
+
+  @IsOptional()
+  @IsIn(['CASH', 'CARD', 'UPI', 'INSURANCE', 'ONLINE', 'MIXED'])
+  paymentMode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  paymentTransactionId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  paymentNotes?: string;
 }
