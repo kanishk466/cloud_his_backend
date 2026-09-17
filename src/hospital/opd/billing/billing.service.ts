@@ -1,3 +1,4 @@
+// billing.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -11,12 +12,13 @@ import { CreateBillDto } from './dto/create-bill.dto';
 import { CollectPaymentDto } from './dto/collect-payment.dto';
 import { ApplyDiscountDto } from './dto/apply-discount.dto';
 import { CancelBillDto } from './dto/cancel-bill.dto';
-import { BillResponseDto } from './dto/billing-response.dto';
+import { BillResponseDto, DailySummaryDto } from './dto/billing-response.dto';
 import {
   BILLING_ERRORS,
   PAYABLE_STATUSES,
   CANCELLABLE_STATUSES,
 } from './constants/billing.constants';
+import { format } from 'date-fns';
 
 @Injectable()
 export class BillingService {
@@ -30,12 +32,11 @@ export class BillingService {
     generatedBy: string,
     dto: CreateBillDto,
   ): Promise<BillResponseDto> {
-    // 1. Validate items presence
     if (!dto.items || dto.items.length === 0) {
       throw new BadRequestException('A bill must contain at least one line item.');
     }
 
-    // 2. Validate appointment if passed
+    // Validate appointment if provided
     if (dto.appointmentId) {
       const appointment = await this.billingRepository.getAppointment(
         tenantId,
@@ -57,17 +58,50 @@ export class BillingService {
       }
     }
 
-    // 3. Perform Itemized Calculation
+    // Calculate totals from line items
     const calculated = this.calculateBillItems({
       items: dto.items,
       discountPercent: dto.discountPercent,
       discountAmount: dto.discountAmount,
     });
 
-    // 4. Generate bill sequence number
+    // Validate optional immediate payment
+    const paymentAmount = Number(dto.paymentAmount ?? 0);
+    if (paymentAmount > 0) {
+      if (!dto.paymentMode) {
+        throw new BadRequestException(
+          'paymentMode is required when paymentAmount is provided',
+        );
+      }
+      if (paymentAmount > calculated.totalAmount) {
+        throw new BadRequestException({
+          ...BILLING_ERRORS.PAYMENT_EXCEEDS_DUE,
+          details: {
+            totalAmount: calculated.totalAmount,
+            paymentAmount,
+          },
+        });
+      }
+    }
+
     const billNo = await this.billingRepository.generateBillNo(tenantId);
 
-    // 5. Create bill in DB
+    // Initial paid / due / status
+    const paidAmount = paymentAmount > 0 ? paymentAmount : 0;
+    const dueAmount = calculated.totalAmount - paidAmount;
+
+    let paymentStatus = 'PENDING';
+    let billStatus = 'GENERATED';
+
+    if (paidAmount > 0 && dueAmount <= 0) {
+      paymentStatus = 'PAID';
+      billStatus = 'PAID';
+    } else if (paidAmount > 0 && dueAmount > 0) {
+      paymentStatus = 'PARTIALLY_PAID';
+      billStatus = 'PARTIALLY_PAID';
+    }
+
+    // Create bill + line items
     const bill = await this.billingRepository.create({
       tenantId,
       billNo,
@@ -81,16 +115,46 @@ export class BillingService {
       discountAuthorizedBy: dto.discountAuthorizedBy,
       taxAmount: calculated.taxAmount,
       totalAmount: calculated.totalAmount,
-      dueAmount: calculated.totalAmount,
+      dueAmount: dueAmount > 0 ? dueAmount : 0,
       isInsurance: dto.isInsurance ?? false,
       insuranceProvider: dto.insuranceProvider,
       insurancePolicyNo: dto.insurancePolicyNo,
       generatedBy,
-      billStatus: 'GENERATED',
+      billStatus,
     });
 
-    this.logger.log(`Bill ${billNo} generated successfully for patient ${dto.patientId}`);
+    // If paid at creation → create payment receipt + update bill
+    if (paymentAmount > 0 && dto.paymentMode) {
+      const receiptNo = await this.billingRepository.generateReceiptNo(tenantId);
 
+      await this.billingRepository.createPayment({
+        tenantId,
+        billId: bill.id,
+        receiptNo,
+        amount: paymentAmount,
+        paymentMode: dto.paymentMode,
+        transactionId: dto.paymentTransactionId,
+        receivedBy: generatedBy,
+        notes: dto.paymentNotes ?? 'Payment collected at bill creation',
+      });
+
+      const updated = await this.billingRepository.update(bill.id, {
+        paidAmount,
+        dueAmount: dueAmount > 0 ? dueAmount : 0,
+        paymentStatus,
+        billStatus,
+        paymentMode: dto.paymentMode,
+        paidAt: dueAmount <= 0 ? new Date() : undefined,
+      });
+
+      this.logger.log(
+        `Bill ${billNo} generated with immediate payment ₹${paymentAmount} (${receiptNo})`,
+      );
+
+      return BillResponseDto.fromEntity(updated);
+    }
+
+    this.logger.log(`Bill ${billNo} generated for patient ${dto.patientId}`);
     return BillResponseDto.fromEntity(bill);
   }
 
@@ -131,6 +195,55 @@ export class BillingService {
     return {
       data: bills.map((b) => BillResponseDto.fromEntity(b)),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  // ─── LIST PAYMENTS ────────────────────────────────────────────────
+  async findManyPayments(
+    tenantId: string,
+    filter: {
+      patientId?: string;
+      billId?: string;
+      paymentMode?: string;
+      date?: string;
+      from?: string;
+      to?: string;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const { payments, total, page, limit } =
+      await this.billingRepository.findManyPayments(tenantId, filter);
+
+    return {
+      data: payments.map((p) => ({
+        id: p.id,
+        receiptNo: p.receiptNo,
+        amount: Number(p.amount),
+        paymentMode: p.paymentMode,
+        transactionId: p.transactionId,
+        notes: p.notes,
+        paidAt: p.paidAt,
+        receivedBy: p.receivedBy,
+        billId: p.billId,
+        billNo: p.bill?.billNo,
+        patient: p.bill?.patient
+          ? {
+              id: p.bill.patient.id,
+              uhid: p.bill.patient.uhid,
+              name: [p.bill.patient.firstName, p.bill.patient.lastName]
+                .filter(Boolean)
+                .join(' '),
+              mobile: p.bill.patient.mobile,
+            }
+          : null,
+      })),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 
@@ -205,6 +318,57 @@ export class BillingService {
     return BillResponseDto.fromEntity(updated);
   }
 
+  // ─── APPLY DISCOUNT ─────────────────────────────────────────────
+  async applyDiscount(
+    tenantId: string,
+    billId: string,
+    dto: ApplyDiscountDto,
+  ): Promise<BillResponseDto> {
+    const bill = await this.billingRepository.findById(tenantId, billId);
+    if (!bill) throw new NotFoundException(BILLING_ERRORS.BILL_NOT_FOUND);
+
+    if (bill.billStatus === 'CANCELLED' || bill.billStatus === 'PAID') {
+      throw new BadRequestException({
+        code: 'OPD_BIL_012',
+        message: 'Cannot apply discount to cancelled or fully paid bill',
+      });
+    }
+
+    const subtotal = Number(bill.subtotal);
+
+    let discountAmount = dto.discountAmount ?? 0;
+    let discountPercent = dto.discountPercent ?? 0;
+
+    if (discountPercent > 0 && discountAmount === 0) {
+      discountAmount = (subtotal * discountPercent) / 100;
+    } else if (discountAmount > 0 && discountPercent === 0) {
+      discountPercent = (discountAmount / subtotal) * 100;
+    }
+
+    if (discountAmount > subtotal) {
+      throw new BadRequestException(BILLING_ERRORS.INVALID_DISCOUNT);
+    }
+
+    const taxAmount = Number(bill.taxAmount);
+    const afterDiscount = subtotal - discountAmount;
+    const totalAmount = afterDiscount + taxAmount;
+    const paidAmount = Number(bill.paidAmount);
+    const dueAmount = totalAmount - paidAmount;
+
+    const updated = await this.billingRepository.update(billId, {
+      discountPercent,
+      discountAmount,
+      discountReason: dto.discountReason,
+      discountAuthorizedBy: dto.discountAuthorizedBy,
+      totalAmount,
+      dueAmount: dueAmount > 0 ? dueAmount : 0,
+      paymentStatus: dueAmount <= 0 ? 'PAID' : (paidAmount > 0 ? 'PARTIALLY_PAID' : 'PENDING'),
+      billStatus: dueAmount <= 0 ? 'PAID' : bill.billStatus,
+    });
+
+    return BillResponseDto.fromEntity(updated);
+  }
+
   // ─── CANCEL BILL ────────────────────────────────────────────────
   async cancelBill(
     tenantId: string,
@@ -234,6 +398,30 @@ export class BillingService {
     this.logger.log(`Bill ${bill.billNo} cancelled`);
 
     return BillResponseDto.fromEntity(updated);
+  }
+
+  // ─── DAILY SUMMARY ──────────────────────────────────────────────
+  async getDailySummary(tenantId: string, dateStr?: string): Promise<DailySummaryDto> {
+    const queryDate = dateStr ? new Date(dateStr) : new Date();
+    const result = await this.billingRepository.getDailySummary(tenantId, queryDate);
+
+    return {
+      date: format(queryDate, 'yyyy-MM-dd'),
+      totalBills: result.summary?.total_bills ?? 0,
+      totalAmount: Number(result.summary?.total_amount ?? 0),
+      totalCollected: Number(result.summary?.total_collected ?? 0),
+      totalDue: Number(result.summary?.total_due ?? 0),
+      totalDiscount: Number(result.summary?.total_discount ?? 0),
+      paymentModeBreakdown: (result.paymentBreakdown || []).map((p: any) => ({
+        mode: p.mode,
+        count: p.count,
+        amount: Number(p.amount),
+      })),
+      billStatusBreakdown: (result.statusBreakdown || []).map((s: any) => ({
+        status: s.status,
+        count: s.count,
+      })),
+    };
   }
 
   // ─── PRIVATE CALCULATION ENGINE ─────────────────────────────────
