@@ -1,13 +1,26 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
+import { CreateDepartmentDto } from '../dto/create-department.dto';
 
 @Injectable()
 export class DepartmentsRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
-  create(tenantId: string, data: { name: string; code?: string }) {
+  // create(tenantId: string, data: { name: string; code?: string }) {
+  //   return this.prisma.department.create({
+  //     data: { tenantId, name: data.name, code: data.code },
+  //   });
+  // }
+
+  create(tenantId: string, data: CreateDepartmentDto) {
     return this.prisma.department.create({
-      data: { tenantId, name: data.name, code: data.code },
+      data: {
+        tenantId,
+        name: data.name,
+        code: data.code,
+        description: data.description,
+        isActive: data.isActive,
+      },
     });
   }
 
