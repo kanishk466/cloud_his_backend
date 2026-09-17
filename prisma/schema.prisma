@@ -1218,26 +1218,31 @@ model InvestigationOrder {
 // OPD — STEP 6: OPD BILLING ✅
 // ============================================
 
+
+
 model OpdBill {
   id       String @id @default(uuid())
   tenantId String
 
-  // Format : BILL-{YYYYMMDD}-{0001}
   billNo String
 
-  // ─── LINKS ──────────────────────────────────────────────────────
   patientId     String
-  appointmentId String? @unique //  CHANGED: Made optional and removed @unique to allow standalone bills (Pharmacy/Lab)
+  appointmentId String? @unique
 
-  // ─── CALCULATION (Line Items approach) ──────────────────────────
+  // ─── CHARGES BREAKDOWN (Set @default(0) to prevent NULL errors) ───
+  consultationFee Decimal @default(0) @db.Decimal(10, 2)
+  registrationFee Decimal @default(0) @db.Decimal(10, 2)
+  otherCharges    Decimal @default(0) @db.Decimal(10, 2)
+
+  // ─── CALCULATION ────────────────────────────────────────────────
   subtotal        Decimal @db.Decimal(10, 2)
-  discountPercent Decimal @db.Decimal(5, 2)  @default(0)
-  discountAmount  Decimal @db.Decimal(10, 2) @default(0)
-  taxPercent      Decimal @db.Decimal(5, 2)  @default(0) // Global tax fallback
-  taxAmount       Decimal @db.Decimal(10, 2) @default(0) // Sum of itemized taxes
+  discountPercent Decimal @default(0) @db.Decimal(5, 2)
+  discountAmount  Decimal @default(0) @db.Decimal(10, 2)
+  taxPercent      Decimal @default(0) @db.Decimal(5, 2)
+  taxAmount       Decimal @default(0) @db.Decimal(10, 2)
   totalAmount     Decimal @db.Decimal(10, 2)
-  paidAmount      Decimal @db.Decimal(10, 2) @default(0)
-  dueAmount       Decimal @db.Decimal(10, 2) @default(0)
+  paidAmount      Decimal @default(0) @db.Decimal(10, 2)
+  dueAmount       Decimal @default(0) @db.Decimal(10, 2)
 
   // ─── STATUS ─────────────────────────────────────────────────────
   paymentStatus PaymentStatus @default(PENDING)
@@ -1267,7 +1272,7 @@ model OpdBill {
   patient     Patient      @relation(fields: [patientId], references: [id])
   appointment Appointment? @relation(fields: [appointmentId], references: [id])
 
-  items    OpdBillItem[] //  ADDED: Link to line items
+  items    OpdBillItem[]
   payments OpdPayment[]
 
   createdAt DateTime @default(now())
@@ -1280,7 +1285,6 @@ model OpdBill {
   @@index([tenantId, paymentStatus])
   @@map("opd_bills")
 }
-
 
 
 

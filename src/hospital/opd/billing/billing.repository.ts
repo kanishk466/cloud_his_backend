@@ -100,8 +100,9 @@ export class BillingRepository {
   }
 
   // ─── GENERATE RECEIPT NUMBER ────────────────────────────────────
-
   // ─── CREATE BILL WITH ITEMS ─────────────────────────────────────
+ 
+    // ─── CREATE BILL WITH ITEMS ─────────────────────────────────────
   async create(data: {
     tenantId: string;
     billNo: string;
@@ -129,12 +130,24 @@ export class BillingRepository {
     generatedBy?: string;
     billStatus: string;
   }) {
+    // Extract consultation fee total from items if available
+    const consultationItem = data.items.find((i) => i.category === 'Consultation');
+    const consultationFee = consultationItem
+      ? consultationItem.quantity * consultationItem.unitPrice
+      : 0;
+
     return this.prisma.opdBill.create({
       data: {
         tenantId: data.tenantId,
         billNo: data.billNo,
         patientId: data.patientId,
         appointmentId: data.appointmentId || undefined,
+
+        // Backwards compatibility for legacy summary queries
+        consultationFee,
+        registrationFee: 0,
+        otherCharges: 0,
+
         subtotal: data.subtotal,
         discountPercent: data.discountPercent,
         discountAmount: data.discountAmount,
