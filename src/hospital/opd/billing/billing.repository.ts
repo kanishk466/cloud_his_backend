@@ -31,20 +31,24 @@ export class BillingRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   // ─── GENERATE BILL NUMBER ──────────────────────────────────────
+  
+
+    // ─── GENERATE BILL NUMBER ──────────────────────────────────────
   async generateBillNo(tenantId: string): Promise<string> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const today = format(new Date(), 'yyyyMMdd');
         const prefix = `${BILL_NO_CONFIG.PREFIX}-${today}-`;
 
-        const result = await tx.$queryRaw<{ bill_no: string }[]>`
-          SELECT bill_no FROM opd_bills
-          WHERE tenant_id = ${tenantId} AND bill_no LIKE ${`${prefix}%`}
-          ORDER BY bill_no DESC LIMIT 1
+        // Notice double quotes around "billNo" and "tenantId"
+        const result = await tx.$queryRaw<{ billNo: string }[]>`
+          SELECT "billNo" FROM opd_bills
+          WHERE "tenantId" = ${tenantId} AND "billNo" LIKE ${`${prefix}%`}
+          ORDER BY "billNo" DESC LIMIT 1
           FOR UPDATE SKIP LOCKED
         `;
 
-        const lastNo = result[0]?.bill_no;
+        const lastNo = result[0]?.billNo;
         let seq = 1;
         if (lastNo) {
           const parts = lastNo.split('-');
@@ -69,14 +73,15 @@ export class BillingRepository {
         const today = format(new Date(), 'yyyyMMdd');
         const prefix = `${RECEIPT_NO_CONFIG.PREFIX}-${today}-`;
 
-        const result = await tx.$queryRaw<{ receipt_no: string }[]>`
-          SELECT receipt_no FROM opd_payments
-          WHERE tenant_id = ${tenantId} AND receipt_no LIKE ${`${prefix}%`}
-          ORDER BY receipt_no DESC LIMIT 1
+        // Notice double quotes around "receiptNo" and "tenantId"
+        const result = await tx.$queryRaw<{ receiptNo: string }[]>`
+          SELECT "receiptNo" FROM opd_payments
+          WHERE "tenantId" = ${tenantId} AND "receiptNo" LIKE ${`${prefix}%`}
+          ORDER BY "receiptNo" DESC LIMIT 1
           FOR UPDATE SKIP LOCKED
         `;
 
-        const lastNo = result[0]?.receipt_no;
+        const lastNo = result[0]?.receiptNo;
         let seq = 1;
         if (lastNo) {
           const parts = lastNo.split('-');
@@ -93,6 +98,8 @@ export class BillingRepository {
       });
     }
   }
+
+  // ─── GENERATE RECEIPT NUMBER ────────────────────────────────────
 
   // ─── CREATE BILL WITH ITEMS ─────────────────────────────────────
   async create(data: {
@@ -333,7 +340,10 @@ export class BillingRepository {
     return { payments, total, page, limit };
   }
 
-  // ─── DAILY SUMMARY ──────────────────────────────────────────────
+
+
+
+    // ─── DAILY SUMMARY ──────────────────────────────────────────────
   async getDailySummary(tenantId: string, date: Date) {
     const start = new Date(date);
     start.setHours(0, 0, 0, 0);
@@ -343,38 +353,38 @@ export class BillingRepository {
     const summary = await this.prisma.$queryRaw<any[]>`
       SELECT
         COUNT(*)::int as total_bills,
-        COALESCE(SUM(total_amount), 0)::numeric(10,2) as total_amount,
-        COALESCE(SUM(paid_amount), 0)::numeric(10,2) as total_collected,
-        COALESCE(SUM(due_amount), 0)::numeric(10,2) as total_due,
-        COALESCE(SUM(discount_amount), 0)::numeric(10,2) as total_discount
+        COALESCE(SUM("totalAmount"), 0)::numeric(10,2) as total_amount,
+        COALESCE(SUM("paidAmount"), 0)::numeric(10,2) as total_collected,
+        COALESCE(SUM("dueAmount"), 0)::numeric(10,2) as total_due,
+        COALESCE(SUM("discountAmount"), 0)::numeric(10,2) as total_discount
       FROM opd_bills
-      WHERE tenant_id = ${tenantId}
-        AND billed_at >= ${start}
-        AND billed_at <= ${end}
-        AND bill_status != 'CANCELLED'
+      WHERE "tenantId" = ${tenantId}
+        AND "billedAt" >= ${start}
+        AND "billedAt" <= ${end}
+        AND "billStatus" != 'CANCELLED'
     `;
 
     const paymentBreakdown = await this.prisma.$queryRaw<any[]>`
       SELECT
-        payment_mode as mode,
+        "paymentMode" as mode,
         COUNT(*)::int as count,
         COALESCE(SUM(amount), 0)::numeric(10,2) as amount
       FROM opd_payments
-      WHERE tenant_id = ${tenantId}
-        AND paid_at >= ${start}
-        AND paid_at <= ${end}
-      GROUP BY payment_mode
+      WHERE "tenantId" = ${tenantId}
+        AND "paidAt" >= ${start}
+        AND "paidAt" <= ${end}
+      GROUP BY "paymentMode"
     `;
 
     const statusBreakdown = await this.prisma.$queryRaw<any[]>`
       SELECT
-        bill_status as status,
+        "billStatus" as status,
         COUNT(*)::int as count
       FROM opd_bills
-      WHERE tenant_id = ${tenantId}
-        AND billed_at >= ${start}
-        AND billed_at <= ${end}
-      GROUP BY bill_status
+      WHERE "tenantId" = ${tenantId}
+        AND "billedAt" >= ${start}
+        AND "billedAt" <= ${end}
+      GROUP BY "billStatus"
     `;
 
     return {
@@ -383,7 +393,6 @@ export class BillingRepository {
       statusBreakdown,
     };
   }
-
   // ─── GET APPOINTMENT ────────────────────────────────────────────
   async getAppointment(tenantId: string, appointmentId: string) {
     return this.prisma.appointment.findFirst({
