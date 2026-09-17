@@ -50,13 +50,13 @@ export class BillingController {
   }
 
   // GET /opd/billing/daily-summary
-  @Get('daily-summary')
-  async getDailySummary(
-    @CurrentTenant() tenantId: string,
-    @Query('date') date?: string,
-  ) {
-    return this.billingService.getDailySummary(tenantId, date);
-  }
+  // @Get('daily-summary')
+  // async getDailySummary(
+  //   @CurrentTenant() tenantId: string,
+  //   @Query('date') date?: string,
+  // ) {
+  //   return this.billingService.getDailySummary(tenantId, date);
+  // }
 
   // GET /opd/billing/appointment/:appointmentId
   @Get('appointment/:appointmentId')
@@ -90,14 +90,14 @@ export class BillingController {
   }
 
   // PATCH /opd/billing/:id/discount — Apply discount
-  @Patch(':id/discount')
-  async applyDiscount(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ApplyDiscountDto,
-    @CurrentTenant() tenantId: string,
-  ) {
-    return this.billingService.applyDiscount(tenantId, id, dto);
-  }
+  // @Patch(':id/discount')
+  // async applyDiscount(
+  //   @Param('id', ParseUUIDPipe) id: string,
+  //   @Body() dto: ApplyDiscountDto,
+  //   @CurrentTenant() tenantId: string,
+  // ) {
+  //   return this.billingService.applyDiscount(tenantId, id, dto);
+  // }
 
   // PATCH /opd/billing/:id/cancel — Cancel bill
   @Patch(':id/cancel')
