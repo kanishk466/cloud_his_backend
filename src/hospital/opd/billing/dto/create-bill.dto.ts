@@ -8,27 +8,59 @@ import {
   Max,
   IsNotEmpty,
   MaxLength,
+  IsArray,
+  ArrayMinSize,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
+export class CreateBillItemDto {
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  description!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  category!: string; // 'Consultation' | 'Lab' | 'Pharmacy' | 'Procedure'
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  quantity!: number;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  unitPrice!: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  taxRate?: number;
+}
 
 export class CreateBillDto {
   @IsUUID()
   @IsNotEmpty()
-  appointmentId!: string;
+  patientId!: string;
 
-  // Registration fee (for new patients)
   @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  registrationFee?: number;
+  @IsUUID()
+  appointmentId?: string;
 
-  // Other charges (dressing, minor procedure etc.)
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  otherCharges?: number;
+  // Line Items (Market Standard Array Entry)
+  @IsArray()
+  @ArrayMinSize(1, { message: 'A bill must contain at least one line item' })
+  @ValidateNested({ each: true })
+  @Type(() => CreateBillItemDto)
+  items!: CreateBillItemDto[];
 
   // Discount
   @IsOptional()
@@ -52,14 +84,6 @@ export class CreateBillDto {
   @IsOptional()
   @IsString()
   discountAuthorizedBy?: string;
-
-  // Tax
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  @Max(100)
-  taxPercent?: number;
 
   // Insurance
   @IsOptional()

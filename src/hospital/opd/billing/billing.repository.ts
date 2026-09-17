@@ -7,13 +7,17 @@ import { BILL_NO_CONFIG, RECEIPT_NO_CONFIG } from './constants/billing.constants
 const billWithRelations = {
   patient: {
     select: {
-      id: true, uhid: true, firstName: true,
-      lastName: true, mobile: true,
+      id: true,
+      uhid: true,
+      firstName: true,
+      lastName: true,
+      mobile: true,
     },
   },
   appointment: {
     select: { id: true, appointmentNo: true },
   },
+  items: true,
   payments: {
     orderBy: { paidAt: 'asc' as const },
   },
@@ -89,28 +93,31 @@ export class BillingRepository {
     }
   }
 
-  // ─── CREATE BILL ────────────────────────────────────────────────
+  // ─── CREATE BILL WITH ITEMS ─────────────────────────────────────
   async create(data: {
     tenantId: string;
     billNo: string;
     patientId: string;
-    appointmentId: string;
-    consultationFee: number;
-    registrationFee: number;
-    otherCharges: number;
+    appointmentId?: string;
+    items: Array<{
+      code?: string;
+      description: string;
+      category: string;
+      quantity: number;
+      unitPrice: number;
+      taxRate?: number;
+    }>;
     subtotal: number;
     discountPercent: number;
     discountAmount: number;
     discountReason?: string;
     discountAuthorizedBy?: string;
-    taxPercent: number;
     taxAmount: number;
     totalAmount: number;
     dueAmount: number;
     isInsurance: boolean;
     insuranceProvider?: string;
     insurancePolicyNo?: string;
-    insuranceClaimed?: number;
     generatedBy?: string;
     billStatus: string;
   }) {
@@ -119,16 +126,12 @@ export class BillingRepository {
         tenantId: data.tenantId,
         billNo: data.billNo,
         patientId: data.patientId,
-        appointmentId: data.appointmentId,
-        consultationFee: data.consultationFee,
-        registrationFee: data.registrationFee,
-        otherCharges: data.otherCharges,
+        appointmentId: data.appointmentId || undefined,
         subtotal: data.subtotal,
         discountPercent: data.discountPercent,
         discountAmount: data.discountAmount,
         discountReason: data.discountReason,
         discountAuthorizedBy: data.discountAuthorizedBy,
-        taxPercent: data.taxPercent,
         taxAmount: data.taxAmount,
         totalAmount: data.totalAmount,
         paidAmount: 0,
@@ -136,10 +139,21 @@ export class BillingRepository {
         isInsurance: data.isInsurance,
         insuranceProvider: data.insuranceProvider,
         insurancePolicyNo: data.insurancePolicyNo,
-        insuranceClaimed: data.insuranceClaimed,
         generatedBy: data.generatedBy,
         billStatus: data.billStatus as any,
         paymentStatus: 'PENDING',
+        items: {
+          create: data.items.map((it) => ({
+            tenantId: data.tenantId,
+            itemCode: it.code || null,
+            itemName: it.description,
+            category: it.category,
+            quantity: it.quantity,
+            unitPrice: it.unitPrice,
+            taxPercent: it.taxRate ,
+            totalAmount: it.quantity * it.unitPrice,
+          })),
+        },
       },
       include: billWithRelations,
     });
@@ -237,58 +251,6 @@ export class BillingRepository {
     ]);
 
     return { bills, total };
-  }
-
-  // ─── DAILY SUMMARY ──────────────────────────────────────────────
-  async getDailySummary(tenantId: string, date: Date) {
-    const start = new Date(date);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(date);
-    end.setHours(23, 59, 59, 999);
-    const dateStr = format(date, 'yyyy-MM-dd');
-
-    const summary = await this.prisma.$queryRaw<any[]>`
-      SELECT
-        COUNT(*)::int as total_bills,
-        COALESCE(SUM(total_amount), 0)::numeric(10,2) as total_amount,
-        COALESCE(SUM(paid_amount), 0)::numeric(10,2) as total_collected,
-        COALESCE(SUM(due_amount), 0)::numeric(10,2) as total_due,
-        COALESCE(SUM(discount_amount), 0)::numeric(10,2) as total_discount
-      FROM opd_bills
-      WHERE tenant_id = ${tenantId}
-        AND billed_at >= ${start}
-        AND billed_at <= ${end}
-        AND bill_status != 'CANCELLED'
-    `;
-
-    const paymentBreakdown = await this.prisma.$queryRaw<any[]>`
-      SELECT
-        payment_mode as mode,
-        COUNT(*)::int as count,
-        COALESCE(SUM(amount), 0)::numeric(10,2) as amount
-      FROM opd_payments
-      WHERE tenant_id = ${tenantId}
-        AND paid_at >= ${start}
-        AND paid_at <= ${end}
-      GROUP BY payment_mode
-    `;
-
-    const statusBreakdown = await this.prisma.$queryRaw<any[]>`
-      SELECT
-        bill_status as status,
-        COUNT(*)::int as count
-      FROM opd_bills
-      WHERE tenant_id = ${tenantId}
-        AND billed_at >= ${start}
-        AND billed_at <= ${end}
-      GROUP BY bill_status
-    `;
-
-    return {
-      summary: summary[0],
-      paymentBreakdown,
-      statusBreakdown,
-    };
   }
 
   // ─── GET APPOINTMENT ────────────────────────────────────────────
