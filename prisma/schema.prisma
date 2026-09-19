@@ -425,6 +425,13 @@ model Hospital {
   consultations       Consultation[]
   prescriptions       Prescription[]
   investigationOrders InvestigationOrder[]
+  globalMasters       GlobalMaster[]
+  panels              Panel[]
+
+
+  serviceMasters       ServiceMaster[]
+  tariffMasters        TariffMaster[]
+  panelServiceRates    PanelServiceRate[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1412,3 +1419,270 @@ model LoginOtp {
   @@map("login_otps")
 }
 // === SECURITY ADDITION END ===
+
+
+
+
+
+// ============================================
+// ENUMS — GLOBAL MASTER CONFIGURATION
+// ============================================
+
+enum MasterCategory {
+  PANEL_BILLING
+  CLINICAL
+  INVENTORY
+  GENERAL
+}
+
+enum MasterValueType {
+  // --- PANEL / BILLING ---
+  GROUP_TYPE
+  PAYMENT_MODE
+  RATE_TYPE
+  CURRENCY
+  PANEL_TYPE
+  TAX_TYPE
+  DISCOUNT_REASON
+  REFUND_REASON
+  CANCELLATION_REASON
+
+  // --- CLINICAL ---
+  CONSULTATION_TYPE
+  DIAGNOSIS_TYPE
+  DIET_TYPE
+}
+
+// ============================================
+// MODEL — GLOBAL MASTER
+// ============================================
+
+model GlobalMaster {
+  id       String @id @default(uuid())
+  tenantId String
+
+  category MasterCategory
+  type     MasterValueType
+  value    String
+
+  isSystem  Boolean @default(false)
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  deletedAt DateTime?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  panelsAsGroupType    Panel[] @relation("PanelGroupType")
+  panelsAsPaymentMode  Panel[] @relation("PanelPaymentMode")
+  panelsAsPanelType    Panel[] @relation("PanelType")
+  panelsAsRateCurrency Panel[] @relation("PanelRateCurrency")
+  panelsAsBillCurrency Panel[] @relation("PanelBillCurrency")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, type, value])
+  @@index([tenantId, category])
+  @@index([tenantId, type])
+  @@index([tenantId, deletedAt])
+  @@map("global_masters")
+}
+
+
+
+// ============================================
+// ENUMS FOR PANEL MASTER LOGIC
+// ============================================
+
+enum CoPaymentOn {
+  ON_BILL
+  ON_SERVICE
+  NONE
+}
+
+// ============================================
+// MODEL — PANEL MASTER
+// ============================================
+
+model Panel {
+  id       String @id @default(uuid())
+  tenantId String
+
+  // ─── BASIC DETAILS ──────────────────────────────────────────
+  panelCode     String   @unique // Auto-generated e.g., PNL-0001
+  panelName     String
+  
+  // Relations to GlobalMaster Table (Using UUIDs instead of hardcoded Enums)
+  groupTypeId   String?
+  paymentModeId String?
+  panelTypeId   String?
+  
+  contactPerson String?
+  address1      String?
+  address2      String?
+  contactNo     String?
+  phoneNo       String?
+  email         String?
+  faxNo         String?
+
+  // ─── VALIDITY & CREDIT ──────────────────────────────────────
+  validFrom     DateTime? @db.Date
+  validTo       DateTime? @db.Date
+  creditLimit   Decimal   @default(0) @db.Decimal(15, 2)
+
+  // ─── REFER RATES (Will link to Tariff Master later) ─────────
+  opdTariffId   String?   // ID of Tariff
+  ipdTariffId   String?   // ID of Tariff
+
+  // ─── FLAGS (Checkboxes from UI) ─────────────────────────────
+  rateTypeSelfOpd Boolean @default(false)
+  rateTypeSelfIpd Boolean @default(false)
+  showPrintout    Boolean @default(true) // Default 'Yes' in UI
+  hideRate        Boolean @default(false) // Default 'No' in UI
+  coverNote       Boolean @default(false) // Default 'No' in UI
+  isSmartCard     Boolean @default(false) // Default 'No' in UI
+  hasEncounter    Boolean @default(false) // Default unchecked in UI
+  isUsdBased      Boolean @default(false) // Default unchecked in UI
+  
+  dietTypePrivate Boolean @default(false) // true = Private, false = Normal
+
+  // ─── CO-PAYMENT & CURRENCY ──────────────────────────────────
+  coPaymentOn      CoPaymentOn @default(NONE)
+  coPaymentPercent Decimal     @default(0) @db.Decimal(5, 2)
+
+  rateCurrencyId   String?     // Relation to GlobalMaster
+  billCurrencyId   String?     // Relation to GlobalMaster
+  currencyConv     Decimal     @default(1) @db.Decimal(10, 4)
+  
+  panelAmount      Decimal?    @db.Decimal(15, 2)
+
+  // ─── STATUS & AUDIT ─────────────────────────────────────────
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+
+
+
+
+
+  opdTariff      TariffMaster?  @relation("PanelOpdTariff", fields: [opdTariffId], references: [id])
+  ipdTariff      TariffMaster?  @relation("PanelIpdTariff", fields: [ipdTariffId], references: [id])
+
+  // ─── RELATIONS ──────────────────────────────────────────────
+  hospital       Hospital       @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  
+  // Links to Global Master for Dynamic Dropdowns
+  groupType      GlobalMaster?  @relation("PanelGroupType", fields: [groupTypeId], references: [id])
+  paymentMode    GlobalMaster?  @relation("PanelPaymentMode", fields: [paymentModeId], references: [id])
+  panelType      GlobalMaster?  @relation("PanelType", fields: [panelTypeId], references: [id])
+  rateCurrency   GlobalMaster?  @relation("PanelRateCurrency", fields: [rateCurrencyId], references: [id])
+  billCurrency   GlobalMaster?  @relation("PanelBillCurrency", fields: [billCurrencyId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, panelName]) // Panel names should be unique per clinic
+  @@index([tenantId, groupTypeId])
+  @@index([tenantId, isActive])
+  @@map("panels")
+}
+
+
+
+// ============================================
+// ENUMS FOR RATE MANAGEMENT
+// ============================================
+
+enum ServiceCategory {
+  CONSULTATION
+  LAB
+  RADIOLOGY
+  PROCEDURE
+  PHARMACY
+  BED_CHARGE
+  OTHER
+}
+
+// ============================================
+// 1. SERVICE MASTER (Hospital ki saari services)
+// ============================================
+model ServiceMaster {
+  id       String @id @default(uuid())
+  tenantId String
+
+  serviceCode String  @unique // e.g., LAB-001
+  serviceName String          // e.g., "Complete Blood Count (CBC)"
+  category    ServiceCategory
+  
+  // Hospital ka Standard/Base Rate
+  baseRate    Decimal @db.Decimal(10, 2)
+  
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+
+  hospital   Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  panelRates PanelServiceRate[] // Linking to tariff rates
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, category])
+  @@map("service_masters")
+}
+
+// ============================================
+// 2. TARIFF MASTER (Rate Lists e.g., CGHS, Star Health)
+// ============================================
+model TariffMaster {
+  id       String @id @default(uuid())
+  tenantId String
+
+  tariffCode String  @unique // e.g., TRF-001
+  tariffName String          // e.g., "CGHS 2024 Rate List"
+  
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+
+  hospital   Hospital           @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  rates      PanelServiceRate[] 
+  
+  // Relations linking back to Panel (OPD & IPD Rates)
+  opdPanels  Panel[] @relation("PanelOpdTariff")
+  ipdPanels  Panel[] @relation("PanelIpdTariff")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, isActive])
+  @@map("tariff_masters")
+}
+
+// ============================================
+// 3. PANEL SERVICE RATE (The actual Override Pricing)
+// ============================================
+model PanelServiceRate {
+  id       String @id @default(uuid())
+  tenantId String
+
+  tariffId  String
+  serviceId String
+
+  // Overridden Rate for THIS specific tariff
+  rate           Decimal @db.Decimal(10, 2)
+  
+  // Optional Discount instead of flat rate
+  discountPercent Decimal @default(0) @db.Decimal(5, 2)
+  
+  isActive  Boolean @default(true)
+
+  hospital Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  tariff   TariffMaster  @relation(fields: [tariffId], references: [id], onDelete: Cascade)
+  service  ServiceMaster @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Ek tariff me ek service ka ek hi rate ho sakta hai
+  @@unique([tariffId, serviceId]) 
+  @@index([tenantId, tariffId])
+  @@map("panel_service_rates")
+}
