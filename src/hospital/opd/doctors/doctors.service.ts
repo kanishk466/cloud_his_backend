@@ -153,27 +153,7 @@ export class DoctorsService {
           });
         }
 
-        // Validate break time
-        if (day.breakStartTime && day.breakEndTime) {
-          const breakStart = this.timeToMins(day.breakStartTime);
-          const breakEnd = this.timeToMins(day.breakEndTime);
-          const dayStart = this.timeToMins(day.startTime);
-          const dayEnd = this.timeToMins(day.endTime);
-
-          if (breakStart >= breakEnd) {
-            throw new BadRequestException({
-              ...DOCTOR_ERRORS.INVALID_TIME_RANGE,
-              details: { day: day.dayOfWeek, field: 'break' },
-            });
-          }
-
-          if (breakStart < dayStart || breakEnd > dayEnd) {
-            throw new BadRequestException({
-              ...DOCTOR_ERRORS.INVALID_BREAK_TIME,
-              details: { day: day.dayOfWeek },
-            });
-          }
-        }
+      
       }
     }
 

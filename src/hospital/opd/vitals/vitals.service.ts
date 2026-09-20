@@ -71,10 +71,7 @@ export class VitalsService {
       }
     }
 
-    // Rule 3: Auto-calculate BMI
-    const bmi = this.calculateBMI(dto.heightCm, dto.weightKg);
-
-    // Rule 4: Create vitals record
+    // Rule 3: Create vitals record (BMI removed from DB payload)
     const vitals = await this.vitalsRepository.create({
       tenantId,
       patientId: dto.patientId,
@@ -82,7 +79,6 @@ export class VitalsService {
       consultationId: dto.consultationId,
       heightCm: dto.heightCm,
       weightKg: dto.weightKg,
-      bmi,
       temperatureF: dto.temperatureF,
       bloodPressureSys: dto.bloodPressureSys,
       bloodPressureDia: dto.bloodPressureDia,
@@ -102,7 +98,7 @@ export class VitalsService {
       `Vitals recorded for patient ${patient.uhid} by ${recordedBy}`,
     );
 
-    return VitalsResponseDto.fromEntity(vitals);
+    return VitalsResponseDto.fromEntity(this.attachBmi(vitals)!);
   }
 
   // ─── GET VITALS BY ID ───────────────────────────────────────────
@@ -120,11 +116,10 @@ export class VitalsService {
       throw new ForbiddenException(VITALS_ERRORS.CROSS_TENANT);
     }
 
-    return VitalsResponseDto.fromEntity(vitals);
+    return VitalsResponseDto.fromEntity(this.attachBmi(vitals)!);
   }
 
   // ─── GET VITALS BY APPOINTMENT ──────────────────────────────────
-  // Used by doctor to see vitals recorded by nurse for this visit
   async findByAppointmentId(
     tenantId: string,
     appointmentId: string,
@@ -138,16 +133,14 @@ export class VitalsService {
       return null;
     }
 
-    return VitalsResponseDto.fromEntity(vitals);
+    return VitalsResponseDto.fromEntity(this.attachBmi(vitals)!);
   }
 
   // ─── GET LATEST VITALS FOR PATIENT ──────────────────────────────
-  // Quick view of most recent vitals
   async findLatestByPatientId(
     tenantId: string,
     patientId: string,
   ): Promise<VitalsResponseDto | null> {
-    // Validate patient exists
     const patient = await this.vitalsRepository.getPatient(
       tenantId,
       patientId,
@@ -166,18 +159,16 @@ export class VitalsService {
       return null;
     }
 
-    return VitalsResponseDto.fromEntity(vitals);
+    return VitalsResponseDto.fromEntity(this.attachBmi(vitals)!);
   }
 
   // ─── GET PATIENT VITALS HISTORY ──────────────────────────────────
-  // All historical vitals for a patient (paginated)
   async getPatientHistory(
     tenantId: string,
     patientId: string,
     page: number = 1,
     limit: number = 10,
   ): Promise<VitalsListResponseDto> {
-    // Validate patient exists
     const patient = await this.vitalsRepository.getPatient(
       tenantId,
       patientId,
@@ -196,7 +187,7 @@ export class VitalsService {
       );
 
     return {
-      data: records.map((r) => VitalsResponseDto.fromEntity(r)),
+      data: records.map((r) => VitalsResponseDto.fromEntity(this.attachBmi(r)!)),
       meta: {
         total,
         page,
@@ -212,7 +203,6 @@ export class VitalsService {
     id: string,
     dto: UpdateVitalsDto,
   ): Promise<VitalsResponseDto> {
-    // Validate vitals record exists
     const existing = await this.vitalsRepository.findById(tenantId, id);
 
     if (!existing) {
@@ -223,23 +213,16 @@ export class VitalsService {
       throw new ForbiddenException(VITALS_ERRORS.CROSS_TENANT);
     }
 
-    // Recalculate BMI if height or weight changed
-    const heightCm = dto.heightCm ?? (existing.heightCm ? Number(existing.heightCm) : undefined);
-    const weightKg = dto.weightKg ?? (existing.weightKg ? Number(existing.weightKg) : undefined);
-    const bmi = this.calculateBMI(heightCm, weightKg);
-
     const updated = await this.vitalsRepository.update(id, {
       ...dto,
-      bmi,
     });
 
     this.logger.log(`Vitals ${id} updated`);
 
-    return VitalsResponseDto.fromEntity(updated);
+    return VitalsResponseDto.fromEntity(this.attachBmi(updated)!);
   }
 
   // ─── GET VITALS TREND ───────────────────────────────────────────
-  // Returns last N records for graphing (e.g., BP trend, Sugar trend)
   async getVitalsTrend(
     tenantId: string,
     patientId: string,
@@ -261,26 +244,44 @@ export class VitalsService {
       lastN,
     );
 
-    // Format for charting
+    // Format for charting (compute BMI dynamically per data point)
     return {
       patientId,
       patientUhid: patient.uhid,
-      dataPoints: records.map((r) => ({
-        date: r.recordedAt,
-        bp: r.bloodPressureSys && r.bloodPressureDia
-          ? `${r.bloodPressureSys}/${r.bloodPressureDia}`
-          : null,
-        bloodPressureSys: r.bloodPressureSys ? Number(r.bloodPressureSys) : null,
-        bloodPressureDia: r.bloodPressureDia ? Number(r.bloodPressureDia) : null,
-        pulseRate: r.pulseRate,
-        spo2: r.spo2 ? Number(r.spo2) : null,
-        temperature: r.temperatureF ? Number(r.temperatureF) : null,
-        weight: r.weightKg ? Number(r.weightKg) : null,
-        bmi: r.bmi ? Number(r.bmi) : null,
-        sugarFasting: r.bloodSugarFasting ? Number(r.bloodSugarFasting) : null,
-        sugarPP: r.bloodSugarPP ? Number(r.bloodSugarPP) : null,
-        sugarRandom: r.bloodSugarRandom ? Number(r.bloodSugarRandom) : null,
-      })),
+      dataPoints: records.map((r) => {
+        const heightCm = r.heightCm ? Number(r.heightCm) : undefined;
+        const weightKg = r.weightKg ? Number(r.weightKg) : undefined;
+        const calculatedBmi = this.calculateBMI(heightCm, weightKg);
+
+        return {
+          date: r.recordedAt,
+          bp: r.bloodPressureSys && r.bloodPressureDia
+            ? `${r.bloodPressureSys}/${r.bloodPressureDia}`
+            : null,
+          bloodPressureSys: r.bloodPressureSys ? Number(r.bloodPressureSys) : null,
+          bloodPressureDia: r.bloodPressureDia ? Number(r.bloodPressureDia) : null,
+          pulseRate: r.pulseRate,
+          spo2: r.spo2 ? Number(r.spo2) : null,
+          temperature: r.temperatureF ? Number(r.temperatureF) : null,
+          weight: weightKg ?? null,
+          bmi: calculatedBmi ?? null,
+          sugarFasting: r.bloodSugarFasting ? Number(r.bloodSugarFasting) : null,
+          sugarPP: r.bloodSugarPP ? Number(r.bloodSugarPP) : null,
+          sugarRandom: r.bloodSugarRandom ? Number(r.bloodSugarRandom) : null,
+        };
+      }),
+    };
+  }
+
+  // ─── PRIVATE: DYNAMIC BMI ATTACHMENT ─────────────────────────────
+  private attachBmi<T extends { heightCm?: any; weightKg?: any }>(record: T | null): (T & { bmi?: number }) | null {
+    if (!record) return null;
+    const heightCm = record.heightCm ? Number(record.heightCm) : undefined;
+    const weightKg = record.weightKg ? Number(record.weightKg) : undefined;
+    const bmi = this.calculateBMI(heightCm, weightKg);
+    return {
+      ...record,
+      bmi,
     };
   }
 
@@ -290,13 +291,12 @@ export class VitalsService {
     weightKg?: number,
   ): number | undefined {
     if (!heightCm || !weightKg) return undefined;
-
     if (heightCm <= 0 || weightKg <= 0) return undefined;
 
     const heightM = heightCm / 100;
     const bmi = weightKg / (heightM * heightM);
 
-    // Round to 1 decimal
+    // Round to 1 decimal place
     return Math.round(bmi * 10) / 10;
   }
 }

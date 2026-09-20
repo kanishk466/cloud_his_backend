@@ -157,8 +157,6 @@ export class DoctorsRepository {
       isActive: boolean;
       startTime?: string;
       endTime?: string;
-      breakStartTime?: string;
-      breakEndTime?: string;
     }>,
   ) {
     return this.prisma.$transaction(async (tx) => {
@@ -178,8 +176,7 @@ export class DoctorsRepository {
             dayOfWeek: s.dayOfWeek,
             startTime: s.startTime!,
             endTime: s.endTime!,
-            breakStartTime: s.breakStartTime,
-            breakEndTime: s.breakEndTime,
+         
             isActive: true,
           })),
         });
