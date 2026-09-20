@@ -1,4 +1,3 @@
-// billing.repository.ts
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
@@ -31,16 +30,12 @@ export class BillingRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   // ─── GENERATE BILL NUMBER ──────────────────────────────────────
-  
-
-    // ─── GENERATE BILL NUMBER ──────────────────────────────────────
   async generateBillNo(tenantId: string): Promise<string> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const today = format(new Date(), 'yyyyMMdd');
         const prefix = `${BILL_NO_CONFIG.PREFIX}-${today}-`;
 
-        // Notice double quotes around "billNo" and "tenantId"
         const result = await tx.$queryRaw<{ billNo: string }[]>`
           SELECT "billNo" FROM opd_bills
           WHERE "tenantId" = ${tenantId} AND "billNo" LIKE ${`${prefix}%`}
@@ -73,7 +68,6 @@ export class BillingRepository {
         const today = format(new Date(), 'yyyyMMdd');
         const prefix = `${RECEIPT_NO_CONFIG.PREFIX}-${today}-`;
 
-        // Notice double quotes around "receiptNo" and "tenantId"
         const result = await tx.$queryRaw<{ receiptNo: string }[]>`
           SELECT "receiptNo" FROM opd_payments
           WHERE "tenantId" = ${tenantId} AND "receiptNo" LIKE ${`${prefix}%`}
@@ -99,10 +93,7 @@ export class BillingRepository {
     }
   }
 
-  // ─── GENERATE RECEIPT NUMBER ────────────────────────────────────
   // ─── CREATE BILL WITH ITEMS ─────────────────────────────────────
- 
-    // ─── CREATE BILL WITH ITEMS ─────────────────────────────────────
   async create(data: {
     tenantId: string;
     billNo: string;
@@ -114,7 +105,11 @@ export class BillingRepository {
       category: string;
       quantity: number;
       unitPrice: number;
+      discountPercent?: number;
+      discountAmount?: number;
       taxRate?: number;
+      taxAmount?: number;
+      totalAmount?: number;
     }>;
     subtotal: number;
     discountPercent: number;
@@ -130,12 +125,6 @@ export class BillingRepository {
     generatedBy?: string;
     billStatus: string;
   }) {
-    // Extract consultation fee total from items if available
-    const consultationItem = data.items.find((i) => i.category === 'Consultation');
-    const consultationFee = consultationItem
-      ? consultationItem.quantity * consultationItem.unitPrice
-      : 0;
-
     return this.prisma.opdBill.create({
       data: {
         tenantId: data.tenantId,
@@ -143,10 +132,7 @@ export class BillingRepository {
         patientId: data.patientId,
         appointmentId: data.appointmentId || undefined,
 
-        // Backwards compatibility for legacy summary queries
-        consultationFee,
-        registrationFee: 0,
-        otherCharges: 0,
+        // 🛠️ FIXED: Removed legacy header fee fields (consultationFee, otherCharges)
 
         subtotal: data.subtotal,
         discountPercent: data.discountPercent,
@@ -164,16 +150,29 @@ export class BillingRepository {
         billStatus: data.billStatus as any,
         paymentStatus: 'PENDING',
         items: {
-          create: data.items.map((it) => ({
-            tenantId: data.tenantId,
-            itemCode: it.code || null,
-            itemName: it.description,
-            category: it.category,
-            quantity: it.quantity,
-            unitPrice: it.unitPrice,
-            taxPercent: it.taxRate ?? 0,
-            totalAmount: it.quantity * it.unitPrice,
-          })),
+          create: data.items.map((it) => {
+            const gross = it.quantity * it.unitPrice;
+            const itemDiscPercent = it.discountPercent ?? 0;
+            const itemDiscAmount = it.discountAmount ?? gross * (itemDiscPercent / 100);
+            const taxable = gross - itemDiscAmount;
+            const taxPercent = it.taxRate ?? 0;
+            const itemTaxAmount = it.taxAmount ?? taxable * (taxPercent / 100);
+            const calculatedTotal = it.totalAmount ?? taxable + itemTaxAmount;
+
+            return {
+              tenantId: data.tenantId,
+              itemCode: it.code || null,
+              itemName: it.description,
+              category: it.category,
+              quantity: it.quantity,
+              unitPrice: it.unitPrice,
+              discountPercent: itemDiscPercent,
+              discountAmount: itemDiscAmount,
+              taxPercent,
+              taxAmount: itemTaxAmount,
+              totalAmount: calculatedTotal,
+            };
+          }),
         },
       },
       include: billWithRelations,
@@ -212,6 +211,7 @@ export class BillingRepository {
     receiptNo: string;
     amount: number;
     paymentMode: string;
+    status?: string;
     transactionId?: string;
     receivedBy?: string;
     notes?: string;
@@ -223,6 +223,7 @@ export class BillingRepository {
         receiptNo: data.receiptNo,
         amount: data.amount,
         paymentMode: data.paymentMode as any,
+        status: (data.status as any) || 'PAID', // 🛠️ FIXED: Includes Step 4 PaymentStatus tracking
         transactionId: data.transactionId,
         receivedBy: data.receivedBy,
         notes: data.notes,
@@ -353,10 +354,7 @@ export class BillingRepository {
     return { payments, total, page, limit };
   }
 
-
-
-
-    // ─── DAILY SUMMARY ──────────────────────────────────────────────
+  // ─── DAILY SUMMARY ──────────────────────────────────────────────
   async getDailySummary(tenantId: string, date: Date) {
     const start = new Date(date);
     start.setHours(0, 0, 0, 0);
@@ -406,6 +404,7 @@ export class BillingRepository {
       statusBreakdown,
     };
   }
+
   // ─── GET APPOINTMENT ────────────────────────────────────────────
   async getAppointment(tenantId: string, appointmentId: string) {
     return this.prisma.appointment.findFirst({

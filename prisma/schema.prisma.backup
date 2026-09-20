@@ -252,20 +252,20 @@ enum BillStatus {
 // ============================================
 
 model PlatformUser {
-  id                  String        @id @default(uuid())
-  email               String        @unique
-  passwordHash        String
-  firstName           String
-  lastName            String?
-  status              UserStatus    @default(ACTIVE)
-  role                PlatformRole  @default(PLATFORM_ADMIN)
+  id           String       @id @default(uuid())
+  email        String       @unique
+  passwordHash String
+  firstName    String
+  lastName     String?
+  status       UserStatus   @default(ACTIVE)
+  role         PlatformRole @default(PLATFORM_ADMIN)
   // === SECURITY ADDITION START ===
-  failedLoginAttempts Int           @default(0) @map("failed_login_attempts")
-  lockedUntil         DateTime?     @map("locked_until")
-  passwordChangedAt   DateTime      @default(now()) @map("password_changed_at")
-  twoFactorEnabled    Boolean       @default(false) @map("two_factor_enabled")
+  failedLoginAttempts Int      @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until")
+  passwordChangedAt   DateTime  @default(now()) @map("password_changed_at")
+  twoFactorEnabled    Boolean   @default(false) @map("two_factor_enabled")
   sessions            AuthSession[] @relation("PlatformSessions")
-  loginOtps           LoginOtp[]    @relation("PlatformOtps")
+  loginOtps           LoginOtp[] @relation("PlatformOtps")
   // === SECURITY ADDITION END ===
 
   refreshTokens RefreshToken[]
@@ -376,7 +376,7 @@ model PackageModule {
 // ============================================
 
 model Hospital {
-  id       Int    @id @default(autoincrement()) // ✅ Changed from String uuid
+  id       Int    @id @default(autoincrement())  // ✅ Changed from String uuid
   tenantId String @unique @default(uuid())
 
   code        String         @unique
@@ -406,7 +406,9 @@ model Hospital {
   // OPD Step 1
 
   tenantSequences TenantSequence[]
-  patients        Patient[]
+  patients Patient[]
+
+ 
 
   // OPD Step 2
   appointments Appointment[]
@@ -415,9 +417,9 @@ model Hospital {
   opdTokens OpdToken[]
 
   // OPD Step 6
-  opdBills     OpdBill[]
-  opdBillItems OpdBillItem[]
-  opdPayments  OpdPayment[]
+  opdBills    OpdBill[]
+  opdBillItems  OpdBillItem[]
+  opdPayments OpdPayment[]
 
   patientVitals       PatientVitals[]
   consultations       Consultation[]
@@ -426,9 +428,10 @@ model Hospital {
   globalMasters       GlobalMaster[]
   panels              Panel[]
 
-  serviceMasters    ServiceMaster[]
-  tariffMasters     TariffMaster[]
-  panelServiceRates PanelServiceRate[]
+
+  serviceMasters       ServiceMaster[]
+  tariffMasters        TariffMaster[]
+  panelServiceRates    PanelServiceRate[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -516,9 +519,9 @@ model Department {
   id       Int    @id @default(autoincrement())
   tenantId String
 
-  name        String
-  code        String?
-  isActive    Boolean @default(true)
+  name     String
+  code     String?
+  isActive Boolean @default(true)
   description String?
 
   hospital     Hospital                @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
@@ -593,6 +596,8 @@ model HospitalUser {
   managedStaff  StaffProfile[]                @relation("ReportingManager")
   doctorProfile DoctorProfile?
 
+  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -620,8 +625,11 @@ model StaffProfile {
 
   reportingManagerId String?
 
-  aadhaarNumber String?
-  panNumber     String?
+  aadhaarNumber  String?
+  panNumber      String?
+  medicalRegNo   String?
+  qualification  String?
+  specialization String?
 
   address          String?
   city             String?
@@ -683,24 +691,24 @@ model UserModuleFeaturePermission {
   @@map("user_module_feature_permissions")
 }
 
+
+
 // ============================================
 // DOCTOR SCHEDULING
 // ============================================
 
 model DoctorProfile {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   tenantId       String
-  hospitalUserId String @unique
+  hospitalUserId String  @unique
 
   specialization    String
   qualifications    String?
-  medicalRegNo      String?
   consultationFee   Decimal @db.Decimal(10, 2)
   slotDurationMins  Int     @default(15)
   bufferTimeMins    Int     @default(0)
   maxPatientsPerDay Int?
-
-  isActive Boolean @default(true)
+  isActive          Boolean @default(true)
 
   hospital     Hospital     @relation(fields: [tenantId], references: [tenantId])
   hospitalUser HospitalUser @relation(fields: [hospitalUserId], references: [id])
@@ -728,11 +736,12 @@ model DoctorAvailability {
   tenantId        String
   doctorProfileId String
 
-  dayOfWeek      Int
-  startTime      String
-  endTime        String
-
-  isActive       Boolean @default(true)
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  breakStartTime String? // "13:00"
+  breakEndTime   String? // "14:00"
+  isActive  Boolean @default(true)
 
   hospital      Hospital      @relation(fields: [tenantId], references: [tenantId])
   doctorProfile DoctorProfile @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
@@ -740,7 +749,7 @@ model DoctorAvailability {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([doctorProfileId, dayOfWeek, startTime, endTime])
+  @@unique([doctorProfileId, dayOfWeek, startTime])
   @@index([tenantId, doctorProfileId])
   @@map("doctor_availabilities")
 }
@@ -776,10 +785,9 @@ model Patient {
 
   firstName     String
   lastName      String?
-  dateOfBirth   DateTime?      @db.Date
-  ageAtRegistration Int?
-  ageUnit           String?       @default("years")
-
+  dateOfBirth   DateTime?     @db.Date
+  age           Int?
+  ageUnit       String?       @default("years")
   gender        Gender
   bloodGroup    BloodGroup?
   maritalStatus MaritalStatus?
@@ -804,29 +812,17 @@ model Patient {
   guardianRelation RelationType?
   guardianMobile   String?
 
+  insuranceProvider  String?
   insurancePolicyNo  String?
   insuranceValidTill DateTime?
 
   allergies       String?
   chronicDiseases String?
-
-  empId String?
-
-  consultingDoctor String?
-  department       String?
-
-  // 🟢 ADD PANEL FOREIGN KEY (Proper Normalization)
-  panelId        String?
-  panelPolicyNo  String? // Insurance Card No / Corporate Emp ID
-  panelValidTill DateTime? @db.Date
-
-  // 🟢 ADD: Consent & Privacy (HIPAA / ABDM Compliance)
-  consentToShare Boolean @default(true)
-  privacyFlag    String? // Useful for "VIP", "CONFIDENTIAL", "RESTRICTED" tags
-
-  mergedIntoPatientId String?
-  mergedInto          Patient?  @relation("PatientMerge", fields: [mergedIntoPatientId], references: [id], onDelete: SetNull)
-  mergedFrom          Patient[] @relation("PatientMerge")
+  companyName         String?
+  empId               String?
+  coverage            String?
+  consultingDoctor    String?
+  department          String?
 
   patientType  PatientType   @default(NEW)
   status       PatientStatus @default(ACTIVE)
@@ -835,20 +831,19 @@ model Patient {
 
   deletedAt DateTime?
 
-  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Restrict)
-  panel    Panel?   @relation(fields: [panelId], references: [id], onDelete: SetNull)
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
 
   // OPD Step 2
-  appointments  Appointment[]
+  appointments Appointment[]
   vitalsRecords PatientVitals[]
-  consultations Consultation[]
+ consultations Consultation[]
+
 
   bills OpdBill[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  @@unique([tenantId, id])
+  @@unique([tenantId, id]) 
   @@unique([tenantId, uhid])
   @@unique([tenantId, mobile])
   @@index([tenantId])
@@ -856,9 +851,14 @@ model Patient {
   @@index([tenantId, abhaId])
   @@index([tenantId, status])
   @@index([tenantId, deletedAt])
-  @@index([tenantId, panelId]) // 🟢 ADD THIS INDEX
   @@map("patients")
 }
+
+
+
+
+
+
 
 // ============================================
 // CORE: TENANT SEQUENCES (Universal Counter Table)
@@ -868,11 +868,11 @@ model TenantSequence {
   id         String   @id @default(uuid())
   tenantId   String   @map("tenant_id")
   entityType String   @map("entity_type") // 'APPOINTMENT', 'UHID', 'BILL', 'TOKEN'
-  scopeKey   String   @map("scope_key") // '20260825' (daily) or '2026' (yearly)
-  lastValue  Int      @default(0) @map("last_value")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  scopeKey   String   @map("scope_key")   // '20260825' (daily) or '2026' (yearly)
+  lastValue  Int      @default(0)         @map("last_value")
+  updatedAt  DateTime @updatedAt          @map("updated_at")
 
-  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  hospital   Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
 
   @@unique([tenantId, entityType, scopeKey])
   @@index([tenantId, entityType])
@@ -922,21 +922,21 @@ model Appointment {
   deletedAt DateTime?
 
   // Relations
-  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Restrict)
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
   patient       Patient       @relation(fields: [patientId], references: [id])
   doctorProfile DoctorProfile @relation(fields: [doctorProfileId], references: [id])
   department    Department?   @relation(fields: [departmentId], references: [id])
-
-  token        OpdToken?
-  consultation Consultation?
-  bills        OpdBill?
+  
+  token         OpdToken?
+  consultation  Consultation?
+  bills          OpdBill?
 
   vitalsRecords PatientVitals[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, id]) //  Security: Enables composite tenant isolation
+  @@unique([tenantId, id])            //  Security: Enables composite tenant isolation
   @@unique([tenantId, appointmentNo])
   @@index([tenantId, appointmentDate])
   @@index([tenantId, doctorProfileId, appointmentDate])
@@ -946,6 +946,8 @@ model Appointment {
   @@index([tenantId, deletedAt])
   @@map("appointments")
 }
+
+
 
 // ============================================
 // OPD — STEP 3: TOKEN / QUEUE MANAGEMENT ✅
@@ -984,6 +986,8 @@ model OpdToken {
   @@map("opd_tokens")
 }
 
+
+
 // ============================================
 // OPD — STEP 4: PATIENT VITALS ✅
 // ============================================
@@ -993,7 +997,7 @@ model PatientVitals {
   tenantId String
 
   patientId String
-
+  
   // Links to consultation AFTER doctor starts session
   // Null when nurse records vitals before consultation
   consultationId String?
@@ -1002,43 +1006,43 @@ model PatientVitals {
   appointmentId String?
 
   // ─── ANTHROPOMETRY ──────────────────────────────────────────────
-  heightCm Decimal? @db.Decimal(5, 2) // 172.50 cm
-  weightKg Decimal? @db.Decimal(5, 2) // 70.50 kg
-
+  heightCm Decimal? @db.Decimal(5, 2)  // 172.50 cm
+  weightKg Decimal? @db.Decimal(5, 2)  // 70.50 kg
+  bmi      Decimal? @db.Decimal(4, 1)  // Auto: weight/(height/100)²
 
   // ─── TEMPERATURE ────────────────────────────────────────────────
-  temperatureF Decimal? @db.Decimal(4, 1) // 98.6°F
+  temperatureF Decimal? @db.Decimal(4, 1)  // 98.6°F
 
   // ─── CARDIOVASCULAR ─────────────────────────────────────────────
-  bloodPressureSys Int? // Systolic  e.g., 120
-  bloodPressureDia Int? // Diastolic e.g., 80
-  pulseRate        Int? // beats/min e.g., 72
+  bloodPressureSys Int?  // Systolic  e.g., 120
+  bloodPressureDia Int?  // Diastolic e.g., 80
+  pulseRate        Int?  // beats/min e.g., 72
 
   // ─── RESPIRATORY ────────────────────────────────────────────────
-  respiratoryRate Int? // breaths/min e.g., 16
-  spo2            Decimal? @db.Decimal(4, 1) // 98.5%
+  respiratoryRate Int?     // breaths/min e.g., 16
+  spo2            Decimal? @db.Decimal(4, 1)  // 98.5%
 
   // ─── BLOOD SUGAR ────────────────────────────────────────────────
-  bloodSugarFasting Decimal? @db.Decimal(5, 1) // mg/dL
-  bloodSugarPP      Decimal? @db.Decimal(5, 1) // Post Prandial
-  bloodSugarRandom  Decimal? @db.Decimal(5, 1) // Random
+  bloodSugarFasting Decimal? @db.Decimal(5, 1)  // mg/dL
+  bloodSugarPP      Decimal? @db.Decimal(5, 1)  // Post Prandial
+  bloodSugarRandom  Decimal? @db.Decimal(5, 1)  // Random
 
   // ─── PAIN ASSESSMENT ────────────────────────────────────────────
-  painScore Int? // 0-10 (Visual Analog Scale)
+  painScore Int?  // 0-10 (Visual Analog Scale)
 
   // ─── CLINICAL INPUT BY NURSE ────────────────────────────────────
-  chiefComplaints String? // "Fever since 3 days, headache"
+  chiefComplaints String?  // "Fever since 3 days, headache"
   notes           String?
 
   // ─── META ───────────────────────────────────────────────────────
-  recordedBy String? // HospitalUser.id (nurse/staff)
-  recordedAt DateTime @default(now())
+  recordedBy String?   // HospitalUser.id (nurse/staff)
+  recordedAt DateTime  @default(now())
 
   // ─── RELATIONS ──────────────────────────────────────────────────
   hospital Hospital @relation(fields: [tenantId], references: [tenantId])
   patient  Patient  @relation(fields: [patientId], references: [id])
 
-  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1048,6 +1052,8 @@ model PatientVitals {
   @@index([tenantId, recordedAt])
   @@map("patient_vitals")
 }
+
+
 
 // ============================================
 // OPD — STEP 5: CONSULTATION ✅
@@ -1102,10 +1108,6 @@ model Consultation {
   startedAt   DateTime           @default(now())
   completedAt DateTime?
 
-  isSigned Boolean   @default(false)
-  signedAt DateTime?
-  signedBy String? // UUID of the doctor who signed/locked it
-
   // ─── RELATIONS ──────────────────────────────────────────────────
   hospital      Hospital      @relation(fields: [tenantId], references: [tenantId])
   appointment   Appointment   @relation(fields: [appointmentId], references: [id])
@@ -1139,20 +1141,19 @@ model Prescription {
   // ─── MEDICINE IDENTIFICATION ────────────────────────────────────
   medicineName String
   genericName  String?
-  medicineType String? // Tablet | Capsule | Syrup | Injection | Drop | Cream | Ointment
+  medicineType String?   // Tablet | Capsule | Syrup | Injection | Drop | Cream | Ointment
 
   // ─── DOSAGE ─────────────────────────────────────────────────────
-  doseAmount      Decimal? @db.Decimal(10, 2) // e.g., 500
-  doseUnit        String?                     // e.g., "mg", "ml", "drops"
-  frequency       PrescriptionFrequency @default(TWICE_DAILY)
-  customFrequency String? // Only if frequency = CUSTOM
-  route           MedicineRoute         @default(ORAL)
-  mealRelation    MealRelation          @default(AFTER_FOOD)
+  dosage          String?                    // "500 mg" | "5 ml"
+  frequency       PrescriptionFrequency     @default(TWICE_DAILY)
+  customFrequency String?                    // Only if frequency = CUSTOM
+  route           MedicineRoute             @default(ORAL)
+  mealRelation    MealRelation              @default(AFTER_FOOD)
 
   // ─── DURATION ───────────────────────────────────────────────────
   durationDays  Int?
   durationWeeks Int?
-  quantity      Int? // Total qty to dispense
+  quantity      Int?     // Total qty to dispense
 
   // ─── INSTRUCTIONS ──────────────────────────────────────────────
   instructions String?
@@ -1161,9 +1162,13 @@ model Prescription {
   // ─── DISPLAY ORDER ─────────────────────────────────────────────
   sortOrder Int @default(0)
 
+
+
   // ─── RELATIONS ──────────────────────────────────────────────────
   hospital     Hospital     @relation(fields: [tenantId], references: [tenantId])
   consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1183,9 +1188,8 @@ model InvestigationOrder {
   consultationId String
 
   // ─── INVESTIGATION DETAILS ─────────────────────────────────────
-  serviceId String
-
-  investigationType InvestigationType @default(LAB)
+  investigationName String
+  investigationType InvestigationType     @default(LAB)
 
   // ─── ORDER DETAILS ─────────────────────────────────────────────
   urgency       InvestigationUrgency @default(ROUTINE)
@@ -1204,9 +1208,7 @@ model InvestigationOrder {
   sortOrder Int @default(0)
 
   // ─── RELATIONS ──────────────────────────────────────────────────
-  service ServiceMaster @relation(fields: [serviceId], references: [id], onDelete: Restrict)
-
-  hospital     Hospital     @relation(fields: [tenantId], references: [tenantId])
+   hospital     Hospital     @relation(fields: [tenantId], references: [tenantId])
   consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
@@ -1214,13 +1216,17 @@ model InvestigationOrder {
 
   @@index([tenantId, consultationId])
   @@index([tenantId, status])
-  @@index([tenantId, serviceId])
   @@map("investigation_orders")
 }
+
+
+
 
 // ============================================
 // OPD — STEP 6: OPD BILLING ✅
 // ============================================
+
+
 
 model OpdBill {
   id       String @id @default(uuid())
@@ -1230,6 +1236,11 @@ model OpdBill {
 
   patientId     String
   appointmentId String? @unique
+
+  // ─── CHARGES BREAKDOWN (Set @default(0) to prevent NULL errors) ───
+  consultationFee Decimal @default(0) @db.Decimal(10, 2)
+  registrationFee Decimal @default(0) @db.Decimal(10, 2)
+  otherCharges    Decimal @default(0) @db.Decimal(10, 2)
 
   // ─── CALCULATION ────────────────────────────────────────────────
   subtotal        Decimal @db.Decimal(10, 2)
@@ -1283,6 +1294,8 @@ model OpdBill {
   @@map("opd_bills")
 }
 
+
+
 // ============================================
 // OPD — STEP 6.1: OPD BILL LINE ITEMS ✅
 // ============================================
@@ -1294,19 +1307,15 @@ model OpdBillItem {
   billId String
 
   // ─── ITEM DETAILS ───────────────────────────────────────────────
-  itemCode String? // Links to future Service/Charge Master (e.g., LAB01)
-  itemName String // Description of the service
-  category String // 'Consultation', 'Lab', 'Pharmacy', 'Procedure'
-
+  itemCode    String?  // Links to future Service/Charge Master (e.g., LAB01)
+  itemName    String   // Description of the service
+  category    String   // 'Consultation', 'Lab', 'Pharmacy', 'Procedure'
+  
   // ─── FINANCIALS ─────────────────────────────────────────────────
-  discountPercent Decimal  @default(0) @db.Decimal(5, 2)
-  discountAmount  Decimal  @default(0) @db.Decimal(10, 2)
-  quantity    Int     @default(1)
-
-
-  unitPrice   Decimal @db.Decimal(10, 2)
-  taxPercent  Decimal @default(0) @db.Decimal(5, 2)
-  totalAmount Decimal @db.Decimal(10, 2) // quantity * unitPrice
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  taxPercent  Decimal  @default(0) @db.Decimal(5, 2)
+  totalAmount Decimal  @db.Decimal(10, 2) // quantity * unitPrice
 
   // ─── RELATIONS ──────────────────────────────────────────────────
   hospital Hospital @relation(fields: [tenantId], references: [tenantId])
@@ -1334,7 +1343,6 @@ model OpdPayment {
   amount        Decimal     @db.Decimal(10, 2)
   paymentMode   PaymentMode
   transactionId String?
-  status        PaymentStatus @default(PAID)
 
   receivedBy String?
   paidAt     DateTime @default(now())
@@ -1360,7 +1368,6 @@ model AuditLog {
   tenantId String?
 
   userId    String?
-  patientId String?   
   action    String
   entity    String?
   entityId  String?
@@ -1411,8 +1418,11 @@ model LoginOtp {
   @@index([hospitalUserId, expiresAt])
   @@map("login_otps")
 }
-
 // === SECURITY ADDITION END ===
+
+
+
+
 
 // ============================================
 // ENUMS — GLOBAL MASTER CONFIGURATION
@@ -1461,12 +1471,12 @@ model GlobalMaster {
 
   deletedAt DateTime?
 
-  hospital             Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
-  panelsAsGroupType    Panel[]  @relation("PanelGroupType")
-  panelsAsPaymentMode  Panel[]  @relation("PanelPaymentMode")
-  panelsAsPanelType    Panel[]  @relation("PanelType")
-  panelsAsRateCurrency Panel[]  @relation("PanelRateCurrency")
-  panelsAsBillCurrency Panel[]  @relation("PanelBillCurrency")
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  panelsAsGroupType    Panel[] @relation("PanelGroupType")
+  panelsAsPaymentMode  Panel[] @relation("PanelPaymentMode")
+  panelsAsPanelType    Panel[] @relation("PanelType")
+  panelsAsRateCurrency Panel[] @relation("PanelRateCurrency")
+  panelsAsBillCurrency Panel[] @relation("PanelBillCurrency")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1477,6 +1487,8 @@ model GlobalMaster {
   @@index([tenantId, deletedAt])
   @@map("global_masters")
 }
+
+
 
 // ============================================
 // ENUMS FOR PANEL MASTER LOGIC
@@ -1497,14 +1509,14 @@ model Panel {
   tenantId String
 
   // ─── BASIC DETAILS ──────────────────────────────────────────
-  panelCode String
-  panelName String
-
+  panelCode     String   @unique // Auto-generated e.g., PNL-0001
+  panelName     String
+  
   // Relations to GlobalMaster Table (Using UUIDs instead of hardcoded Enums)
   groupTypeId   String?
   paymentModeId String?
   panelTypeId   String?
-
+  
   contactPerson String?
   address1      String?
   address2      String?
@@ -1514,13 +1526,13 @@ model Panel {
   faxNo         String?
 
   // ─── VALIDITY & CREDIT ──────────────────────────────────────
-  validFrom   DateTime? @db.Date
-  validTo     DateTime? @db.Date
-  creditLimit Decimal   @default(0) @db.Decimal(15, 2)
+  validFrom     DateTime? @db.Date
+  validTo       DateTime? @db.Date
+  creditLimit   Decimal   @default(0) @db.Decimal(15, 2)
 
   // ─── REFER RATES (Will link to Tariff Master later) ─────────
-  opdTariffId String? // ID of Tariff
-  ipdTariffId String? // ID of Tariff
+  opdTariffId   String?   // ID of Tariff
+  ipdTariffId   String?   // ID of Tariff
 
   // ─── FLAGS (Checkboxes from UI) ─────────────────────────────
   rateTypeSelfOpd Boolean @default(false)
@@ -1531,47 +1543,50 @@ model Panel {
   isSmartCard     Boolean @default(false) // Default 'No' in UI
   hasEncounter    Boolean @default(false) // Default unchecked in UI
   isUsdBased      Boolean @default(false) // Default unchecked in UI
-
+  
   dietTypePrivate Boolean @default(false) // true = Private, false = Normal
 
   // ─── CO-PAYMENT & CURRENCY ──────────────────────────────────
   coPaymentOn      CoPaymentOn @default(NONE)
   coPaymentPercent Decimal     @default(0) @db.Decimal(5, 2)
 
-  rateCurrencyId String? // Relation to GlobalMaster
-  billCurrencyId String? // Relation to GlobalMaster
-  currencyConv   Decimal @default(1) @db.Decimal(10, 4)
-
-  panelAmount Decimal? @db.Decimal(15, 2)
+  rateCurrencyId   String?     // Relation to GlobalMaster
+  billCurrencyId   String?     // Relation to GlobalMaster
+  currencyConv     Decimal     @default(1) @db.Decimal(10, 4)
+  
+  panelAmount      Decimal?    @db.Decimal(15, 2)
 
   // ─── STATUS & AUDIT ─────────────────────────────────────────
   isActive  Boolean   @default(true)
   deletedAt DateTime?
 
-  patients Patient[]
 
-  opdTariff TariffMaster? @relation("PanelOpdTariff", fields: [opdTariffId], references: [id])
-  ipdTariff TariffMaster? @relation("PanelIpdTariff", fields: [ipdTariffId], references: [id])
+
+
+
+  opdTariff      TariffMaster?  @relation("PanelOpdTariff", fields: [opdTariffId], references: [id])
+  ipdTariff      TariffMaster?  @relation("PanelIpdTariff", fields: [ipdTariffId], references: [id])
 
   // ─── RELATIONS ──────────────────────────────────────────────
-  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
-
+  hospital       Hospital       @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  
   // Links to Global Master for Dynamic Dropdowns
-  groupType    GlobalMaster? @relation("PanelGroupType", fields: [groupTypeId], references: [id])
-  paymentMode  GlobalMaster? @relation("PanelPaymentMode", fields: [paymentModeId], references: [id])
-  panelType    GlobalMaster? @relation("PanelType", fields: [panelTypeId], references: [id])
-  rateCurrency GlobalMaster? @relation("PanelRateCurrency", fields: [rateCurrencyId], references: [id])
-  billCurrency GlobalMaster? @relation("PanelBillCurrency", fields: [billCurrencyId], references: [id])
+  groupType      GlobalMaster?  @relation("PanelGroupType", fields: [groupTypeId], references: [id])
+  paymentMode    GlobalMaster?  @relation("PanelPaymentMode", fields: [paymentModeId], references: [id])
+  panelType      GlobalMaster?  @relation("PanelType", fields: [panelTypeId], references: [id])
+  rateCurrency   GlobalMaster?  @relation("PanelRateCurrency", fields: [rateCurrencyId], references: [id])
+  billCurrency   GlobalMaster?  @relation("PanelBillCurrency", fields: [billCurrencyId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, panelCode])
-  @@unique([tenantId, panelName])
+  @@unique([tenantId, panelName]) // Panel names should be unique per clinic
   @@index([tenantId, groupTypeId])
   @@index([tenantId, isActive])
   @@map("panels")
 }
+
+
 
 // ============================================
 // ENUMS FOR RATE MANAGEMENT
@@ -1594,24 +1609,22 @@ model ServiceMaster {
   id       String @id @default(uuid())
   tenantId String
 
-  serviceCode String // e.g., LAB-001
-  serviceName String // e.g., "Complete Blood Count (CBC)"
+  serviceCode String  @unique // e.g., LAB-001
+  serviceName String          // e.g., "Complete Blood Count (CBC)"
   category    ServiceCategory
-
+  
   // Hospital ka Standard/Base Rate
-  baseRate Decimal @db.Decimal(10, 2)
-
+  baseRate    Decimal @db.Decimal(10, 2)
+  
   isActive  Boolean   @default(true)
   deletedAt DateTime?
 
-  hospital            Hospital             @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
-  panelRates          PanelServiceRate[] // Linking to tariff rates
-  investigationOrders InvestigationOrder[]
+  hospital   Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  panelRates PanelServiceRate[] // Linking to tariff rates
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, serviceCode])
   @@index([tenantId, category])
   @@map("service_masters")
 }
@@ -1623,23 +1636,22 @@ model TariffMaster {
   id       String @id @default(uuid())
   tenantId String
 
-  tariffCode String // e.g., TRF-001
-  tariffName String // e.g., "CGHS 2024 Rate List"
-
+  tariffCode String  @unique // e.g., TRF-001
+  tariffName String          // e.g., "CGHS 2024 Rate List"
+  
   isActive  Boolean   @default(true)
   deletedAt DateTime?
 
-  hospital Hospital           @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
-  rates    PanelServiceRate[]
-
+  hospital   Hospital           @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  rates      PanelServiceRate[] 
+  
   // Relations linking back to Panel (OPD & IPD Rates)
-  opdPanels Panel[] @relation("PanelOpdTariff")
-  ipdPanels Panel[] @relation("PanelIpdTariff")
+  opdPanels  Panel[] @relation("PanelOpdTariff")
+  ipdPanels  Panel[] @relation("PanelIpdTariff")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, tariffCode])
   @@index([tenantId, isActive])
   @@map("tariff_masters")
 }
@@ -1655,12 +1667,12 @@ model PanelServiceRate {
   serviceId String
 
   // Overridden Rate for THIS specific tariff
-  rate Decimal @db.Decimal(10, 2)
-
+  rate           Decimal @db.Decimal(10, 2)
+  
   // Optional Discount instead of flat rate
   discountPercent Decimal @default(0) @db.Decimal(5, 2)
-
-  isActive Boolean @default(true)
+  
+  isActive  Boolean @default(true)
 
   hospital Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
   tariff   TariffMaster  @relation(fields: [tariffId], references: [id], onDelete: Cascade)
@@ -1670,7 +1682,7 @@ model PanelServiceRate {
   updatedAt DateTime @updatedAt
 
   // Ek tariff me ek service ka ek hi rate ho sakta hai
-  @@unique([tariffId, serviceId])
+  @@unique([tariffId, serviceId]) 
   @@index([tenantId, tariffId])
   @@map("panel_service_rates")
 }
