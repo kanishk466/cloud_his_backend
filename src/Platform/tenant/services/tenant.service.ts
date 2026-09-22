@@ -178,7 +178,7 @@ export class TenantService {
     }
 
     const activePackage =
-      await this.assignedPackageRepository.findActiveByHospital(id);
+      await this.assignedPackageRepository.findActiveByHospital(hospital?.packages?.[0]?.packageId);
     if (!activePackage) {
       throw new BadRequestException('Assign a package before activation');
     }

@@ -15,5 +15,6 @@ export class AssignPackageDto {
   endDate?: string;
 
   @IsString()
+  @IsOptional()
   status?: string;
 }
