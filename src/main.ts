@@ -29,7 +29,7 @@ async function bootstrap() {
       'http://localhost:5173',
        'http://localhost:3000',
       'http://localhost:8081',
-      'https://ojas1his.netlify.app',
+      'https://ojasadmin.netlify.app',
      'https://ojascarehis.netlify.app',
       'https://mediops-admin-ui.harshalvermaaaaa.workers.dev',
     ], // frontend URL (or use '*' for all origins)
