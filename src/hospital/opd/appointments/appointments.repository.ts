@@ -56,8 +56,9 @@ const appointmentWithRelations = {
       firstName: true,
       lastName: true,
       mobile: true,
-      age: true,
-      ageUnit: true,
+    dateOfBirth: true,        // ✅ Added
+      ageAtRegistration: true,  // ✅ Replaced `age` with `ageAtRegistration`
+      ageUnit: true,      
       gender: true,
       allergies: true,
       chronicDiseases: true,

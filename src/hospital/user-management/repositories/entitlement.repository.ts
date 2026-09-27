@@ -19,6 +19,8 @@ export class EntitlementRepository {
       },
     });
 
+    console.log("Assigned Packages for tenant", tenantId, ":", assignedPackages);
+
     const moduleIds = new Set<number>();
     for (const ap of assignedPackages) {
       for (const pm of ap.package.modules) {
@@ -70,6 +72,7 @@ export class EntitlementRepository {
     try {
       // Step A: Licensed modules for this hospital
       const licensedModuleIds = await this.getLicensedModuleIds(tenantId);
+      console.log("Licensed Module IDs for tenant", tenantId, ":", licensedModuleIds);
       if (licensedModuleIds.length === 0) return [];
 
       // Step B: Fetch full module/feature tree
@@ -80,6 +83,8 @@ export class EntitlementRepository {
         },
         orderBy: { sortOrder: 'asc' },
       });
+
+      console.log("Available Modules for tenant", tenantId, ":", availableModules);
 
       // ─── SUPER ADMIN: Full access ──────────────────────────────────────────
       if (userType === 'SUPER_ADMIN') {
@@ -126,10 +131,13 @@ export class EntitlementRepository {
         },
       });
 
+
+      console.log("User Auth Data for user", userId, ":", userAuthData);
       if (!userAuthData) return [];
 
       // Build authorized features map from ROLES ONLY
       const authorizedFeaturesByModule = new Map<number, Set<number>>();
+      console.log("Building authorized features map for user", userId , authorizedFeaturesByModule); 
 
       for (const assignment of userAuthData.roles) {
         for (const perm of assignment.hospitalRole.permissions) {
