@@ -48,10 +48,6 @@ export class HospitalUserRepository {
   }
 
   // ─── Find By Id ─────────────────────────────────────────────────────────────
-  //
-  // ❌ REMOVED: permissions include
-  // Ab user pe direct permissions nahi hain, to include ki zarurat nahi.
-  // Permissions role ke through aati hain (getEffectivePermissions use karo).
 
   findById(id: string, tenantId: string) {
     return this.prisma.hospitalUser.findUnique({
@@ -116,11 +112,7 @@ export class HospitalUserRepository {
     });
   }
 
-  // ─── NEW: Effective Permissions (Role-based Resolution) ─────────────────────
-  //
-  // Queries all ACTIVE roles assigned to this user, collects their permissions,
-  // and returns the deduplicated UNION.
-  // This is the single source of truth for "what can this user do?"
+  // ─── Effective Permissions (Role-based Resolution) ─────────────────────
 
   async getEffectivePermissions(userId: string, tenantId: string) {
     const assignments = await this.prisma.userRoleAssignment.findMany({
@@ -150,7 +142,6 @@ export class HospitalUserRepository {
       },
     });
 
-    // Deduplicate across roles (same permission from 2 roles = 1 entry)
     const uniqueMap = new Map<
       string,
       {
@@ -181,7 +172,6 @@ export class HospitalUserRepository {
             inheritedFromRoles: [roleName],
           });
         } else {
-          // Same permission from another role — track it
           uniqueMap.get(key)!.inheritedFromRoles.push(roleName);
         }
       }
@@ -190,10 +180,7 @@ export class HospitalUserRepository {
     return Array.from(uniqueMap.values());
   }
 
-  // ─── Create Full (5-step transaction) ───────────────────────────────────────
-  //
-  // ❌ REMOVED: Step 6 (UserModuleFeaturePermission.createMany)
-  // Permissions ab role ke through aati hain, user pe direct nahi.
+  // ─── Create Full ─────────────────────────────────────────────────────────────
 
   async createFull(data: {
     tenantId: string;
@@ -263,7 +250,7 @@ export class HospitalUserRepository {
         },
       });
 
-      // Step 2: Staff profile
+      // Step 2: Staff profile (Medical credentials moved to DoctorProfile)
       await tx.staffProfile.create({
         data: {
           userId: user.id,
@@ -279,9 +266,7 @@ export class HospitalUserRepository {
           reportingManagerId: data.staffProfile.reportingManagerId,
           aadhaarNumber: data.staffProfile.aadhaarNumber,
           panNumber: data.staffProfile.panNumber,
-          medicalRegNo: data.staffProfile.medicalRegNo,
-          qualification: data.staffProfile.qualification,
-          specialization: data.staffProfile.specialization,
+          // 🛠️ REMOVED: medicalRegNo, qualification, specialization (Now on DoctorProfile)
           address: data.staffProfile.address,
           city: data.staffProfile.city,
           state: data.staffProfile.state,
@@ -321,9 +306,6 @@ export class HospitalUserRepository {
           skipDuplicates: true,
         });
       }
-
-      // ❌ REMOVED: Step 6 — UserModuleFeaturePermission.createMany
-      // Permissions ab ROLE ke through aayengi.
 
       return user;
     });
@@ -381,18 +363,17 @@ export class HospitalUserRepository {
         },
       });
 
+      // 🛠️ Filter out doctor-specific fields from staff profile update payload
+      const { medicalRegNo, qualification, specialization, ...cleanStaffProfile } = profileInfo;
+
       await tx.staffProfile.update({
         where: { userId: id },
-        data: profileInfo,
+        data: cleanStaffProfile,
       });
 
       return user;
     });
   }
-
-  // ❌ REMOVED: setPermissions()
-  // User-level direct permissions ab nahi hain.
-  // Use HospitalRoleRepository.setPermissions() instead.
 
   // ─── Update Status ──────────────────────────────────────────────────────────
 

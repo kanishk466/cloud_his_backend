@@ -8,6 +8,7 @@ import {
   Max,
   IsNotEmpty,
   MaxLength,
+  IsNumber
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -67,10 +68,14 @@ export class AddPrescriptionDto {
   @MaxLength(50)
   medicineType?: string; // Tablet | Capsule | Syrup etc.
 
-  @IsOptional()
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  doseAmount: number; // e.g. 500
+
   @IsString()
-  @MaxLength(50)
-  dosage?: string; // "500 mg" | "5 ml"
+  doseUnit: string; // e.g. "mg", "ml", "tablet"
 
   @IsEnum(PrescriptionFrequency)
   frequency!: PrescriptionFrequency;

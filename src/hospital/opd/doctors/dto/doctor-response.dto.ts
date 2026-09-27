@@ -7,8 +7,6 @@ export class AvailabilityResponseDto {
   isActive!: boolean;
   startTime!: string;
   endTime!: string;
-  breakStartTime!: string | null;
-  breakEndTime!: string | null;
   workingHours!: number;
 }
 
@@ -93,8 +91,6 @@ export class DoctorProfileResponseDto {
       isActive: a.isActive,
       startTime: a.startTime,
       endTime: a.endTime,
-      breakStartTime: a.breakStartTime,
-      breakEndTime: a.breakEndTime,
       workingHours: DoctorProfileResponseDto.calculateHours(
         a.startTime,
         a.endTime,

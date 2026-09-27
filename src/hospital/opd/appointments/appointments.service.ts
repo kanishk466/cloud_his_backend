@@ -444,9 +444,7 @@ export class AppointmentsService {
       availability.startTime,
       availability.endTime,
       doctor.slotDurationMins,
-      doctor.bufferTimeMins,
-       availability.breakStartTime,      // ← NEW
-  availability.breakEndTime
+      doctor.bufferTimeMins
     );
 
     // Get booked slots
@@ -511,63 +509,38 @@ export class AppointmentsService {
   // Generate time slots between start and end
 
 
-  // Update generateSlots to skip break time
+
+  // Replace generateSlots in appointments.service.ts:
 private generateSlots(
   startTime: string,
   endTime: string,
   durationMins: number,
   bufferMins: number,
-  breakStartTime?: string | null,
-  breakEndTime?: string | null,
 ): { startTime: string; endTime: string }[] {
   const slots: { startTime: string; endTime: string }[] = [];
 
-  const [startH, startM] = startTime.split(':').map(Number);
-  const [endH, endM] = endTime.split(':').map(Number);
+  const toMins = (t: string) => {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  };
 
-  const startTotalMins = startH * 60 + startM;
-  const endTotalMins = endH * 60 + endM;
+  const startTotalMins = toMins(startTime);
+  const endTotalMins = toMins(endTime);
   const slotInterval = durationMins + bufferMins;
-
-  // Calculate break time in minutes
-  let breakStart = -1;
-  let breakEnd = -1;
-  if (breakStartTime && breakEndTime) {
-    const [bsH, bsM] = breakStartTime.split(':').map(Number);
-    const [beH, beM] = breakEndTime.split(':').map(Number);
-    breakStart = bsH * 60 + bsM;
-    breakEnd = beH * 60 + beM;
-  }
 
   let currentMins = startTotalMins;
 
   while (currentMins + durationMins <= endTotalMins) {
     const slotEndMins = currentMins + durationMins;
-
-    // Skip if slot overlaps with break time
-    const overlapsBreak =
-      breakStart !== -1 &&
-      currentMins < breakEnd &&
-      slotEndMins > breakStart;
-
-    if (!overlapsBreak) {
-      slots.push({
-        startTime: this.minsToTime(currentMins),
-        endTime: this.minsToTime(slotEndMins),
-      });
-    }
-
-    // Jump past break if we hit it
-    if (breakStart !== -1 && currentMins === breakStart) {
-      currentMins = breakEnd;
-    } else {
-      currentMins += slotInterval;
-    }
+    slots.push({
+      startTime: this.minsToTime(currentMins),
+      endTime: this.minsToTime(slotEndMins),
+    });
+    currentMins += slotInterval;
   }
 
   return slots;
 }
-
   // Check if a time falls within a range
   private isTimeInRange(
     time: string,      // "10:30"

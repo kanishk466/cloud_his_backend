@@ -38,16 +38,7 @@ export class DailyAvailabilityDto {
   })
   endTime?: string;
 
-  // Optional break time (e.g., lunch 13:00 - 14:00)
-  @IsOptional()
-  @IsString()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
-  breakStartTime?: string;
-
-  @IsOptional()
-  @IsString()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
-  breakEndTime?: string;
+ 
 }
 
 // Full weekly schedule with slot duration

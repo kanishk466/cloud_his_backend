@@ -52,7 +52,6 @@ export class ConsultationsService {
 
     // Rule 4: Generate consultation number
     const consultationNo = await this.consultationsRepository.generateConsultationNo(tenantId);
-    console.log('consultationNo', consultationNo);
 
     // Rule 5: Create consultation
     const consultation = await this.consultationsRepository.create({
@@ -69,9 +68,7 @@ export class ConsultationsService {
     return ConsultationResponseDto.fromEntity(consultation);
   }
 
-
-
-  
+  // ─── SEARCH & LIST ──────────────────────────────────────────────
   async searchConsultations(tenantId: string, dto: SearchConsultationsDto) {
     const { consultations, total } =
       await this.consultationsRepository.findMany(tenantId, dto);
@@ -85,7 +82,7 @@ export class ConsultationsService {
     const limit = dto.limit ?? 8;
 
     return {
-      stats, // Drives top badges: "0 in progress", "1 completed", "1 visits awaiting start"
+      stats,
       data: consultations.map((c) => ConsultationResponseDto.fromEntity(c)),
       meta: {
         total,
@@ -96,7 +93,7 @@ export class ConsultationsService {
     };
   }
 
-  // ─── GET CONSULTATION ───────────────────────────────────────────
+  // ─── GET CONSULTATION BY ID ─────────────────────────────────────
   async findById(tenantId: string, id: string): Promise<ConsultationResponseDto> {
     const consultation = await this.consultationsRepository.findById(tenantId, id);
     if (!consultation) {
@@ -122,7 +119,8 @@ export class ConsultationsService {
       throw new NotFoundException(CONSULTATION_ERRORS.NOT_FOUND);
     }
 
-    if (existing.status === 'COMPLETED') {
+    // ⚖️ MEDICO-LEGAL LOCK: Prevent edits if signed/completed
+    if (existing.isSigned || existing.status === 'COMPLETED') {
       throw new BadRequestException(CONSULTATION_ERRORS.ALREADY_COMPLETED);
     }
 
@@ -153,114 +151,123 @@ export class ConsultationsService {
     return ConsultationResponseDto.fromEntity(updated);
   }
 
-async complete(tenantId: string, id: string): Promise<ConsultationResponseDto> {
-  const existing = await this.consultationsRepository.findById(tenantId, id);
-  if (!existing) {
-    throw new NotFoundException(CONSULTATION_ERRORS.NOT_FOUND);
-  }
+  // ─── COMPLETE CONSULTATION ──────────────────────────────────────
+  async complete(
+    tenantId: string,
+    id: string,
+    completedByDoctorUserId?: string,
+  ): Promise<ConsultationResponseDto> {
+    const existing = await this.consultationsRepository.findById(tenantId, id);
+    if (!existing) {
+      throw new NotFoundException(CONSULTATION_ERRORS.NOT_FOUND);
+    }
 
-  if (existing.status !== 'IN_PROGRESS') {
-    throw new BadRequestException(CONSULTATION_ERRORS.NOT_IN_PROGRESS);
-  }
+    if (existing.status !== 'IN_PROGRESS') {
+      throw new BadRequestException(CONSULTATION_ERRORS.NOT_IN_PROGRESS);
+    }
 
-  if (!existing.provisionalDiagnosis && !existing.finalDiagnosis) {
-    throw new BadRequestException(CONSULTATION_ERRORS.DIAGNOSIS_REQUIRED);
-  }
+    if (!existing.provisionalDiagnosis && !existing.finalDiagnosis) {
+      throw new BadRequestException(CONSULTATION_ERRORS.DIAGNOSIS_REQUIRED);
+    }
 
-  const status = existing.referredToDoctorId ? 'REFERRED' : 'COMPLETED';
+    const status = existing.referredToDoctorId ? 'REFERRED' : 'COMPLETED';
 
-  const updated = await this.consultationsRepository.update(id, {
-    status,
-    completedAt: new Date(),
-  });
-
-  await this.consultationsRepository.updateAppointmentStatus(
-    existing.appointmentId,
-    'COMPLETED',
-  );
-
-  await this.consultationsRepository.updateTokenStatus(
-    existing.appointmentId,
-    'COMPLETED',
-    { completedAt: new Date() },
-  );
-
-  // ✅ FIX: Trigger PDF generation (async, non-blocking)
-  if (status === 'COMPLETED') {
-    this.triggerPrescriptionPdf(tenantId, existing).catch((err) => {
-      this.logger.error(
-        `Failed to generate PDF for consultation ${existing.consultationNo}: ${err.message}`,
-      );
+    // ⚖️ MEDICO-LEGAL LOCK: Lock & sign consultation record on completion
+    const updated = await this.consultationsRepository.update(id, {
+      status,
+      completedAt: new Date(),
+      isSigned: true,
+      signedAt: new Date(),
+      signedBy: completedByDoctorUserId || existing.doctorProfileId,
     });
+
+    await this.consultationsRepository.updateAppointmentStatus(
+      existing.appointmentId,
+      'COMPLETED',
+    );
+
+    await this.consultationsRepository.updateTokenStatus(
+      existing.appointmentId,
+      'COMPLETED',
+      { completedAt: new Date() },
+    );
+
+    // Trigger PDF generation (async)
+    if (status === 'COMPLETED') {
+      this.triggerPrescriptionPdf(tenantId, existing).catch((err) => {
+        this.logger.error(
+          `Failed to generate PDF for consultation ${existing.consultationNo}: ${err.message}`,
+        );
+      });
+    }
+
+    this.logger.log(`Consultation ${existing.consultationNo} completed & locked`);
+
+    return ConsultationResponseDto.fromEntity(updated);
   }
 
-  this.logger.log(`Consultation ${existing.consultationNo} completed`);
-
-  return ConsultationResponseDto.fromEntity(updated);
-}
-
-// ✅ NEW: PDF trigger method (implement based on your PDF service)
-private async triggerPrescriptionPdf(
-  tenantId: string,
-  consultation: any,
-): Promise<void> {
-  // TODO: Replace with your actual PDF service call
-  // Example options:
-  // 1. this.pdfService.generatePrescription(tenantId, consultation.id)
-  // 2. this.eventEmitter.emit('prescription.completed', { tenantId, consultationId: consultation.id })
-  // 3. this.bullQueue.add('generate-pdf', { tenantId, consultationId: consultation.id })
-  this.logger.log(
-    `PDF generation triggered for consultation ${consultation.consultationNo}`,
-  );
-}
+  // Trigger PDF helper
+  private async triggerPrescriptionPdf(
+    tenantId: string,
+    consultation: any,
+  ): Promise<void> {
+    this.logger.log(
+      `PDF generation triggered for consultation ${consultation.consultationNo}`,
+    );
+  }
 
   // ─── ADD PRESCRIPTION ───────────────────────────────────────────
-// ─── ADD PRESCRIPTION ───────────────────────────────────────────
-async addPrescription(
-  tenantId: string,
-  consultationId: string,
-  dto: AddPrescriptionDto,
-): Promise<ConsultationResponseDto> {
-  const consultation = await this.consultationsRepository.findById(tenantId, consultationId);
-  if (!consultation) {
-    throw new NotFoundException(CONSULTATION_ERRORS.NOT_FOUND);
-  }
-
-  if (consultation.status !== 'IN_PROGRESS') {
-    throw new BadRequestException(CONSULTATION_ERRORS.NOT_IN_PROGRESS);
-  }
-
-  await this.consultationsRepository.addPrescription({
-    tenantId,
-    consultationId,
-    medicineName: dto.medicineName,
-    genericName: dto.genericName,
-    medicineType: dto.medicineType,
-    dosage: dto.dosage,
-    frequency: dto.frequency,
-    customFrequency: dto.customFrequency,
-    route: dto.route,
-    mealRelation: dto.mealRelation,
-    durationDays: dto.durationDays,
-    durationWeeks: dto.durationWeeks,
-    quantity: dto.quantity,
-    instructions: dto.instructions,
-    isCritical: dto.isCritical,
-    sortOrder: dto.sortOrder,
-  });
-
-  const updated = await this.consultationsRepository.findById(tenantId, consultationId);
-  return ConsultationResponseDto.fromEntity(updated);
-}
-
-  // ─── REMOVE PRESCRIPTION ───────────────────────────────────────
-  async removePrescription(tenantId: string, consultationId: string, prescriptionId: string): Promise<ConsultationResponseDto> {
+  async addPrescription(
+    tenantId: string,
+    consultationId: string,
+    dto: AddPrescriptionDto,
+  ): Promise<ConsultationResponseDto> {
     const consultation = await this.consultationsRepository.findById(tenantId, consultationId);
     if (!consultation) {
       throw new NotFoundException(CONSULTATION_ERRORS.NOT_FOUND);
     }
 
-    if (consultation.status !== 'IN_PROGRESS') {
+    if (consultation.status !== 'IN_PROGRESS' || consultation.isSigned) {
+      throw new BadRequestException(CONSULTATION_ERRORS.NOT_IN_PROGRESS);
+    }
+
+    // 🛠️ FIXED: Dose Amount & Dose Unit mapped to RxNorm split format
+    await this.consultationsRepository.addPrescription({
+      tenantId,
+      consultationId,
+      medicineName: dto.medicineName,
+      genericName: dto.genericName,
+      medicineType: dto.medicineType,
+      doseAmount: dto.doseAmount ?? (dto as any).dosage ?? 1,
+      doseUnit: dto.doseUnit ?? 'tablet',
+      frequency: dto.frequency,
+      customFrequency: dto.customFrequency,
+      route: dto.route,
+      mealRelation: dto.mealRelation,
+      durationDays: dto.durationDays,
+      durationWeeks: dto.durationWeeks,
+      quantity: dto.quantity,
+      instructions: dto.instructions,
+      isCritical: dto.isCritical,
+      sortOrder: dto.sortOrder,
+    });
+
+    const updated = await this.consultationsRepository.findById(tenantId, consultationId);
+    return ConsultationResponseDto.fromEntity(updated);
+  }
+
+  // ─── REMOVE PRESCRIPTION ───────────────────────────────────────
+  async removePrescription(
+    tenantId: string,
+    consultationId: string,
+    prescriptionId: string,
+  ): Promise<ConsultationResponseDto> {
+    const consultation = await this.consultationsRepository.findById(tenantId, consultationId);
+    if (!consultation) {
+      throw new NotFoundException(CONSULTATION_ERRORS.NOT_FOUND);
+    }
+
+    if (consultation.status !== 'IN_PROGRESS' || consultation.isSigned) {
       throw new BadRequestException(CONSULTATION_ERRORS.NOT_IN_PROGRESS);
     }
 
@@ -273,44 +280,49 @@ async addPrescription(
     return ConsultationResponseDto.fromEntity(updated);
   }
 
-// ─── ADD INVESTIGATION ──────────────────────────────────────────
-async addInvestigation(
-  tenantId: string,
-  consultationId: string,
-  dto: AddInvestigationDto,
-): Promise<ConsultationResponseDto> {
-  const consultation = await this.consultationsRepository.findById(tenantId, consultationId);
-  if (!consultation) {
-    throw new NotFoundException(CONSULTATION_ERRORS.NOT_FOUND);
-  }
-
-  if (consultation.status !== 'IN_PROGRESS') {
-    throw new BadRequestException(CONSULTATION_ERRORS.NOT_IN_PROGRESS);
-  }
-
-  await this.consultationsRepository.addInvestigation({
-    tenantId,
-    consultationId,
-    investigationName: dto.investigationName,
-    investigationType: dto.investigationType,
-    urgency: dto.urgency,
-    instructions: dto.instructions,
-    clinicalNotes: dto.clinicalNotes,
-    sortOrder: dto.sortOrder,
-  });
-
-  const updated = await this.consultationsRepository.findById(tenantId, consultationId);
-  return ConsultationResponseDto.fromEntity(updated);
-}
-
-  // ─── REMOVE INVESTIGATION ──────────────────────────────────────
-  async removeInvestigation(tenantId: string, consultationId: string, investigationId: string): Promise<ConsultationResponseDto> {
+  // ─── ADD INVESTIGATION ──────────────────────────────────────────
+  async addInvestigation(
+    tenantId: string,
+    consultationId: string,
+    dto: AddInvestigationDto,
+  ): Promise<ConsultationResponseDto> {
     const consultation = await this.consultationsRepository.findById(tenantId, consultationId);
     if (!consultation) {
       throw new NotFoundException(CONSULTATION_ERRORS.NOT_FOUND);
     }
 
-    if (consultation.status !== 'IN_PROGRESS') {
+    if (consultation.status !== 'IN_PROGRESS' || consultation.isSigned) {
+      throw new BadRequestException(CONSULTATION_ERRORS.NOT_IN_PROGRESS);
+    }
+
+    // 🛠️ FIXED: Replaced investigationName with serviceId
+    await this.consultationsRepository.addInvestigation({
+      tenantId,
+      consultationId,
+      serviceId: dto.serviceId ?? (dto as any).investigationName,
+      investigationType: dto.investigationType,
+      urgency: dto.urgency,
+      instructions: dto.instructions,
+      clinicalNotes: dto.clinicalNotes,
+      sortOrder: dto.sortOrder,
+    });
+
+    const updated = await this.consultationsRepository.findById(tenantId, consultationId);
+    return ConsultationResponseDto.fromEntity(updated);
+  }
+
+  // ─── REMOVE INVESTIGATION ──────────────────────────────────────
+  async removeInvestigation(
+    tenantId: string,
+    consultationId: string,
+    investigationId: string,
+  ): Promise<ConsultationResponseDto> {
+    const consultation = await this.consultationsRepository.findById(tenantId, consultationId);
+    if (!consultation) {
+      throw new NotFoundException(CONSULTATION_ERRORS.NOT_FOUND);
+    }
+
+    if (consultation.status !== 'IN_PROGRESS' || consultation.isSigned) {
       throw new BadRequestException(CONSULTATION_ERRORS.NOT_IN_PROGRESS);
     }
 

@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { PatientsRepository } from './patients.repository';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
-import { Patient, Prisma } from '@prisma/client';
 
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
@@ -25,31 +24,25 @@ export class PatientsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly patientsRepository: PatientsRepository,
-    
   ) {}
 
   // ─── REGISTER NEW PATIENT ────────────────────────────────────────
-
-
-
-    async register(
+  async register(
     tenantId: string,
     dto: CreatePatientDto,
     registeredByUserId: string,
   ) {
-    // 1. Pre-validation: Check for mobile duplication
     const existingPatient = await this.patientsRepository.findByMobile(
       tenantId,
       dto.mobile,
     );
-    if (existingPatient) {
+    if (existingPatient && existingPatient.length > 0) {
       throw new ConflictException({
         code: 'PATIENT_MOBILE_EXISTS',
         message: 'A patient with this mobile number already exists',
       });
     }
 
-    // 2. Check Aadhaar duplication (if provided)
     if (dto.aadhaarNumber) {
       const existingAadhaar = await this.patientsRepository.findByAadhaar(
         tenantId,
@@ -63,21 +56,27 @@ export class PatientsService {
       }
     }
 
-    // 3. Atomic UHID Generation + Record Creation
     return await this.prisma.$transaction(async (tx) => {
-      // Generate guaranteed sequential UHID inside transaction
       const uhid = await this.patientsRepository.generateUhid(tenantId, tx);
 
-      // Create Patient
+      // 🛠️ FIX: Destructure date strings from dto so they don't overwrite parsed Date objects
+      const {
+        insuranceValidTill,
+        panelValidTill,
+        dateOfBirth,
+        ...restDto
+      } = dto as any;
+
+      const validTillString = panelValidTill || insuranceValidTill;
+
       const patient = await this.patientsRepository.create(
         {
-          ...dto,
+          ...restDto,
           tenantId,
           uhid,
-          dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
-          insuranceValidTill: dto.insuranceValidTill
-            ? new Date(dto.insuranceValidTill)
-            : undefined,
+          dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+          panelValidTill: validTillString ? new Date(validTillString) : undefined,
+          insuranceValidTill: validTillString ? new Date(validTillString) : undefined,
           registeredBy: registeredByUserId,
         },
         tx,
@@ -86,13 +85,13 @@ export class PatientsService {
       return patient;
     });
   }
+
   // ─── SEARCH PATIENTS ─────────────────────────────────────────────
   async search(
     tenantId: string,
     dto: SearchPatientDto,
   ): Promise<PatientListResponseDto> {
-    const { patients, total } =
-      await this.patientsRepository.search(tenantId, dto);
+    const { patients, total } = await this.patientsRepository.search(tenantId, dto);
 
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
@@ -109,20 +108,13 @@ export class PatientsService {
   }
 
   // ─── GET PATIENT BY ID ───────────────────────────────────────────
-  async findById(
-    tenantId: string,
-    id: string,
-  ): Promise<PatientResponseDto> {
-    const patient = await this.patientsRepository.findById(
-      tenantId,
-      id,
-    );
+  async findById(tenantId: string, id: string): Promise<PatientResponseDto> {
+    const patient = await this.patientsRepository.findById(tenantId, id);
 
     if (!patient) {
       throw new NotFoundException(PATIENT_ERRORS.NOT_FOUND);
     }
 
-    // Tenant isolation double-check
     if (patient.tenantId !== tenantId) {
       throw new ForbiddenException(PATIENT_ERRORS.INVALID_TENANT);
     }
@@ -131,14 +123,8 @@ export class PatientsService {
   }
 
   // ─── GET PATIENT BY UHID ─────────────────────────────────────────
-  async findByUhid(
-    tenantId: string,
-    uhid: string,
-  ): Promise<PatientResponseDto> {
-    const patient = await this.patientsRepository.findByUhid(
-      tenantId,
-      uhid,
-    );
+  async findByUhid(tenantId: string, uhid: string): Promise<PatientResponseDto> {
+    const patient = await this.patientsRepository.findByUhid(tenantId, uhid);
 
     if (!patient) {
       throw new NotFoundException({
@@ -156,61 +142,54 @@ export class PatientsService {
     id: string,
     dto: UpdatePatientDto,
   ): Promise<PatientResponseDto> {
-    // Verify patient exists and belongs to tenant
-    const existing = await this.patientsRepository.findById(
-      tenantId,
-      id,
-    );
+    const existing = await this.patientsRepository.findById(tenantId, id);
 
     if (!existing) {
       throw new NotFoundException(PATIENT_ERRORS.NOT_FOUND);
     }
 
-    // Check Aadhaar duplicate if being updated
     if (dto.aadhaarNumber) {
-      const aadhaarExists =
-        await this.patientsRepository.findByAadhaar(
-          tenantId,
-          dto.aadhaarNumber,
-          id, // exclude current patient
-        );
+      const aadhaarExists = await this.patientsRepository.findByAadhaar(
+        tenantId,
+        dto.aadhaarNumber,
+        id,
+      );
 
       if (aadhaarExists) {
         throw new ConflictException({
           code: 'OPD_001',
-          message:
-            'Another patient already has this Aadhaar number',
+          message: 'Another patient already has this Aadhaar number',
         });
       }
     }
 
-    // Recalculate age if DOB updated
-    let age = dto.age;
+    let age = (dto as any).age;
     let ageUnit = dto.ageUnit;
 
-    if (dto.dateOfBirth && !dto.age) {
-      const calculated = this.calculateAge(
-        new Date(dto.dateOfBirth),
-      );
+    if (dto.dateOfBirth && !age) {
+      const calculated = this.calculateAge(new Date(dto.dateOfBirth));
       age = calculated.age;
       ageUnit = calculated.unit;
     }
 
-    const updated = await this.patientsRepository.update(
-      tenantId,
-      id,
-      {
-        ...dto,
-        age,
-        ageUnit,
-        dateOfBirth: dto.dateOfBirth
-          ? new Date(dto.dateOfBirth)
-          : undefined,
-        insuranceValidTill: dto.insuranceValidTill
-          ? new Date(dto.insuranceValidTill)
-          : undefined,
-      },
-    );
+    // 🛠️ FIX: Extract date strings so they don't override parsed Date objects
+    const {
+      insuranceValidTill,
+      panelValidTill,
+      dateOfBirth,
+      ...restDto
+    } = dto as any;
+
+    const validTillString = panelValidTill || insuranceValidTill;
+
+    const updated = await this.patientsRepository.update(tenantId, id, {
+      ...restDto,
+      ageAtRegistration: age,
+      ageUnit,
+      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+      panelValidTill: validTillString ? new Date(validTillString) : undefined,
+      insuranceValidTill: validTillString ? new Date(validTillString) : undefined,
+    });
 
     return PatientResponseDto.fromEntity(updated);
   }
@@ -222,23 +201,18 @@ export class PatientsService {
     page: number = 1,
     limit: number = 10,
   ) {
-    // Verify patient belongs to tenant
-    const patient = await this.patientsRepository.findById(
-      tenantId,
-      patientId,
-    );
+    const patient = await this.patientsRepository.findById(tenantId, patientId);
 
     if (!patient) {
       throw new NotFoundException(PATIENT_ERRORS.NOT_FOUND);
     }
 
-    const { appointments, total } =
-      await this.patientsRepository.getVisitHistory(
-        tenantId,
-        patientId,
-        page,
-        limit,
-      );
+    const { appointments, total } = await this.patientsRepository.getVisitHistory(
+      tenantId,
+      patientId,
+      page,
+      limit,
+    );
 
     return {
       data: appointments,
@@ -260,15 +234,9 @@ export class PatientsService {
     if (diffDays < 30) {
       return { age: diffDays, unit: 'days' };
     } else if (diffDays < 365) {
-      return {
-        age: Math.floor(diffDays / 30),
-        unit: 'months',
-      };
+      return { age: Math.floor(diffDays / 30), unit: 'months' };
     } else {
-      return {
-        age: Math.floor(diffDays / 365),
-        unit: 'years',
-      };
+      return { age: Math.floor(diffDays / 365), unit: 'years' };
     }
   }
 }

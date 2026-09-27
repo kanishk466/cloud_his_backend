@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
-import { Prisma } from '@prisma/client';
 
 export interface CreateVitalsData {
   tenantId: string;
@@ -9,7 +8,6 @@ export interface CreateVitalsData {
   consultationId?: string;
   heightCm?: number;
   weightKg?: number;
-  bmi?: number;
   temperatureF?: number;
   bloodPressureSys?: number;
   bloodPressureDia?: number;
@@ -41,7 +39,7 @@ export class VitalsRepository {
         consultationId: data.consultationId,
         heightCm: data.heightCm,
         weightKg: data.weightKg,
-        bmi: data.bmi,
+        // 🛠️ REMOVED: bmi (calculated dynamically in Service layer)
         temperatureF: data.temperatureF,
         bloodPressureSys: data.bloodPressureSys,
         bloodPressureDia: data.bloodPressureDia,
@@ -67,7 +65,6 @@ export class VitalsRepository {
   }
 
   // ─── FIND BY APPOINTMENT ID ─────────────────────────────────────
-  // Get vitals recorded for a specific appointment
   async findByAppointmentId(tenantId: string, appointmentId: string) {
     return this.prisma.patientVitals.findFirst({
       where: { tenantId, appointmentId },
@@ -76,7 +73,6 @@ export class VitalsRepository {
   }
 
   // ─── FIND LATEST VITALS FOR PATIENT ─────────────────────────────
-  // Most recent vitals for patient (used in doctor console)
   async findLatestByPatientId(tenantId: string, patientId: string) {
     return this.prisma.patientVitals.findFirst({
       where: { tenantId, patientId },
@@ -115,7 +111,7 @@ export class VitalsRepository {
       data: {
         heightCm: data.heightCm,
         weightKg: data.weightKg,
-        bmi: data.bmi,
+        // 🛠️ REMOVED: bmi
         temperatureF: data.temperatureF,
         bloodPressureSys: data.bloodPressureSys,
         bloodPressureDia: data.bloodPressureDia,
@@ -149,7 +145,6 @@ export class VitalsRepository {
   }
 
   // ─── GET VITALS TREND FOR PATIENT ───────────────────────────────
-  // Returns last N vitals records for graphing trends
   async getVitalsTrend(
     tenantId: string,
     patientId: string,
@@ -164,7 +159,7 @@ export class VitalsRepository {
         recordedAt: true,
         heightCm: true,
         weightKg: true,
-        bmi: true,
+        // 🛠️ REMOVED: bmi (select query se hata diya hai)
         temperatureF: true,
         bloodPressureSys: true,
         bloodPressureDia: true,

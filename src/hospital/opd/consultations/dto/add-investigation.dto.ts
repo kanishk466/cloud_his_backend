@@ -6,6 +6,7 @@ import {
   Min,
   IsNotEmpty,
   MaxLength,
+  IsUUID
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -24,10 +25,8 @@ export enum InvestigationUrgency {
 }
 
 export class AddInvestigationDto {
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(200)
-  investigationName!: string;
+ @IsUUID()
+  serviceId!: string;
 
   @IsEnum(InvestigationType)
   investigationType!: InvestigationType;
