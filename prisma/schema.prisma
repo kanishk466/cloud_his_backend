@@ -8,9 +8,7 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// ============================================
-// ENUMS — PLATFORM
-// ============================================
+
 
 enum UserStatus {
   ACTIVE
