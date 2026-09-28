@@ -167,6 +167,8 @@ async getNurseQueue(
   @Query('doctorProfileId') doctorProfileId?: string,
   @Query('departmentId') departmentId?: string,
 ) {
+
+  console.log('Received query parameters:', { date, tab, doctorProfileId, departmentId });
   return this.queueService.getNurseQueue(tenantId, {
     date,
     tab,

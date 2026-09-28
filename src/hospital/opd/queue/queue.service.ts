@@ -34,6 +34,8 @@ export class QueueService {
 
   // ─── GENERATE TOKEN ─────────────────────────────────────────────
   // Called when receptionist generates token after check-in
+  
+    // ─── GENERATE TOKEN ─────────────────────────────────────────────
   async generateToken(
     tenantId: string,
     dto: CreateTokenDto,
@@ -77,10 +79,11 @@ export class QueueService {
       });
     }
 
-    // Rule 4: Generate sequential token number
-    const today = startOfDay(new Date());
-    const tokenDate = startOfDay(new Date(appointment.appointmentDate));
+    // ✅ FIX: appointment.appointmentDate is already a clean DB Date.
+    // Do NOT wrap in startOfDay() as it shifts timezone back by 5:30 hrs.
+    const tokenDate = new Date(appointment.appointmentDate);
 
+    // Rule 4: Generate sequential token number
     const tokenNumber =
       await this.queueRepository.generateTokenNumber(
         tenantId,
@@ -689,36 +692,34 @@ async completeToken(
   }
 
   // Map to simple token response
-  private toTokenResponse(token: any): TokenResponseDto {
-    const appointment = token.appointment;
-    const patient = appointment?.patient;
-    const doctor = token.doctorProfile;
-    const doctorUser = doctor?.hospitalUser;
+private toTokenResponse(token: any): TokenResponseDto {
+  // ✅ Format date in YYYY-MM-DD safely without timezone drift
+  const formattedTokenDate =
+    token.tokenDate instanceof Date
+      ? token.tokenDate.toISOString().split('T')[0]
+      : String(token.tokenDate).split('T')[0];
 
-    return {
-      id: token.id,
-      tokenNumber: token.tokenNumber,
-      tokenDate: format(token.tokenDate, 'yyyy-MM-dd'),
-      status: token.status,
-      estimatedTime: token.estimatedTime,
-      roomNo: token.roomNo,
-      appointmentNo: appointment?.appointmentNo ?? '',
-      patient: {
-        uhid: patient?.uhid ?? '',
-        firstName: patient?.firstName ?? 'Unknown',
-        lastName: patient?.lastName ?? null,
-        fullName: [patient?.firstName, patient?.lastName]
-          .filter(Boolean)
-          .join(' '),
-      },
-      doctor: {
-        firstName: doctorUser?.firstName ?? '',
-        lastName: doctorUser?.lastName ?? null,
-        specialization: doctor?.specialization ?? '',
-      },
-    };
-  }
-
+  return {
+    id: token.id,
+    tokenNumber: token.tokenNumber,
+    tokenDate: formattedTokenDate, // 👉 "2026-09-28"
+    status: token.status,
+    estimatedTime: token.estimatedTime ?? null,
+    roomNo: token.roomNo ?? null,
+    appointmentNo: token.appointment?.appointmentNo,
+    patient: {
+      uhid: token.appointment?.patient?.uhid,
+      firstName: token.appointment?.patient?.firstName,
+      lastName: token.appointment?.patient?.lastName,
+      fullName: `${token.appointment?.patient?.firstName ?? ''} ${token.appointment?.patient?.lastName ?? ''}`.trim(),
+    },
+    doctor: {
+      firstName: token.doctorProfile?.hospitalUser?.firstName,
+      lastName: token.doctorProfile?.hospitalUser?.lastName,
+      specialization: token.doctorProfile?.specialization,
+    },
+  };
+}
 
 
 // src/hospital/opd/queue/queue.service.ts
@@ -767,8 +768,13 @@ async getNurseQueue(
     dateStr = new Date().toISOString().split('T')[0];
   }
 
+
+
   // Clean string (e.g. "2026-09-12")
   dateStr = dateStr.trim();
+  console.log('Parsed date string for nurse queue:', dateStr);
+
+
   const parts = dateStr.split('-');
   const year = parseInt(parts[0], 10) || 2026;
   const month = parseInt(parts[1], 10) || 9;
