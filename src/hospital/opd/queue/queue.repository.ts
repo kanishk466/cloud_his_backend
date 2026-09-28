@@ -1,4 +1,3 @@
-
 import {
   Injectable,
   InternalServerErrorException,
@@ -25,7 +24,8 @@ const tokenWithDetails = {
           firstName: true,
           lastName: true,
           mobile: true,
-          age: true,
+          dateOfBirth: true,        // ✅ Added
+          ageAtRegistration: true,  // ✅ Replaced `age: true`
           ageUnit: true,
           gender: true,
           allergies: true,
@@ -58,30 +58,29 @@ export class QueueRepository {
   // ─── GENERATE TOKEN NUMBER ──────────────────────────────────────
   // Sequential per doctor per day per tenant
   // Uses DB transaction + FOR UPDATE to prevent race conditions
-async generateTokenNumber(
-  tenantId: string,
-  doctorProfileId: string,
-  tokenDate: Date,
-): Promise<number> {
-  try {
-    // Transaction support
-    const result = await this.prisma.opdToken.aggregate({
-      _max: {
-        tokenNumber: true,
-      },
-      where: {
-        tenantId,
-        doctorProfileId,
-        tokenDate,
-      },
-    });
+  async generateTokenNumber(
+    tenantId: string,
+    doctorProfileId: string,
+    tokenDate: Date,
+  ): Promise<number> {
+    try {
+      const result = await this.prisma.opdToken.aggregate({
+        _max: {
+          tokenNumber: true,
+        },
+        where: {
+          tenantId,
+          doctorProfileId,
+          tokenDate,
+        },
+      });
 
-    return (result._max.tokenNumber ?? 0) + 1;
-  } catch (error) {
-    this.logger.error('Token number generation failed', error);
-    throw error;
+      return (result._max.tokenNumber ?? 0) + 1;
+    } catch (error) {
+      this.logger.error('Token number generation failed', error);
+      throw error;
+    }
   }
-}
 
   // ─── CREATE TOKEN ───────────────────────────────────────────────
   async create(data: {
@@ -110,28 +109,26 @@ async generateTokenNumber(
   }
 
   // ─── FIND TOKEN BY ID ──────────────────────────────────────────
-
-
   async findById(tenantId: string, id: string) {
-  return this.prisma.opdToken.findFirst({
-    where: {
-      id,
-      tenantId,
-    },
-    include: {
-      appointment: {
-        include: {
-          patient: true,
+    return this.prisma.opdToken.findFirst({
+      where: {
+        id,
+        tenantId,
+      },
+      include: {
+        appointment: {
+          include: {
+            patient: true,
+          },
+        },
+        doctorProfile: {
+          include: {
+            hospitalUser: true,
+          },
         },
       },
-      doctorProfile: {
-        include: {
-          hospitalUser: true,
-        },
-      },
-    },
-  });
-}
+    });
+  }
 
   // ─── FIND TOKEN BY APPOINTMENT ID ──────────────────────────────
   async findByAppointmentId(tenantId: string, appointmentId: string) {
@@ -142,168 +139,163 @@ async generateTokenNumber(
   }
 
   // ─── GET DOCTOR QUEUE ──────────────────────────────────────────
-
-
   async getDoctorQueue(
-  tenantId: string,
-  doctorProfileId: string,
-  date: Date,
-  status?: string,
-  page: number = 1,
-  limit: number = 100,
-) {
-  const where: any = {
-    tenantId,
-    doctorProfileId,
-    tokenDate: date,
-  };
+    tenantId: string,
+    doctorProfileId: string,
+    date: Date,
+    status?: string,
+    page: number = 1,
+    limit: number = 100,
+  ) {
+    const where: any = {
+      tenantId,
+      doctorProfileId,
+      tokenDate: date,
+    };
 
-  if (status) {
-    where.status = status;
-  }
+    if (status) {
+      where.status = status;
+    }
 
-  const [tokens, total] = await Promise.all([
-    this.prisma.opdToken.findMany({
-      where,
-      include: {
-        appointment: {
-          include: {
-            patient: true,
+    const [tokens, total] = await Promise.all([
+      this.prisma.opdToken.findMany({
+        where,
+        include: {
+          appointment: {
+            include: {
+              patient: true,
+            },
           },
         },
-      },
-      orderBy: [
-        { appointment: { priority: 'desc' } },
-        { tokenNumber: 'asc' },
-      ],
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    this.prisma.opdToken.count({ where }),
-  ]);
-
-  return { tokens, total };
-}
-
-  // ─── GET QUEUE STATS ────────────────────────────────────────────
-// ─── GET QUEUE STATS ────────────────────────────────────────────
-async getQueueStats(
-  tenantId: string,
-  doctorProfileId: string,
-  date: Date,
-) {
-  const dateOnly = new Date(date);
-  dateOnly.setHours(0, 0, 0, 0);
-
-  const baseWhere = {
-    tenantId,
-    doctorProfileId,
-    tokenDate: dateOnly,
-  };
-
-  // 1. Fetch counts in parallel
-  const [total, waiting, inProgress, completed, skipped, cancelled] =
-    await Promise.all([
-      this.prisma.opdToken.count({ where: baseWhere }),
-      this.prisma.opdToken.count({
-        where: { ...baseWhere, status: 'WAITING' },
+        orderBy: [
+          { appointment: { priority: 'desc' } },
+          { tokenNumber: 'asc' },
+        ],
+        skip: (page - 1) * limit,
+        take: limit,
       }),
-      this.prisma.opdToken.count({
-        where: { ...baseWhere, status: 'IN_PROGRESS' },
-      }),
-      this.prisma.opdToken.count({
-        where: { ...baseWhere, status: 'COMPLETED' },
-      }),
-      this.prisma.opdToken.count({
-        where: { ...baseWhere, status: 'SKIPPED' },
-      }),
-      this.prisma.opdToken.count({
-        where: { ...baseWhere, status: 'CANCELLED' },
-      }),
+      this.prisma.opdToken.count({ where }),
     ]);
 
-  // 2. Fetch called tokens for average wait time calculation (No raw SQL)
-  const calledTokens = await this.prisma.opdToken.findMany({
-    where: {
-      ...baseWhere,
-      calledAt: { not: null },
-      status: { in: ['IN_PROGRESS', 'COMPLETED'] },
-    },
-    select: {
-      createdAt: true,
-      calledAt: true,
-    },
-  });
-
-  let avgWaitTimeMins: number | null = null;
-  if (calledTokens.length > 0) {
-    const totalWaitMs = calledTokens.reduce((sum, token) => {
-      if (token.calledAt && token.createdAt) {
-        return sum + (token.calledAt.getTime() - token.createdAt.getTime());
-      }
-      return sum;
-    }, 0);
-    avgWaitTimeMins =
-      Math.round((totalWaitMs / (calledTokens.length * 60000)) * 10) / 10;
+    return { tokens, total };
   }
 
-  // 3. Fetch completed tokens for average consultation time calculation (No raw SQL)
-  const completedTokens = await this.prisma.opdToken.findMany({
-    where: {
-      ...baseWhere,
-      startedAt: { not: null },
-      completedAt: { not: null },
-      status: 'COMPLETED',
-    },
-    select: {
-      startedAt: true,
-      completedAt: true,
-    },
-  });
+  // ─── GET QUEUE STATS ────────────────────────────────────────────
+  async getQueueStats(
+    tenantId: string,
+    doctorProfileId: string,
+    date: Date,
+  ) {
+    const dateOnly = new Date(date);
+    dateOnly.setHours(0, 0, 0, 0);
 
-  let avgConsultTimeMins: number | null = null;
-  if (completedTokens.length > 0) {
-    const totalConsultMs = completedTokens.reduce((sum, token) => {
-      if (token.completedAt && token.startedAt) {
-        return (
-          sum + (token.completedAt.getTime() - token.startedAt.getTime())
-        );
-      }
-      return sum;
-    }, 0);
-    avgConsultTimeMins =
-      Math.round((totalConsultMs / (completedTokens.length * 60000)) * 10) /
-      10;
+    const baseWhere = {
+      tenantId,
+      doctorProfileId,
+      tokenDate: dateOnly,
+    };
+
+    // 1. Fetch counts in parallel
+    const [total, waiting, inProgress, completed, skipped, cancelled] =
+      await Promise.all([
+        this.prisma.opdToken.count({ where: baseWhere }),
+        this.prisma.opdToken.count({
+          where: { ...baseWhere, status: 'WAITING' },
+        }),
+        this.prisma.opdToken.count({
+          where: { ...baseWhere, status: 'IN_PROGRESS' },
+        }),
+        this.prisma.opdToken.count({
+          where: { ...baseWhere, status: 'COMPLETED' },
+        }),
+        this.prisma.opdToken.count({
+          where: { ...baseWhere, status: 'SKIPPED' },
+        }),
+        this.prisma.opdToken.count({
+          where: { ...baseWhere, status: 'CANCELLED' },
+        }),
+      ]);
+
+    // 2. Fetch called tokens for average wait time calculation (No raw SQL)
+    const calledTokens = await this.prisma.opdToken.findMany({
+      where: {
+        ...baseWhere,
+        calledAt: { not: null },
+        status: { in: ['IN_PROGRESS', 'COMPLETED'] },
+      },
+      select: {
+        createdAt: true,
+        calledAt: true,
+      },
+    });
+
+    let avgWaitTimeMins: number | null = null;
+    if (calledTokens.length > 0) {
+      const totalWaitMs = calledTokens.reduce((sum, token) => {
+        if (token.calledAt && token.createdAt) {
+          return sum + (token.calledAt.getTime() - token.createdAt.getTime());
+        }
+        return sum;
+      }, 0);
+      avgWaitTimeMins =
+        Math.round((totalWaitMs / (calledTokens.length * 60000)) * 10) / 10;
+    }
+
+    // 3. Fetch completed tokens for average consultation time calculation (No raw SQL)
+    const completedTokens = await this.prisma.opdToken.findMany({
+      where: {
+        ...baseWhere,
+        startedAt: { not: null },
+        completedAt: { not: null },
+        status: 'COMPLETED',
+      },
+      select: {
+        startedAt: true,
+        completedAt: true,
+      },
+    });
+
+    let avgConsultTimeMins: number | null = null;
+    if (completedTokens.length > 0) {
+      const totalConsultMs = completedTokens.reduce((sum, token) => {
+        if (token.completedAt && token.startedAt) {
+          return (
+            sum + (token.completedAt.getTime() - token.startedAt.getTime())
+          );
+        }
+        return sum;
+      }, 0);
+      avgConsultTimeMins =
+        Math.round((totalConsultMs / (completedTokens.length * 60000)) * 10) /
+        10;
+    }
+
+    return {
+      total,
+      waiting,
+      inProgress,
+      completed,
+      skipped,
+      cancelled,
+      avgWaitTimeMins,
+      avgConsultTimeMins,
+    };
   }
-
-  return {
-    total,
-    waiting,
-    inProgress,
-    completed,
-    skipped,
-    cancelled,
-    avgWaitTimeMins,
-    avgConsultTimeMins,
-  };
-}
-
-
 
   // ─── GET CURRENT IN-PROGRESS TOKEN ──────────────────────────────
   async getCurrentToken(
     tenantId: string,
     doctorProfileId: string,
-    targetDate: Date, // 👈 Accepts target date object
+    targetDate: Date,
   ) {
     return this.prisma.opdToken.findFirst({
       where: {
         tenantId,
         doctorProfileId,
-        tokenDate: targetDate, // 👈 Exact strict UTC standard Date match
+        tokenDate: targetDate,
         status: 'IN_PROGRESS',
       },
-       include: tokenWithDetails,
+      include: tokenWithDetails,
     });
   }
 
@@ -311,14 +303,14 @@ async getQueueStats(
   async getNextWaitingToken(
     tenantId: string,
     doctorProfileId: string,
-    targetDate: Date, // 👈 Accepts target date object
+    targetDate: Date,
     allowedAppointmentStatuses: string[] = ['CHECKED_IN', 'IN_QUEUE'],
   ) {
     return this.prisma.opdToken.findFirst({
       where: {
         tenantId,
         doctorProfileId,
-        tokenDate: targetDate, // 👈 Strict UTC matching standard (no time shifts)
+        tokenDate: targetDate,
         status: 'WAITING',
         appointment: {
           status: { in: allowedAppointmentStatuses as any },
@@ -331,7 +323,6 @@ async getQueueStats(
       ],
     });
   }
-
 
   // ─── UPDATE TOKEN STATUS ────────────────────────────────────────
   async updateStatus(
@@ -384,7 +375,6 @@ async getQueueStats(
   }
 
   // ─── COUNT WAITING TOKENS AHEAD ─────────────────────────────────
-  // Used to calculate estimated wait time
   async countWaitingAhead(
     tenantId: string,
     doctorProfileId: string,
@@ -410,7 +400,6 @@ async getQueueStats(
     const dateOnly = new Date(date);
     dateOnly.setHours(0, 0, 0, 0);
 
-    // Get all doctors who have tokens today
     const doctorsWithTokens = await this.prisma.opdToken.findMany({
       where: { tenantId, tokenDate: dateOnly },
       select: {
@@ -447,115 +436,98 @@ async getQueueStats(
     return doctorsWithTokens;
   }
 
-
-
-
-
-
-
-// src/hospital/opd/queue/queue.repository.ts
-
-async getNurseQueue(
-  tenantId: string,
-  filter: {
-    dayStart: Date;
-    dayEnd: Date;
-    isVitalsDone: boolean;
-    doctorProfileId?: string;
-    departmentId?: number;
-  },
-) {
-  // ✅ FIX: Use Date Range (gte & lte) to bypass timezone shifts
-  const where: any = {
-    tenantId,
-    tokenDate: {
-      gte: filter.dayStart,
-      lte: filter.dayEnd,
+  // ─── NURSE QUEUE METHODS ────────────────────────────────────────
+  async getNurseQueue(
+    tenantId: string,
+    filter: {
+      dayStart: Date;
+      dayEnd: Date;
+      isVitalsDone: boolean;
+      doctorProfileId?: string;
+      departmentId?: number;
     },
-    status: { in: ['WAITING', 'IN_PROGRESS'] },
-  };
+  ) {
+    const where: any = {
+      tenantId,
+      tokenDate: {
+        gte: filter.dayStart,
+        lte: filter.dayEnd,
+      },
+      status: { in: ['WAITING', 'IN_PROGRESS'] },
+    };
 
-  if (filter.isVitalsDone) {
-    where.appointment = {
-      status: { in: ['CHECKED_IN', 'IN_CONSULTATION', 'COMPLETED'] },
-    };
-  } else {
-    // Include all active pre-consultation statuses
-    where.appointment = {
-      status: { in: ['BOOKED', 'IN_QUEUE'] },
-    };
+    if (filter.isVitalsDone) {
+      where.appointment = {
+        status: { in: ['CHECKED_IN', 'IN_CONSULTATION', 'COMPLETED'] },
+      };
+    } else {
+      where.appointment = {
+        status: { in: ['BOOKED', 'IN_QUEUE'] },
+      };
+    }
+
+    if (filter.doctorProfileId) {
+      where.doctorProfileId = filter.doctorProfileId;
+    }
+
+    if (filter.departmentId) {
+      where.appointment = {
+        ...where.appointment,
+        departmentId: filter.departmentId,
+      };
+    }
+
+    return this.prisma.opdToken.findMany({
+      where,
+      include: {
+        appointment: {
+          include: {
+            patient: true,
+          },
+        },
+        doctorProfile: {
+          include: {
+            hospitalUser: true,
+          },
+        },
+      },
+      orderBy: [
+        { appointment: { priority: 'desc' } },
+        { tokenNumber: 'asc' },
+      ],
+    });
   }
 
-  if (filter.doctorProfileId) {
-    where.doctorProfileId = filter.doctorProfileId;
-  }
-
-  if (filter.departmentId) {
-    where.appointment = {
-      ...where.appointment,
-      departmentId: filter.departmentId,
-    };
-  }
-
-  return this.prisma.opdToken.findMany({
-    where,
-    include: {
+  async countNurseQueue(
+    tenantId: string,
+    dayStart: Date,
+    dayEnd: Date,
+    isVitalsDone: boolean,
+    doctorProfileId?: string,
+    departmentId?: number,
+  ): Promise<number> {
+    const where: any = {
+      tenantId,
+      tokenDate: {
+        gte: dayStart,
+        lte: dayEnd,
+      },
+      status: { in: ['WAITING', 'IN_PROGRESS'] },
       appointment: {
-        include: {
-          patient: true,
-        },
+        status: isVitalsDone
+          ? { in: ['CHECKED_IN', 'IN_CONSULTATION', 'COMPLETED'] }
+          : { in: ['BOOKED', 'IN_QUEUE'] },
       },
-      doctorProfile: {
-        include: {
-          hospitalUser: true,
-        },
-      },
-    },
-    orderBy: [
-      { appointment: { priority: 'desc' } },
-      { tokenNumber: 'asc' },
-    ],
-  });
-}
-
-async countNurseQueue(
-  tenantId: string,
-  dayStart: Date,
-  dayEnd: Date,
-  isVitalsDone: boolean,
-  doctorProfileId?: string,
-  departmentId?: number,
-): Promise<number> {
-  const where: any = {
-    tenantId,
-    tokenDate: {
-      gte: dayStart,
-      lte: dayEnd,
-    },
-    status: { in: ['WAITING', 'IN_PROGRESS'] },
-    appointment: {
-      status: isVitalsDone
-        ? { in: ['CHECKED_IN', 'IN_CONSULTATION', 'COMPLETED'] }
-        : { in: ['BOOKED', 'IN_QUEUE'] },
-    },
-  };
-
-  if (doctorProfileId) where.doctorProfileId = doctorProfileId;
-  if (departmentId) {
-    where.appointment = {
-      ...where.appointment,
-      departmentId,
     };
+
+    if (doctorProfileId) where.doctorProfileId = doctorProfileId;
+    if (departmentId) {
+      where.appointment = {
+        ...where.appointment,
+        departmentId,
+      };
+    }
+
+    return this.prisma.opdToken.count({ where });
   }
-
-  return this.prisma.opdToken.count({ where });
-}
-
-
-
-
-
-
-
-
 }
