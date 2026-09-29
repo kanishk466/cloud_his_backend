@@ -1,5 +1,4 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import * as brevo from '@getbrevo/brevo';
 
 export interface ActivationEmailInput {
   hospitalName: string;
@@ -12,36 +11,33 @@ export interface ActivationEmailInput {
 @Injectable()
 export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
-  private apiInstance: brevo.TransactionalEmailsApi;
   private readonly isConfigured: boolean;
+  private readonly apiKey: string;
+  private readonly senderEmail: string;
+  private readonly senderName: string;
 
   constructor() {
-    const apiKey = process.env.BREVO_API_KEY?.trim();
-    this.isConfigured = Boolean(apiKey);
+    this.apiKey = process.env.BREVO_API_KEY?.trim() || '';
+    this.senderEmail = process.env.BREVO_SENDER_EMAIL?.trim() || 'support@Ojas1.in';
+    this.senderName = process.env.BREVO_SENDER_NAME?.trim() || 'Ojas1';
+
+    this.isConfigured = Boolean(this.apiKey);
 
     if (!this.isConfigured) {
       this.logger.error(
         '❌ BREVO_API_KEY is missing in .env! Email sending will be skipped.',
       );
-      return;
     }
-
-    // Initialize Brevo Transactional Email Client
-    this.apiInstance = new brevo.TransactionalEmailsApi();
-    this.apiInstance.setApiKey(
-      brevo.TransactionalEmailsApiApiKeys.apiKey,
-      apiKey,
-    );
   }
 
   async onModuleInit() {
     if (this.isConfigured) {
-      this.logger.log('✅ Brevo Mail Service initialized successfully (HTTPS API)');
+      this.logger.log('✅ Brevo Mail Service initialized (Native HTTPS REST API)');
     }
   }
 
   /* ========================================================================= */
-  /* 1. CORE SENDER (Brevo HTTPS API - 100% Reliable on Render)                */
+  /* 1. CORE SENDER (Direct Brevo REST API v3)                                 */
   /* ========================================================================= */
   async sendMail(to: string, subject: string, html: string, text?: string): Promise<void> {
     if (!this.isConfigured) {
@@ -50,26 +46,43 @@ export class MailService implements OnModuleInit {
     }
 
     try {
-      const senderEmail = process.env.BREVO_SENDER_EMAIL || 'support@Ojas1.in';
-      const senderName = process.env.BREVO_SENDER_NAME || 'Ojas1';
+      const payload: Record<string, any> = {
+        sender: {
+          name: this.senderName,
+          email: this.senderEmail,
+        },
+        to: [{ email: to }],
+        subject: subject,
+        htmlContent: html,
+      };
 
-      const sendSmtpEmail = new brevo.SendSmtpEmail();
-      sendSmtpEmail.subject = subject;
-      sendSmtpEmail.htmlContent = html;
-      sendSmtpEmail.sender = { name: senderName, email: senderEmail };
-      sendSmtpEmail.to = [{ email: to }];
-      
       if (text) {
-        sendSmtpEmail.textContent = text;
+        payload.textContent = text;
       }
 
-      const response = await this.apiInstance.sendTransacEmail(sendSmtpEmail);
-      const messageId = response.body?.messageId || 'Success';
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': this.apiKey,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
 
-      this.logger.log(`✉️ Email successfully sent via Brevo to ${to} [MessageId: ${messageId}]`);
-    } catch (err: any) {
-      const errorDetail = err?.response?.body?.message || err?.message || err;
-      this.logger.error(`❌ Failed to send email via Brevo to ${to}:`, errorDetail);
+      const data = await response.json();
+
+      if (!response.ok) {
+        this.logger.error(
+          `❌ Failed to send email via Brevo to ${to}: ${response.status} ${response.statusText}`,
+          JSON.stringify(data),
+        );
+        return;
+      }
+
+      this.logger.log(`✉️ Email successfully sent via Brevo to ${to} [MessageId: ${data?.messageId}]`);
+    } catch (err) {
+      this.logger.error(`❌ Unexpected error sending email to ${to}`, err);
     }
   }
 
@@ -91,8 +104,8 @@ export class MailService implements OnModuleInit {
   /* 3. 2FA LOGIN OTP                                                          */
   /* ========================================================================= */
   async sendOtpMail(to: string, otpCode: string): Promise<void> {
-    // 🔍 Debug log in Render
-    this.logger.log(`🔑 [DEBUG OTP] Generated OTP for ${to} is: ${otpCode}`);
+    // 🔍 Debug log Render console mein
+    this.logger.log(`🔑 [DEBUG OTP] OTP for ${to} is: ${otpCode}`);
 
     const html = `
       <!DOCTYPE html>
@@ -236,7 +249,6 @@ export class MailService implements OnModuleInit {
   }
 }
 
-// ------------------- EXISTING HTML TEMPLATE BUILDER -------------------
 function buildActivationEmail(input: ActivationEmailInput): string {
   return `<!DOCTYPE html>
 <html>
