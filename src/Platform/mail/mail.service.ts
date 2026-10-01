@@ -105,7 +105,7 @@ export class MailService implements OnModuleInit {
   /* ========================================================================= */
   async sendOtpMail(to: string, otpCode: string): Promise<void> {
     // 🔍 Debug log Render console mein
-    this.logger.log(`🔑 [DEBUG OTP] OTP for ${to} is: ${otpCode}`);
+    console.log(`🔑 [DEBUG OTP] OTP for ${to} is: ${otpCode}`);
 
     const html = `
       <!DOCTYPE html>
