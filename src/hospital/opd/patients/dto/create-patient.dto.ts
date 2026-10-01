@@ -13,6 +13,7 @@ import {
   Max,
   Matches,
   IsBoolean,
+  IsUUID, // 👈 Added IsUUID for panelId validation
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
@@ -80,6 +81,12 @@ export class CreatePatientDto {
   @Min(0)
   @Max(150)
   age?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(150)
+  ageAtRegistration?: number; // 👈 Added ageAtRegistration
 
   @IsOptional()
   @IsIn(['years', 'months', 'days'])
@@ -158,7 +165,7 @@ export class CreatePatientDto {
   @IsMobilePhone('en-IN')
   guardianMobile?: string;
 
-  // ─── INSURANCE ────────────────────────────────────────────────
+  // ─── INSURANCE & PANEL ────────────────────────────────────────
   @IsOptional()
   @IsString()
   insuranceProvider?: string;
@@ -170,6 +177,14 @@ export class CreatePatientDto {
   @IsOptional()
   @IsDateString()
   insuranceValidTill?: string;
+
+  @IsOptional()
+  @IsUUID()
+  panelId?: string; // 👈 Added panelId
+
+  @IsOptional()
+  @IsDateString()
+  panelValidTill?: string; // 👈 Added panelValidTill
 
   // ─── MEDICAL BASICS ───────────────────────────────────────────
   @IsOptional()
@@ -197,7 +212,6 @@ export class CreatePatientDto {
   @MaxLength(500)
   coverage?: string;
 
-
   @IsOptional()
   @IsString()
   @MaxLength(500)
@@ -212,4 +226,9 @@ export class CreatePatientDto {
   @IsString()
   @MaxLength(500)
   department?: string;
+
+  // ─── CONSENT ──────────────────────────────────────────────────
+  @IsOptional()
+  @IsBoolean()
+  consentToShare?: boolean; // 👈 Added consentToShare
 }
