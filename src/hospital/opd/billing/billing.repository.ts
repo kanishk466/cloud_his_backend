@@ -169,7 +169,6 @@ export class BillingRepository {
               discountPercent: itemDiscPercent,
               discountAmount: itemDiscAmount,
               taxPercent,
-              taxAmount: itemTaxAmount,
               totalAmount: calculatedTotal,
             };
           }),
