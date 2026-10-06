@@ -449,6 +449,12 @@ async function main() {
       { name: 'Create Lab Approval Right', code: 'LAB_APPROVAL_RIGHT_CREATE' },
       { name: 'Edit Lab Approval Right', code: 'LAB_APPROVAL_RIGHT_EDIT' },
       { name: 'Delete Lab Approval Right', code: 'LAB_APPROVAL_RIGHT_DELETE' },
+
+      // Phase 1.4 — Threshold Limit
+      { name: 'View Threshold Limits', code: 'THRESHOLD_LIMIT_VIEW' },
+      { name: 'Create Threshold Limit', code: 'THRESHOLD_LIMIT_CREATE' },
+      { name: 'Edit Threshold Limit', code: 'THRESHOLD_LIMIT_EDIT' },
+      { name: 'Delete Threshold Limit', code: 'THRESHOLD_LIMIT_DELETE' },
     ],
   };
 

@@ -470,6 +470,9 @@ model Hospital {
   outsourceLabs             OutsourceLab[]
   labApprovalRights         LabApprovalRight[]
 
+  // Threshold Limit (Phase 1.4)
+  thresholdLimits ThresholdLimit[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1764,11 +1767,14 @@ model Panel {
   rateCurrency GlobalMaster? @relation("PanelRateCurrency", fields: [rateCurrencyId], references: [id])
   billCurrency GlobalMaster? @relation("PanelBillCurrency", fields: [billCurrencyId], references: [id])
 
+  thresholdLimits ThresholdLimit[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId, panelCode])
   @@unique([tenantId, panelName])
+  @@unique([tenantId, id])
   @@index([tenantId, groupTypeId])
   @@index([tenantId, isActive])
   @@map("panels")
@@ -2300,6 +2306,7 @@ model RoomType {
   dailyChargeItem  ServiceMaster?    @relation("RoomTypeDailyCharge", fields: [tenantId, dailyChargeItemId], references: [tenantId, id], onDelete: Restrict)
   rooms            Room[]
   ipdAdmissions    IpdAdmission[]
+  thresholdLimits  ThresholdLimit[]
 
   @@unique([tenantId, name])
   @@unique([tenantId, id])
@@ -2866,4 +2873,44 @@ model LabApprovalRight {
   @@index([tenantId, userId, isActive, deletedAt])
   @@index([tenantId, departmentId, isActive])
   @@map("lab_approval_rights")
+}
+
+// ============================================
+// THRESHOLD LIMIT (Phase 1.4)
+// ============================================
+
+enum ThresholdActionType {
+  SOFT_WARNING
+  HARD_BLOCK
+}
+
+model ThresholdLimit {
+  id       String @id @default(uuid())
+  tenantId String
+
+  panelId        String
+  roomTypeId     String
+  thresholdAmount Decimal @db.Decimal(15, 2)
+  actionType     ThresholdActionType @default(SOFT_WARNING)
+
+  // Alert config
+  alertEmails     String[]
+  alertSmsNumbers String[]
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  panel    Panel    @relation(fields: [tenantId, panelId], references: [tenantId, id], onDelete: Restrict)
+  roomType RoomType @relation(fields: [tenantId, roomTypeId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, panelId, roomTypeId])
+  @@unique([tenantId, id])
+  @@index([tenantId])
+  @@index([tenantId, panelId, roomTypeId, isActive])
+  @@map("threshold_limits")
 }
