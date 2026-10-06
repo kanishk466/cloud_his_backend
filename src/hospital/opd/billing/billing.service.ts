@@ -18,13 +18,17 @@ import {
   PAYABLE_STATUSES,
   CANCELLABLE_STATUSES,
 } from './constants/billing.constants';
+import { DiscountValidationService } from '../../../modules/master-config/basic-master/discount-approval/discount-validation.service';
 import { format } from 'date-fns';
 
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
 
-  constructor(private readonly billingRepository: BillingRepository) {}
+  constructor(
+    private readonly billingRepository: BillingRepository,
+    private readonly discountValidation: DiscountValidationService,
+  ) {}
 
   // ─── GENERATE BILL ──────────────────────────────────────────────
   async generateBill(
@@ -322,6 +326,7 @@ export class BillingService {
   async applyDiscount(
     tenantId: string,
     billId: string,
+    appliedByUserId: string,
     dto: ApplyDiscountDto,
   ): Promise<BillResponseDto> {
     const bill = await this.billingRepository.findById(tenantId, billId);
@@ -347,6 +352,25 @@ export class BillingService {
 
     if (discountAmount > subtotal) {
       throw new BadRequestException(BILLING_ERRORS.INVALID_DISCOUNT);
+    }
+
+    // ── Validation engine (reason + approval + limits + audit) ─────
+    // Runs only when a structured DiscountReason id is supplied.
+    if (dto.discountReasonId) {
+      await this.discountValidation.validateAndLog({
+        tenantId,
+        module: 'OPD',
+        discountPercent,
+        discountAmount,
+        referenceType: 'OpdBill',
+        referenceId: billId,
+        originalAmount: subtotal,
+        finalAmount: subtotal - discountAmount,
+        reasonId: dto.discountReasonId,
+        approvalId: dto.discountApprovalId,
+        appliedByUserId,
+        remarks: dto.discountReason,
+      });
     }
 
     const taxAmount = Number(bill.taxAmount);

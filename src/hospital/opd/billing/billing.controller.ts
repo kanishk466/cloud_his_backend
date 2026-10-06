@@ -135,8 +135,9 @@ export class BillingController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ApplyDiscountDto,
     @CurrentTenant() tenantId: string,
+    @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.billingService.applyDiscount(tenantId, id, dto);
+    return this.billingService.applyDiscount(tenantId, id, user.userId, dto);
   }
 
   // PATCH /opd/billing/:id/cancel

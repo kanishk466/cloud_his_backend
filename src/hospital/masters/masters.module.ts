@@ -13,9 +13,20 @@ import { GlobalMasterModule } from './global-master/global-master.module';
 import { TariffModule } from './tariff/tariff.module';
 import { PanelModule } from './panel/panel.module';
 import { ServiceMasterModule } from './service-master/service-master.module';
+import { ServiceItemTypeModule } from './service-item-type/service-item-type.module';
+import { ServiceCategoryModule } from './service-category/service-category.module';
+import { ServiceSubCategoryModule } from './service-sub-category/service-sub-category.module';
 
 @Module({
-  imports:[GlobalMasterModule , ServiceMasterModule , TariffModule , PanelModule],
+  imports: [
+    GlobalMasterModule,
+    ServiceItemTypeModule,
+    ServiceCategoryModule,
+    ServiceSubCategoryModule,
+    ServiceMasterModule,
+    TariffModule,
+    PanelModule,
+  ],
   controllers: [DepartmentsController, ShiftsController],
   providers: [
     PrismaService,
@@ -24,6 +35,16 @@ import { ServiceMasterModule } from './service-master/service-master.module';
     DepartmentsRepository,
     ShiftsRepository,
   ],
-  exports: [DepartmentsService, ShiftsService , GlobalMasterModule ,ServiceMasterModule,TariffModule,PanelModule],
+  exports: [
+    DepartmentsService,
+    ShiftsService,
+    GlobalMasterModule,
+    ServiceItemTypeModule,
+    ServiceCategoryModule,
+    ServiceSubCategoryModule,
+    ServiceMasterModule,
+    TariffModule,
+    PanelModule,
+  ],
 })
 export class MastersModule {}

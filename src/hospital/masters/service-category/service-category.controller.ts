@@ -13,47 +13,57 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { ServiceMasterService } from './service-master.service';
-import { CreateServiceDto } from './dto/create-service.dto';
-import { UpdateServiceDto } from './dto/update-service.dto';
-import { QueryServiceDto } from './dto/query-service.dto';
+import { ServiceCategoryService } from './service-category.service';
+import { CreateServiceCategoryDto } from './dto/create-service-category.dto';
+import { UpdateServiceCategoryDto } from './dto/update-service-category.dto';
+import { QueryServiceCategoryDto } from './dto/query-service-category.dto';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
 import { PermissionsGuard } from '../../core/permissions/permissions.guard';
 import { RequirePermissions } from '../../core/decorators/require-permissions.decorator';
 import { CurrentTenant } from '../../core/decorators/current-tenant.decorator';
 import { CurrentUser, CurrentUserPayload } from '../../core/decorators/current-user.decorator';
 
-@ApiTags('Masters — Service')
+@ApiTags('Masters — Service Category')
 @ApiBearerAuth('access-token')
-@Controller('hospital/masters/services')
+@Controller('hospital/masters/service-categories')
 @UseGuards(HospitalJwtAuthGuard, PermissionsGuard)
-export class ServiceMasterController {
-  constructor(private readonly service: ServiceMasterService) {}
+export class ServiceCategoryController {
+  constructor(private readonly service: ServiceCategoryService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @RequirePermissions('SERVICE_MASTER_CREATE')
-  @ApiOperation({ summary: 'Create a service/item' })
-  @ApiResponse({ status: 201, description: 'Service created' })
-  @ApiResponse({ status: 409, description: 'Service code exists' })
+  @RequirePermissions('SERVICE_CATEGORY_CREATE')
+  @ApiOperation({ summary: 'Create a service category' })
+  @ApiResponse({ status: 201, description: 'Category created' })
+  @ApiResponse({ status: 409, description: 'Category exists' })
   create(
     @CurrentTenant() tenantId: string,
-    @Body() dto: CreateServiceDto,
+    @Body() dto: CreateServiceCategoryDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.create(tenantId, dto, this.actor(user));
   }
 
   @Get()
-  @RequirePermissions('SERVICE_MASTER_VIEW')
-  @ApiOperation({ summary: 'List services/items (paginated, filterable)' })
-  list(@CurrentTenant() tenantId: string, @Query() query: QueryServiceDto) {
+  @RequirePermissions('SERVICE_CATEGORY_VIEW')
+  @ApiOperation({ summary: 'List service categories' })
+  list(@CurrentTenant() tenantId: string, @Query() query: QueryServiceCategoryDto) {
     return this.service.list(tenantId, query);
   }
 
+  @Get('dropdown')
+  @RequirePermissions('SERVICE_CATEGORY_VIEW')
+  @ApiOperation({ summary: 'Lightweight category list for dropdowns' })
+  dropdown(
+    @CurrentTenant() tenantId: string,
+    @Query('configType') configType?: string,
+  ) {
+    return this.service.dropdown(tenantId, configType);
+  }
+
   @Get(':id')
-  @RequirePermissions('SERVICE_MASTER_VIEW')
-  @ApiOperation({ summary: 'Get a service by id' })
+  @RequirePermissions('SERVICE_CATEGORY_VIEW')
+  @ApiOperation({ summary: 'Get a service category by id' })
   findOne(
     @CurrentTenant() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
@@ -62,12 +72,12 @@ export class ServiceMasterController {
   }
 
   @Patch(':id')
-  @RequirePermissions('SERVICE_MASTER_EDIT')
-  @ApiOperation({ summary: 'Update a service' })
+  @RequirePermissions('SERVICE_CATEGORY_EDIT')
+  @ApiOperation({ summary: 'Update a service category' })
   update(
     @CurrentTenant() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateServiceDto,
+    @Body() dto: UpdateServiceCategoryDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.update(tenantId, id, dto, this.actor(user));
@@ -75,8 +85,8 @@ export class ServiceMasterController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @RequirePermissions('SERVICE_MASTER_DELETE')
-  @ApiOperation({ summary: 'Soft delete a service' })
+  @RequirePermissions('SERVICE_CATEGORY_DELETE')
+  @ApiOperation({ summary: 'Soft delete a service category' })
   remove(
     @CurrentTenant() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
