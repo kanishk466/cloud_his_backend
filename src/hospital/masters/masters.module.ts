@@ -20,6 +20,10 @@ import { ClinicalDepartmentModule } from './clinical-department/clinical-departm
 import { DoctorSpecializationModule } from './doctor-specialization/doctor-specialization.module';
 import { ReferDoctorModule } from './refer-doctor/refer-doctor.module';
 import { ProMappingModule } from './pro-mapping/pro-mapping.module';
+import { RoomTypeModule } from './room-type/room-type.module';
+import { RoomModule } from './room/room.module';
+import { BedModule } from './bed/bed.module';
+import { BedAmenityModule } from './bed-amenity/bed-amenity.module';
 
 @Module({
   imports: [
@@ -32,6 +36,10 @@ import { ProMappingModule } from './pro-mapping/pro-mapping.module';
     DoctorSpecializationModule,
     ReferDoctorModule,
     ProMappingModule,
+    RoomTypeModule,
+    RoomModule,
+    BedModule,
+    BedAmenityModule,
     TariffModule,
     PanelModule,
   ],
@@ -55,6 +63,10 @@ import { ProMappingModule } from './pro-mapping/pro-mapping.module';
     DoctorSpecializationModule,
     ReferDoctorModule,
     ProMappingModule,
+    RoomTypeModule,
+    RoomModule,
+    BedModule,
+    BedAmenityModule,
     TariffModule,
     PanelModule,
   ],
