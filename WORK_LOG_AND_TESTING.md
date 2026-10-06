@@ -1,6 +1,6 @@
 # HIMS Backend — Work Log & Testing Guide
 
-> Scope: yeh document us saara kaam ko cover karta hai jo HANDOFF-01 se HANDOFF-05 tak kiya gaya — kya banaya, **kyun** banaya, aur **kaise test** karna hai.
+> Scope: yeh document us saara kaam ko cover karta hai jo HANDOFF-01 se HANDOFF-07 tak kiya gaya — kya banaya, **kyun** banaya, aur **kaise test** karna hai.
 >
 > Branch: `kanishk/generateToken` · Base commit: `1daf3fc`
 
@@ -8,7 +8,7 @@
 
 ## 1. Ek Nazar Mein (Summary)
 
-7 logical commits, 3 phases:
+12 logical commits, 6 phases:
 
 | Commit | Phase | Kaam |
 |---|---|---|
@@ -19,6 +19,11 @@
 | `1c3e707` | Phase 2.1 | Services Setup hierarchy + discount engine → OPD billing |
 | `351a2a5` | Schema | Doctor setup models DB se align |
 | `37d3d79` | Phase 2.2 | Doctor Setup masters + enhanced profile + OPD visit config |
+| `ba26f4e` | Docs | Work log & testing guide (phases 1–2.2) |
+| `9a3bbd6` | Schema | Ward/room + IPD admission models DB se align |
+| `f83d774` | Phase 2.3 | Room type/room/bed/amenity masters + bed status state machine |
+| `5fbfc8a` | Schema | Lab/radio (LIS/RIS) models DB se align |
+| `adeb8ad` | Phase 2.4 | Lab/Radio setup modules (14 entities, 4 groups) |
 
 ---
 
@@ -140,6 +145,42 @@ Har entity: DTOs (create/update/query) + Service + Controller (CRUD + dropdown) 
 
 > Decision note: Handoff ke 4 pending decisions **DB ne khud resolve** kar diye — PRO hybrid (name + user), signature URL, doctor share single %, visit config per doctor.
 
+### Phase 2.3 — Ward / Room Setup (`9a3bbd6`, `f83d774`)
+
+**Kyun:** Inpatient infrastructure masters — IPD module ka foundation.
+
+**Kya banaya:**
+| Model | Table | Notes |
+|---|---|---|
+| RoomType | `room_types` | isEmergency/isDaycare/isDialysis/isDiscountable, genderRestriction, dailyChargeItemId→service_masters, thresholdLimitAmount |
+| Room | `rooms` | under RoomType, floorName + roomNo |
+| Bed | `beds` | isCount (BOR census), + bulk generator |
+| BedStatus | `bed_statuses` | runtime state machine (VACANT/OCCUPIED/CLEANING/RESERVED/MAINTENANCE) |
+| BedAmenity | `bed_amenities` | oxygen, ventilator, monitor, isolation... |
+| BedAmenityMapping | `bed_amenity_mappings` | bed ↔ amenity |
+| IpdAdmission | `ipd_admissions` | BedStatus FK ke liye zaroori (Phase 2.4 prep) |
+
+> Decision note: Handoff ke 4 decisions DB ne resolve kiye — separate Room+Bed, separate BedAmenity master, gender restriction enum (ANY/MALE/FEMALE/PEDIATRIC), bulk generator helper banaya.
+
+> Important: `bed_statuses` FK `ipd_admissions` par jaata hai jo schema mein nahi tha — isliye `IpdAdmission` bhi add kiya (composite tenant FKs ke saath). `ipd_charges`/`package_consumptions` abhi chhode (wo IPD execution phase).
+
+### Phase 2.4 — Lab / Radio Setup (`5fbfc8a`, `adeb8ad`)
+
+**Kyun:** LIS/RIS masters — legacy ka sabse bada module (13 steps, 4 groups).
+
+**Kya banaya (14 entities):**
+
+| Group | Models |
+|---|---|
+| 1 — Core | LabDepartment, Investigation, Observation, InvestigationObservation (mapping), ObservationReferenceRange |
+| 2 — Content | InvestigationTemplate, InterpretationMaster, HelpObservation, LabComment |
+| 3 — Pre-Analytical | SampleContainer, SampleType |
+| 4 — Specialized | MicroMaster, OutsourceLab, LabApprovalRight |
+
+> Decision note: Formula → `formulaExpression` string (Option A); ref range → min/max per gender+age (Option A); smart tags & result entry → runtime features (structure only).
+
+**Business rules:** `Investigation.serviceId` ServiceMaster mein exist karna zaroori; `department.allowTemplates` gate; sample retention `archiveDays`; outsourced `isOutsourced`+`outsourceLabId`; delete guards.
+
 ---
 
 ## 4. Universal Patterns (jo har module follow karta hai)
@@ -188,6 +229,34 @@ Har entity: DTOs (create/update/query) + Service + Controller (CRUD + dropdown) 
 | `/api/hospital/masters/refer-doctors` | CRUD + `/dropdown` |
 | `/api/hospital/masters/pro-mappings` | CRUD |
 | `/api/opd/doctors/:id/visit-config` | POST (set) / GET |
+
+### Ward / Room Setup
+| Base path | Methods |
+|---|---|
+| `/api/hospital/masters/room-types` | CRUD + `/dropdown` |
+| `/api/hospital/masters/rooms` | CRUD |
+| `/api/hospital/masters/beds` | CRUD + `POST /bulk` (bulk generator) |
+| `/api/hospital/masters/bed-amenities` | CRUD + `/dropdown` |
+| `/api/ipd/bed-statuses` | GET list / `GET /summary` / `GET /:bedId` / `POST /:bedId/change` |
+
+### Lab / Radio Setup
+| Base path | Methods |
+|---|---|
+| `/api/hospital/lab-radio/departments` | CRUD + `/dropdown` |
+| `/api/hospital/lab-radio/investigations` | CRUD + `/dropdown` |
+| `/api/hospital/lab-radio/investigations/:id/observations` | GET / PUT (replace set) / DELETE |
+| `/api/hospital/lab-radio/observations` | CRUD + `/dropdown` |
+| `/api/hospital/lab-radio/observations/:id/reference-ranges` | GET / POST / PATCH / DELETE |
+| `/api/hospital/lab-radio/investigations/:id/templates` | GET / POST / PATCH / DELETE |
+| `/api/hospital/lab-radio/interpretations` | CRUD |
+| `/api/hospital/lab-radio/help-observations` | CRUD |
+| `/api/hospital/lab-radio/lab-comments` | CRUD |
+| `/api/hospital/lab-radio/sample-containers` | CRUD + `/dropdown` |
+| `/api/hospital/lab-radio/sample-types` | CRUD + `/dropdown` |
+| `/api/hospital/lab-radio/micro-masters` | CRUD + `/dropdown` |
+| `/api/hospital/lab-radio/outsource-labs` | CRUD + `/dropdown` |
+| `/api/hospital/lab-radio/approval-rights` | CRUD |
+
 
 ---
 
@@ -318,6 +387,36 @@ Kyunki permissions ab enforce hote hain, dhyaan rakho: `SUPER_ADMIN` bypass kart
    POST /api/hospital/masters/refer-doctors          { name:"Dr. Anil" }
    POST /api/hospital/masters/pro-mappings           { referDoctorId, proName, commissionPercent:5 }
    POST /api/opd/doctors/:id/visit-config            { freeFollowupDays:7, maxFreeVisits:2, revisitChargePercent:50 }
+
+7. Phase 2.3 — Ward / Room:
+   POST /api/hospital/masters/room-types    { name:"ICU", isEmergency:true, genderRestriction:"ANY" }
+   POST /api/hospital/masters/rooms         { roomTypeId, floorName:"GF", roomName:"ICU-1", roomNo:"101" }
+   POST /api/hospital/masters/bed-amenities { name:"Oxygen" }
+   POST /api/hospital/masters/beds/bulk
+        { roomId, count:10, startNumber:101, prefix:"B-" }
+        → { created:10, beds:[...] }
+   POST /api/ipd/bed-statuses/:bedId/change { status:"OCCUPIED", patientId }   (VACANT→OCCUPIED)
+   POST /api/ipd/bed-statuses/:bedId/change { status:"OCCUPIED" }              → 400 (patientId missing)
+   GET  /api/ipd/bed-statuses/summary                                          (occupancy counts)
+
+8. Phase 2.4 — Lab / Radio:
+   POST /api/hospital/lab-radio/sample-containers { name:"EDTA Tube", color:"Lavender", sampleQuantityMl:2.5 }
+   POST /api/hospital/lab-radio/sample-types      { name:"Whole Blood", containerId, archiveDays:7 }
+   POST /api/hospital/lab-radio/departments       { category:"LAB", name:"Biochemistry", allowTemplates:true }
+   POST /api/hospital/lab-radio/observations      { name:"Hemoglobin", unit:"g/dL", resultType:"NUMERIC" }
+   POST /api/hospital/lab-radio/investigations
+        { departmentId, serviceId, name:"Complete Blood Count", code:"CBC", sampleTypeId }
+        → serviceId ServiceMaster mein hona chahiye (warna 400)
+   PUT  /api/hospital/lab-radio/investigations/:id/observations
+        { observations:[{ observationId, displayOrder:0, isRequired:true }] }
+   POST /api/hospital/lab-radio/observations/:id/reference-ranges
+        { gender:"ANY", minValue:13, maxValue:17 }
+   POST /api/hospital/lab-radio/investigations/:id/templates
+        { title:"Normal CXR", bodyHtml:"<p>Clear</p>", isDefault:true }
+        → department.allowTemplates false ho to 400
+   POST /api/hospital/lab-radio/micro-masters     { type:"ORGANISM", name:"E. coli" }
+   POST /api/hospital/lab-radio/outsource-labs    { name:"Metropolis", defaultTat:1440 }
+   POST /api/hospital/lab-radio/approval-rights   { userId, canSignLabReports:true }
 ```
 
 **Expected key behaviours:**
@@ -358,8 +457,9 @@ Tenant-scoped seed (banks/docs/discounts) har hospital ke liye `prisma/seed.ts` 
 
 ### Pending / Known issues
 1. **`patients.service.spec.ts`** — pre-existing failures (service signature `register(tenantId, dto, userId)` se match nahi karta). Mere kaam se pehle se fail.
-2. **Permissions rollout** — existing hospital roles ko `BASIC_MASTER_*`, `SERVICE_*`, `CLINICAL_DEPARTMENT_*` etc. feature codes assign karne padenge, warna regular users ko 403 aayega.
+2. **Permissions rollout** — existing hospital roles ko `BASIC_MASTER_*`, `SERVICE_*`, `CLINICAL_DEPARTMENT_*`, `ROOM_*`, `BED_*`, `LAB_*`, `INVESTIGATION_*`, `OBSERVATION_*` etc. feature codes assign karne padenge, warna regular users ko 403 aayega (SUPER_ADMIN bypass karta hai).
 3. **Seed poora timeout** — bhaari seed; geo part standalone verified hai.
+4. **Prisma partial indexes** — `ipd_admissions` ke `WHERE status='ACTIVE'` partial unique indexes Prisma schema mein express nahi hote (drift expected) par DB par sahi hain.
 
 ---
 
@@ -374,9 +474,32 @@ Tenant-scoped seed (banks/docs/discounts) har hospital ke liye `prisma/seed.ts` 
 ### Phase 2.2
 `clinical_departments`, `doctor_specializations`, `opd_visit_configs`, `refer_doctors`, `pro_mappings`, `doctor_profiles` (tenant)
 
+### Phase 2.3
+`room_types`, `rooms`, `beds`, `bed_statuses`, `bed_amenities`, `bed_amenity_mappings`, `ipd_admissions` (tenant)
+
+### Phase 2.4
+`lab_departments`, `investigations`, `observations`, `investigation_observations`, `observation_reference_ranges`, `investigation_templates`, `interpretation_masters`, `help_observations`, `lab_comments`, `sample_containers`, `sample_types`, `micro_masters`, `outsource_labs`, `lab_approval_rights` (tenant)
+
 ### Enums add/use kiye
-`DocumentApplicableFor` · `DiscountApplicableType` · `ServiceConfigType` · `ServiceStoreType` · `DoctorType`
+`DocumentApplicableFor` · `DiscountApplicableType` · `ServiceConfigType` · `ServiceStoreType` · `DoctorType` · `WardGenderRestriction` · `BedCurrentStatus` · `IpdAdmissionType` · `IpdAdmissionStatus` · `LabCategory` · `LabResultType` · `LabAgeUnit` · `LabRangeGender` · `MicroMasterType`
 
 ---
 
-*Generated as part of HANDOFF-05 wrap-up.*
+## 9. Progress Snapshot (HANDOFF-01 → 07)
+
+| Phase | Scope | Status |
+|---|---|---|
+| Infra | Migration restore + jest + boot-migrate | ✅ |
+| RBAC | Permission enforcement guard | ✅ |
+| 1.1 Basic Master | Country/State/District/City/Bank/PatientDoc | ✅ |
+| 1.2 Discount | Reason/Approval + validation engine → OPD billing | ✅ |
+| 2.1 Services | Item type/Category/SubCategory/Service | ✅ |
+| 2.2 Doctor | Clinical dept/Specialization/ReferDoctor/PRO/VisitConfig | ✅ |
+| 2.3 Ward/Room | RoomType/Room/Bed/Amenity + BedStatus state machine + IpdAdmission | ✅ |
+| 2.4 Lab/Radio | 14 LIS/RIS masters (4 groups) | ✅ |
+
+**Remaining (future handoffs):** IPD execution (`ipd_charges`, package consumption), Lab result entry, Billing settlement, Reporting/Analytics.
+
+---
+
+*Generated as part of HANDOFF-07 wrap-up.*
