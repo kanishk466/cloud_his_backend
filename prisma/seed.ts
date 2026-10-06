@@ -393,6 +393,62 @@ async function main() {
 
       { name: 'View Bed Status', code: 'BED_STATUS_VIEW' },
       { name: 'Change Bed Status', code: 'BED_STATUS_CHANGE' },
+
+      // Phase 2.4 — Lab / Radio Setup
+      { name: 'View Lab Departments', code: 'LAB_DEPARTMENT_VIEW' },
+      { name: 'Create Lab Department', code: 'LAB_DEPARTMENT_CREATE' },
+      { name: 'Edit Lab Department', code: 'LAB_DEPARTMENT_EDIT' },
+      { name: 'Delete Lab Department', code: 'LAB_DEPARTMENT_DELETE' },
+
+      { name: 'View Investigations', code: 'INVESTIGATION_VIEW' },
+      { name: 'Create Investigation', code: 'INVESTIGATION_CREATE' },
+      { name: 'Edit Investigation', code: 'INVESTIGATION_EDIT' },
+      { name: 'Delete Investigation', code: 'INVESTIGATION_DELETE' },
+
+      { name: 'View Observations', code: 'OBSERVATION_VIEW' },
+      { name: 'Create Observation', code: 'OBSERVATION_CREATE' },
+      { name: 'Edit Observation', code: 'OBSERVATION_EDIT' },
+      { name: 'Delete Observation', code: 'OBSERVATION_DELETE' },
+
+      { name: 'View Interpretations', code: 'INTERPRETATION_VIEW' },
+      { name: 'Create Interpretation', code: 'INTERPRETATION_CREATE' },
+      { name: 'Edit Interpretation', code: 'INTERPRETATION_EDIT' },
+      { name: 'Delete Interpretation', code: 'INTERPRETATION_DELETE' },
+
+      { name: 'View Help Observations', code: 'HELP_OBSERVATION_VIEW' },
+      { name: 'Create Help Observation', code: 'HELP_OBSERVATION_CREATE' },
+      { name: 'Edit Help Observation', code: 'HELP_OBSERVATION_EDIT' },
+      { name: 'Delete Help Observation', code: 'HELP_OBSERVATION_DELETE' },
+
+      { name: 'View Lab Comments', code: 'LAB_COMMENT_VIEW' },
+      { name: 'Create Lab Comment', code: 'LAB_COMMENT_CREATE' },
+      { name: 'Edit Lab Comment', code: 'LAB_COMMENT_EDIT' },
+      { name: 'Delete Lab Comment', code: 'LAB_COMMENT_DELETE' },
+
+      { name: 'View Sample Containers', code: 'SAMPLE_CONTAINER_VIEW' },
+      { name: 'Create Sample Container', code: 'SAMPLE_CONTAINER_CREATE' },
+      { name: 'Edit Sample Container', code: 'SAMPLE_CONTAINER_EDIT' },
+      { name: 'Delete Sample Container', code: 'SAMPLE_CONTAINER_DELETE' },
+
+      { name: 'View Sample Types', code: 'SAMPLE_TYPE_VIEW' },
+      { name: 'Create Sample Type', code: 'SAMPLE_TYPE_CREATE' },
+      { name: 'Edit Sample Type', code: 'SAMPLE_TYPE_EDIT' },
+      { name: 'Delete Sample Type', code: 'SAMPLE_TYPE_DELETE' },
+
+      { name: 'View Micro Masters', code: 'MICRO_MASTER_VIEW' },
+      { name: 'Create Micro Master', code: 'MICRO_MASTER_CREATE' },
+      { name: 'Edit Micro Master', code: 'MICRO_MASTER_EDIT' },
+      { name: 'Delete Micro Master', code: 'MICRO_MASTER_DELETE' },
+
+      { name: 'View Outsource Labs', code: 'OUTSOURCE_LAB_VIEW' },
+      { name: 'Create Outsource Lab', code: 'OUTSOURCE_LAB_CREATE' },
+      { name: 'Edit Outsource Lab', code: 'OUTSOURCE_LAB_EDIT' },
+      { name: 'Delete Outsource Lab', code: 'OUTSOURCE_LAB_DELETE' },
+
+      { name: 'View Lab Approval Rights', code: 'LAB_APPROVAL_RIGHT_VIEW' },
+      { name: 'Create Lab Approval Right', code: 'LAB_APPROVAL_RIGHT_CREATE' },
+      { name: 'Edit Lab Approval Right', code: 'LAB_APPROVAL_RIGHT_EDIT' },
+      { name: 'Delete Lab Approval Right', code: 'LAB_APPROVAL_RIGHT_DELETE' },
     ],
   };
 

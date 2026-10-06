@@ -454,6 +454,22 @@ model Hospital {
   bedAmenityMappings BedAmenityMapping[]
   ipdAdmissions     IpdAdmission[]
 
+  // Lab / Radio Setup (Phase 2.4)
+  labDepartments            LabDepartment[]
+  investigations            Investigation[]
+  observations              Observation[]
+  investigationObservations InvestigationObservation[]
+  observationReferenceRanges ObservationReferenceRange[]
+  investigationTemplates    InvestigationTemplate[]
+  interpretationMasters     InterpretationMaster[]
+  helpObservations          HelpObservation[]
+  labComments               LabComment[]
+  sampleContainers          SampleContainer[]
+  sampleTypes               SampleType[]
+  microMasters              MicroMaster[]
+  outsourceLabs             OutsourceLab[]
+  labApprovalRights         LabApprovalRight[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -619,6 +635,7 @@ model HospitalUser {
   // Discount approvals where this user is the authority
   discountApprovals DiscountApproval[] @relation("DiscountAuthorityUser")
   proMappings       ProMapping[]
+  labApprovalRights LabApprovalRight[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1897,6 +1914,7 @@ model ServiceMaster {
   investigationOrders InvestigationOrder[]
   opdBillItems        OpdBillItem[]
   roomTypeDailyCharges RoomType[]        @relation("RoomTypeDailyCharge")
+  investigations      Investigation[]
 
   categoryRef    ServiceCategoryMaster? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   subCategoryRef ServiceSubCategory? @relation(fields: [subCategoryId], references: [id], onDelete: Restrict)
@@ -2451,4 +2469,401 @@ model IpdAdmission {
   @@index([tenantId, bedId, status])
   @@index([tenantId, roomTypeId, status])
   @@map("ipd_admissions")
+}
+
+// ============================================
+// LAB / RADIO SETUP (Phase 2.4)
+// ============================================
+
+enum LabCategory {
+  LAB
+  RADIO
+}
+
+enum LabResultType {
+  NUMERIC
+  TEXT
+  DROPDOWN
+}
+
+enum LabAgeUnit {
+  YEARS
+  MONTHS
+}
+
+enum LabRangeGender {
+  MALE
+  FEMALE
+  ANY
+}
+
+enum MicroMasterType {
+  ORGANISM
+  ANTIBIOTIC
+  STAINING
+  COLONY_COUNT
+}
+
+model LabDepartment {
+  id       String      @id @default(uuid())
+  tenantId String
+  category LabCategory
+
+  name           String
+  description    String?
+  allowTemplates Boolean @default(false)
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital       Hospital         @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  investigations Investigation[]
+  approvalRights LabApprovalRight[]
+
+  @@unique([tenantId, category, name])
+  @@unique([tenantId, id])
+  @@index([tenantId, category, isActive, deletedAt])
+  @@map("lab_departments")
+}
+
+model Investigation {
+  id       String @id @default(uuid())
+  tenantId String
+
+  departmentId String
+  serviceId    String
+  name         String
+  code         String
+
+  printOrder         Int     @default(0)
+  printSeparate      Boolean @default(false)
+  turnaroundTimeMins Int?
+  sampleTypeId       String?
+  isOutsourced       Boolean @default(false)
+  outsourceLabId     String?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital      Hospital           @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  department    LabDepartment      @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: Restrict)
+  service       ServiceMaster      @relation(fields: [tenantId, serviceId], references: [tenantId, id], onDelete: Restrict)
+  sampleType    SampleType?        @relation(fields: [tenantId, sampleTypeId], references: [tenantId, id], onDelete: Restrict)
+  outsourceLab  OutsourceLab?      @relation(fields: [tenantId, outsourceLabId], references: [tenantId, id], onDelete: Restrict)
+  observations  InvestigationObservation[]
+  templates     InvestigationTemplate[]
+  labComments   LabComment[]
+
+  @@unique([tenantId, serviceId])
+  @@unique([tenantId, code])
+  @@unique([tenantId, id])
+  @@index([tenantId, departmentId, isActive, deletedAt])
+  @@index([tenantId, sampleTypeId])
+  @@index([tenantId, outsourceLabId])
+  @@map("investigations")
+}
+
+model Observation {
+  id       String @id @default(uuid())
+  tenantId String
+
+  name             String
+  unit             String?
+  resultType       LabResultType @default(NUMERIC)
+  formulaExpression String?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital           Hospital                    @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  investigations     InvestigationObservation[]
+  referenceRanges    ObservationReferenceRange[]
+  interpretations    InterpretationMaster[]
+  helpObservations   HelpObservation[]
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, id])
+  @@index([tenantId, resultType, isActive, deletedAt])
+  @@map("observations")
+}
+
+model InvestigationObservation {
+  tenantId        String
+  investigationId String
+  observationId   String
+
+  displayOrder Int     @default(0)
+  isRequired   Boolean @default(true)
+  createdAt    DateTime @default(now())
+  createdBy    String?
+
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  investigation Investigation @relation(fields: [tenantId, investigationId], references: [tenantId, id], onDelete: Cascade)
+  observation   Observation   @relation(fields: [tenantId, observationId], references: [tenantId, id], onDelete: Restrict)
+
+  @@id([tenantId, investigationId, observationId])
+  @@index([tenantId, investigationId, displayOrder], map: "investigation_observations_tenantId_investigationId_displayOrde")
+  @@index([tenantId, observationId])
+  @@map("investigation_observations")
+}
+
+model ObservationReferenceRange {
+  id            String @id @default(uuid())
+  tenantId      String
+  observationId String
+
+  gender      LabRangeGender @default(ANY)
+  minAge      Int?
+  maxAge      Int?
+  ageUnit     LabAgeUnit     @default(YEARS)
+  minValue    Decimal?       @db.Decimal(12, 4)
+  maxValue    Decimal?       @db.Decimal(12, 4)
+  panicLow    Decimal?       @db.Decimal(12, 4)
+  panicHigh   Decimal?       @db.Decimal(12, 4)
+  description String?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital    Hospital    @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  observation Observation @relation(fields: [tenantId, observationId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, observationId, gender, ageUnit, isActive], map: "observation_reference_ranges_tenantId_observationId_gender_ageU")
+  @@map("observation_reference_ranges")
+}
+
+model InvestigationTemplate {
+  id       String @id @default(uuid())
+  tenantId String
+
+  investigationId String
+  title           String
+  bodyHtml        String
+  isDefault       Boolean @default(false)
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  investigation Investigation @relation(fields: [tenantId, investigationId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, investigationId, title])
+  @@unique([tenantId, id])
+  @@index([tenantId, investigationId, isDefault, isActive], map: "investigation_templates_tenantId_investigationId_isDefault_isAc")
+  @@map("investigation_templates")
+}
+
+model InterpretationMaster {
+  id       String @id @default(uuid())
+  tenantId String
+
+  observationId String?
+  title         String?
+  bodyHtml      String
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital    Hospital     @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  observation Observation? @relation(fields: [tenantId, observationId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, observationId, isActive])
+  @@map("interpretation_masters")
+}
+
+model HelpObservation {
+  id       String @id @default(uuid())
+  tenantId String
+
+  observationId String
+  helpText      String
+  isDefault     Boolean @default(false)
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital    Hospital    @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  observation Observation @relation(fields: [tenantId, observationId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, observationId, isDefault, isActive])
+  @@map("help_observations")
+}
+
+model LabComment {
+  id       String @id @default(uuid())
+  tenantId String
+
+  investigationId String?
+  commentText     String
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital      Hospital       @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  investigation Investigation? @relation(fields: [tenantId, investigationId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, investigationId, isActive])
+  @@map("lab_comments")
+}
+
+model SampleContainer {
+  id       String @id @default(uuid())
+  tenantId String
+
+  name             String
+  color            String?
+  sampleQuantityMl Decimal? @db.Decimal(8, 2)
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital    Hospital     @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  sampleTypes SampleType[]
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, id])
+  @@index([tenantId, isActive, deletedAt])
+  @@map("sample_containers")
+}
+
+model SampleType {
+  id       String @id @default(uuid())
+  tenantId String
+
+  name        String
+  containerId String
+  archiveDays Int?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital       Hospital        @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  container      SampleContainer @relation(fields: [tenantId, containerId], references: [tenantId, id], onDelete: Restrict)
+  investigations Investigation[]
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, id])
+  @@index([tenantId, containerId, isActive, deletedAt])
+  @@map("sample_types")
+}
+
+model MicroMaster {
+  id       String          @id @default(uuid())
+  tenantId String
+  type     MicroMasterType
+
+  name String
+  code String?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, type, name])
+  @@unique([tenantId, id])
+  @@index([tenantId, type, isActive, deletedAt])
+  @@map("micro_masters")
+}
+
+model OutsourceLab {
+  id       String @id @default(uuid())
+  tenantId String
+
+  name          String
+  address       String?
+  contactPerson String?
+  mobile        String?
+  email         String?
+  defaultTat    Int?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital      Hospital        @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  investigations Investigation[]
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, id])
+  @@index([tenantId, isActive, deletedAt])
+  @@map("outsource_labs")
+}
+
+model LabApprovalRight {
+  id       String @id @default(uuid())
+  tenantId String
+
+  userId       String
+  departmentId String?
+  canSignLabReports   Boolean @default(false)
+  canSignRadioReports Boolean @default(false)
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital   Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  user       HospitalUser  @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: Cascade)
+  department LabDepartment? @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, userId, departmentId])
+  @@unique([tenantId, id])
+  @@index([tenantId, userId, isActive, deletedAt])
+  @@index([tenantId, departmentId, isActive])
+  @@map("lab_approval_rights")
 }
