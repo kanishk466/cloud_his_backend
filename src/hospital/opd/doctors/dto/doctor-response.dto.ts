@@ -33,12 +33,34 @@ export class DoctorProfileResponseDto {
 
   // Professional details
   specialization!: string;
+  specializationId!: string | null;
   qualifications!: string | null;
+  title!: string | null;
+  degree!: string | null;
+  designation!: string | null;
+  medicalRegNo!: string | null;
+  doctorType!: string;
+  doctorShare!: number | null;
+  discountApplicable!: boolean;
+  emergencyAvailable!: boolean;
+  digitalSignatureUrl!: string | null;
+  prescriptionHeader1!: string | null;
+  prescriptionHeader2!: string | null;
+  taxPin!: string | null;
   consultationFee!: number;
   slotDurationMins!: number;
   bufferTimeMins!: number;
   maxPatientsPerDay!: number | null;
+  maxPatientsPerSlot!: number | null;
   isActive!: boolean;
+
+  // OPD visit validation rules
+  visitConfig!: {
+    freeFollowupDays: number;
+    maxFreeVisits: number;
+    revisitChargePercent: number;
+    validityAfterPrescription: number | null;
+  } | null;
 
   // Availability (7 days)
   availability!: AvailabilityResponseDto[];
@@ -62,12 +84,35 @@ export class DoctorProfileResponseDto {
     dto.mobile = user?.mobile ?? null;
 
     dto.specialization = entity.specialization;
+    dto.specializationId = entity.specializationId ?? null;
     dto.qualifications = entity.qualifications;
+    dto.title = entity.title ?? null;
+    dto.degree = entity.degree ?? null;
+    dto.designation = entity.designation ?? null;
+    dto.medicalRegNo = entity.medicalRegNo ?? null;
+    dto.doctorType = entity.doctorType ?? 'FULL_TIME';
+    dto.doctorShare = entity.doctorShare != null ? Number(entity.doctorShare) : null;
+    dto.discountApplicable = entity.discountApplicable ?? true;
+    dto.emergencyAvailable = entity.emergencyAvailable ?? false;
+    dto.digitalSignatureUrl = entity.digitalSignatureUrl ?? null;
+    dto.prescriptionHeader1 = entity.prescriptionHeader1 ?? null;
+    dto.prescriptionHeader2 = entity.prescriptionHeader2 ?? null;
+    dto.taxPin = entity.taxPin ?? null;
     dto.consultationFee = Number(entity.consultationFee);
     dto.slotDurationMins = entity.slotDurationMins;
     dto.bufferTimeMins = entity.bufferTimeMins;
     dto.maxPatientsPerDay = entity.maxPatientsPerDay;
+    dto.maxPatientsPerSlot = entity.maxPatientsPerSlot ?? null;
     dto.isActive = entity.isActive;
+
+    dto.visitConfig = entity.visitConfig
+      ? {
+          freeFollowupDays: entity.visitConfig.freeFollowupDays,
+          maxFreeVisits: entity.visitConfig.maxFreeVisits,
+          revisitChargePercent: Number(entity.visitConfig.revisitChargePercent),
+          validityAfterPrescription: entity.visitConfig.validityAfterPrescription ?? null,
+        }
+      : null;
 
     dto.availability = (entity.availabilities ?? []).map((a: any) =>
       DoctorProfileResponseDto.mapAvailability(a),

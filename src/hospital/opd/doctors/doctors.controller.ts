@@ -9,6 +9,7 @@ import { CreateDoctorProfileDto } from './dto/create-doctor-profile.dto';
 import { UpdateDoctorProfileDto } from './dto/update-doctor-profile.dto';
 import { SetAvailabilityDto } from './dto/set-availability.dto';
 import { CreateLeaveBlockDto } from './dto/create-leave-block.dto';
+import { SetVisitConfigDto } from './dto/set-visit-config.dto';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
 import { CurrentTenant } from '../../core/decorators/current-tenant.decorator';
 
@@ -90,6 +91,30 @@ export class DoctorsController {
     @CurrentTenant() tenantId: string,
   ) {
     return this.doctorsService.getAvailability(tenantId, id);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  OPD VISIT VALIDATION
+  // ═══════════════════════════════════════════════════════════════
+
+  // POST /opd/doctors/:id/visit-config — Set follow-up / revisit rules
+  @Post(':id/visit-config')
+  @HttpCode(HttpStatus.OK)
+  async setVisitConfig(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetVisitConfigDto,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.doctorsService.setVisitConfig(tenantId, id, dto);
+  }
+
+  // GET /opd/doctors/:id/visit-config — Get follow-up / revisit rules
+  @Get(':id/visit-config')
+  async getVisitConfig(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.doctorsService.getVisitConfig(tenantId, id);
   }
 
   // ═══════════════════════════════════════════════════════════════

@@ -11,6 +11,7 @@ import { CreateDoctorProfileDto } from './dto/create-doctor-profile.dto';
 import { UpdateDoctorProfileDto } from './dto/update-doctor-profile.dto';
 import { SetAvailabilityDto } from './dto/set-availability.dto';
 import { CreateLeaveBlockDto } from './dto/create-leave-block.dto';
+import { SetVisitConfigDto } from './dto/set-visit-config.dto';
 import {
   DoctorProfileResponseDto,
   DoctorListResponseDto,
@@ -49,11 +50,25 @@ export class DoctorsService {
       tenantId,
       hospitalUserId: dto.hospitalUserId,
       specialization: dto.specialization,
+      specializationId: dto.specializationId,
       qualifications: dto.qualifications,
+      title: dto.title,
+      degree: dto.degree,
+      designation: dto.designation,
+      medicalRegNo: dto.medicalRegNo,
       consultationFee: dto.consultationFee,
+      doctorType: dto.doctorType,
+      doctorShare: dto.doctorShare,
+      discountApplicable: dto.discountApplicable,
+      emergencyAvailable: dto.emergencyAvailable,
+      digitalSignatureUrl: dto.digitalSignatureUrl,
+      prescriptionHeader1: dto.prescriptionHeader1,
+      prescriptionHeader2: dto.prescriptionHeader2,
+      taxPin: dto.taxPin,
       slotDurationMins: dto.slotDurationMins,
       bufferTimeMins: dto.bufferTimeMins,
       maxPatientsPerDay: dto.maxPatientsPerDay,
+      maxPatientsPerSlot: dto.maxPatientsPerSlot,
       isActive: dto.isActive,
     });
 
@@ -110,15 +125,33 @@ export class DoctorsService {
       throw new NotFoundException(DOCTOR_ERRORS.PROFILE_NOT_FOUND);
     }
 
-    const updated = await this.doctorsRepository.update(id, {
-      specialization: dto.specialization,
-      qualifications: dto.qualifications,
-      consultationFee: dto.consultationFee,
-      slotDurationMins: dto.slotDurationMins,
-      bufferTimeMins: dto.bufferTimeMins,
-      maxPatientsPerDay: dto.maxPatientsPerDay,
-      isActive: dto.isActive,
-    });
+    const updated = await this.doctorsRepository.update(
+      id,
+      {
+        specialization: dto.specialization,
+        specializationId: dto.specializationId,
+        qualifications: dto.qualifications,
+        title: dto.title,
+        degree: dto.degree,
+        designation: dto.designation,
+        medicalRegNo: dto.medicalRegNo,
+        consultationFee: dto.consultationFee,
+        doctorType: dto.doctorType,
+        doctorShare: dto.doctorShare,
+        discountApplicable: dto.discountApplicable,
+        emergencyAvailable: dto.emergencyAvailable,
+        digitalSignatureUrl: dto.digitalSignatureUrl,
+        prescriptionHeader1: dto.prescriptionHeader1,
+        prescriptionHeader2: dto.prescriptionHeader2,
+        taxPin: dto.taxPin,
+        slotDurationMins: dto.slotDurationMins,
+        bufferTimeMins: dto.bufferTimeMins,
+        maxPatientsPerDay: dto.maxPatientsPerDay,
+        maxPatientsPerSlot: dto.maxPatientsPerSlot,
+        isActive: dto.isActive,
+      },
+      tenantId,
+    );
 
     return DoctorProfileResponseDto.fromEntity(updated);
   }
@@ -190,6 +223,52 @@ export class DoctorsService {
       slotDurationMins: doctor.slotDurationMins,
       bufferTimeMins: doctor.bufferTimeMins,
       schedule: availability.map((a) => DoctorProfileResponseDto.mapAvailability(a)),
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  OPD VISIT VALIDATION (follow-up rules)
+  // ═══════════════════════════════════════════════════════════════
+
+  // ─── SET VISIT CONFIG ───────────────────────────────────────────
+  async setVisitConfig(
+    tenantId: string,
+    doctorProfileId: string,
+    dto: SetVisitConfigDto,
+  ): Promise<DoctorProfileResponseDto> {
+    const doctor = await this.doctorsRepository.findById(tenantId, doctorProfileId);
+    if (!doctor) {
+      throw new NotFoundException(DOCTOR_ERRORS.PROFILE_NOT_FOUND);
+    }
+
+    await this.doctorsRepository.upsertVisitConfig(tenantId, doctorProfileId, {
+      freeFollowupDays: dto.freeFollowupDays,
+      maxFreeVisits: dto.maxFreeVisits,
+      revisitChargePercent: dto.revisitChargePercent,
+      validityAfterPrescription: dto.validityAfterPrescription ?? null,
+    });
+
+    const refreshed = await this.doctorsRepository.findById(tenantId, doctorProfileId);
+    return DoctorProfileResponseDto.fromEntity(refreshed);
+  }
+
+  // ─── GET VISIT CONFIG ───────────────────────────────────────────
+  async getVisitConfig(tenantId: string, doctorProfileId: string) {
+    const doctor = await this.doctorsRepository.findById(tenantId, doctorProfileId);
+    if (!doctor) {
+      throw new NotFoundException(DOCTOR_ERRORS.PROFILE_NOT_FOUND);
+    }
+    const config = await this.doctorsRepository.getVisitConfig(tenantId, doctorProfileId);
+    return {
+      doctorProfileId,
+      config: config
+        ? {
+            freeFollowupDays: config.freeFollowupDays,
+            maxFreeVisits: config.maxFreeVisits,
+            revisitChargePercent: Number(config.revisitChargePercent),
+            validityAfterPrescription: config.validityAfterPrescription,
+          }
+        : null,
     };
   }
 

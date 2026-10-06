@@ -16,6 +16,10 @@ import { ServiceMasterModule } from './service-master/service-master.module';
 import { ServiceItemTypeModule } from './service-item-type/service-item-type.module';
 import { ServiceCategoryModule } from './service-category/service-category.module';
 import { ServiceSubCategoryModule } from './service-sub-category/service-sub-category.module';
+import { ClinicalDepartmentModule } from './clinical-department/clinical-department.module';
+import { DoctorSpecializationModule } from './doctor-specialization/doctor-specialization.module';
+import { ReferDoctorModule } from './refer-doctor/refer-doctor.module';
+import { ProMappingModule } from './pro-mapping/pro-mapping.module';
 
 @Module({
   imports: [
@@ -24,6 +28,10 @@ import { ServiceSubCategoryModule } from './service-sub-category/service-sub-cat
     ServiceCategoryModule,
     ServiceSubCategoryModule,
     ServiceMasterModule,
+    ClinicalDepartmentModule,
+    DoctorSpecializationModule,
+    ReferDoctorModule,
+    ProMappingModule,
     TariffModule,
     PanelModule,
   ],
@@ -43,6 +51,10 @@ import { ServiceSubCategoryModule } from './service-sub-category/service-sub-cat
     ServiceCategoryModule,
     ServiceSubCategoryModule,
     ServiceMasterModule,
+    ClinicalDepartmentModule,
+    DoctorSpecializationModule,
+    ReferDoctorModule,
+    ProMappingModule,
     TariffModule,
     PanelModule,
   ],

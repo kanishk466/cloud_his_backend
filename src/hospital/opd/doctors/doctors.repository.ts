@@ -13,6 +13,10 @@ const doctorWithRelations = {
       status: true,
     },
   },
+  specializationRef: {
+    select: { id: true, name: true, clinicalDepartment: { select: { id: true, name: true } } },
+  },
+  visitConfig: true,
   availabilities: {
     orderBy: { dayOfWeek: 'asc' as const },
   },
@@ -36,11 +40,25 @@ export class DoctorsRepository {
     tenantId: string;
     hospitalUserId: string;
     specialization: string;
+    specializationId?: string;
     qualifications?: string;
+    title?: string;
+    degree?: string;
+    designation?: string;
+    medicalRegNo?: string;
     consultationFee: number;
+    doctorType?: any;
+    doctorShare?: number;
+    discountApplicable?: boolean;
+    emergencyAvailable?: boolean;
+    digitalSignatureUrl?: string;
+    prescriptionHeader1?: string;
+    prescriptionHeader2?: string;
+    taxPin?: string;
     slotDurationMins?: number;
     bufferTimeMins?: number;
     maxPatientsPerDay?: number;
+    maxPatientsPerSlot?: number;
     isActive?: boolean;
   }) {
     return this.prisma.doctorProfile.create({
@@ -48,11 +66,25 @@ export class DoctorsRepository {
         tenantId: data.tenantId,
         hospitalUserId: data.hospitalUserId,
         specialization: data.specialization,
+        specializationId: data.specializationId,
         qualifications: data.qualifications,
+        title: data.title,
+        degree: data.degree,
+        designation: data.designation,
+        medicalRegNo: data.medicalRegNo,
         consultationFee: data.consultationFee,
+        doctorType: data.doctorType ?? 'FULL_TIME',
+        doctorShare: data.doctorShare,
+        discountApplicable: data.discountApplicable ?? true,
+        emergencyAvailable: data.emergencyAvailable ?? false,
+        digitalSignatureUrl: data.digitalSignatureUrl,
+        prescriptionHeader1: data.prescriptionHeader1,
+        prescriptionHeader2: data.prescriptionHeader2,
+        taxPin: data.taxPin,
         slotDurationMins: data.slotDurationMins ?? 15,
         bufferTimeMins: data.bufferTimeMins ?? 0,
         maxPatientsPerDay: data.maxPatientsPerDay,
+        maxPatientsPerSlot: data.maxPatientsPerSlot,
         isActive: data.isActive ?? true,
       },
       include: doctorWithRelations,
@@ -129,11 +161,51 @@ export class DoctorsRepository {
   }
 
   // ─── UPDATE DOCTOR PROFILE ──────────────────────────────────────
-  async update(id: string, data: Record<string, any>) {
+  async update(id: string, data: Record<string, any>, tenantId?: string) {
     return this.prisma.doctorProfile.update({
-      where: { id },
+      where: tenantId ? { tenantId_id: { id, tenantId } } : { id },
       data,
       include: doctorWithRelations,
+    });
+  }
+
+  // ─── UPSERT OPD VISIT CONFIG ────────────────────────────────────
+  async upsertVisitConfig(
+    tenantId: string,
+    doctorProfileId: string,
+    data: {
+      freeFollowupDays?: number;
+      maxFreeVisits?: number;
+      revisitChargePercent?: number;
+      validityAfterPrescription?: number | null;
+    },
+  ) {
+    const existing = await this.prisma.opdVisitConfig.findFirst({
+      where: { tenantId, doctorProfileId },
+    });
+
+    if (existing) {
+      return this.prisma.opdVisitConfig.update({
+        where: { id: existing.id },
+        data,
+      });
+    }
+
+    return this.prisma.opdVisitConfig.create({
+      data: {
+        tenantId,
+        doctorProfileId,
+        freeFollowupDays: data.freeFollowupDays ?? 0,
+        maxFreeVisits: data.maxFreeVisits ?? 0,
+        revisitChargePercent: data.revisitChargePercent ?? 100,
+        validityAfterPrescription: data.validityAfterPrescription ?? null,
+      },
+    });
+  }
+
+  async getVisitConfig(tenantId: string, doctorProfileId: string) {
+    return this.prisma.opdVisitConfig.findFirst({
+      where: { tenantId, doctorProfileId },
     });
   }
 
