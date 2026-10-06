@@ -13,6 +13,7 @@ import { SearchModule } from './Platform/search/search.module';
 import { HospitalModule } from './hospital/hospital.module';
 import { MailModule } from './Platform/mail/mail.module';
 import { NotificationsModule } from './Platform/notifications/notifications.module';
+import { MasterConfigModule } from './modules/master-config/master-config.module';
 
 
 @Module({
@@ -35,6 +36,7 @@ import { NotificationsModule } from './Platform/notifications/notifications.modu
     HospitalModule,
     MailModule,
     NotificationsModule,
+    MasterConfigModule,
   ],
 })
 export class AppModule { }

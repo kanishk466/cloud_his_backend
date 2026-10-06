@@ -425,8 +425,18 @@ model Hospital {
   panels              Panel[]
 
   serviceMasters    ServiceMaster[]
+  serviceCategories ServiceCategoryMaster[]
+  serviceSubCategories ServiceSubCategory[]
   tariffMasters     TariffMaster[]
   panelServiceRates PanelServiceRate[]
+
+  // Basic Master — Geo (hybrid: global rows have tenantId = null)
+  // Basic Master (Phase 1.1 / 1.2)
+  banks            Bank[]
+  patientDocuments PatientDocument[]
+  discountReasons   DiscountReason[]
+  discountApprovals DiscountApproval[]
+  discountAuditLogs DiscountAuditLog[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -554,7 +564,6 @@ model ShiftMaster {
 model HospitalUser {
   id       String @id @default(uuid())
   tenantId String
-
   userType HospitalUserType @default(REGULAR_USER)
 
   firstName       String
@@ -590,6 +599,9 @@ model HospitalUser {
   permissions   UserModuleFeaturePermission[]
   managedStaff  StaffProfile[]                @relation("ReportingManager")
   doctorProfile DoctorProfile?
+
+  // Discount approvals where this user is the authority
+  discountApprovals DiscountApproval[] @relation("DiscountAuthorityUser")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1296,6 +1308,17 @@ model OpdBillItem {
   itemName String // Description of the service
   category String // 'Consultation', 'Lab', 'Pharmacy', 'Procedure'
 
+  // ─── SERVICE SNAPSHOT (Phase 2.1) ───────────────────────────────
+  serviceMasterId      String?
+  cptCode              String?
+  isInsuranceClaimItem Boolean?
+  serviceDiscountable  Boolean?
+  serviceRateEditable  Boolean?
+  serviceStoreType     ServiceStoreType?
+  serviceItemTypeCode  String?
+  servicePrintOrder    Int?
+  billLineOrder        Int @default(0)
+
   // ─── FINANCIALS ─────────────────────────────────────────────────
   discountPercent Decimal  @default(0) @db.Decimal(5, 2)
   discountAmount  Decimal  @default(0) @db.Decimal(10, 2)
@@ -1307,13 +1330,15 @@ model OpdBillItem {
   totalAmount Decimal @db.Decimal(10, 2) // quantity * unitPrice
 
   // ─── RELATIONS ──────────────────────────────────────────────────
-  hospital Hospital @relation(fields: [tenantId], references: [tenantId])
-  bill     OpdBill  @relation(fields: [billId], references: [id], onDelete: Cascade)
+  hospital      Hospital       @relation(fields: [tenantId], references: [tenantId])
+  bill          OpdBill        @relation(fields: [billId], references: [id], onDelete: Cascade)
+  serviceMaster ServiceMaster? @relation(fields: [serviceMasterId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([tenantId, billId])
+  @@index([tenantId, serviceMasterId])
   @@map("opd_bill_items")
 }
 
@@ -1586,6 +1611,93 @@ enum ServiceCategory {
 }
 
 // ============================================
+// SERVICES SETUP HIERARCHY (Phase 2.1)
+// ============================================
+
+enum ServiceConfigType {
+  ADMISSION
+  INVESTIGATION
+  OPD
+  IPD
+  OT
+  EMERGENCY
+  PHARMACY
+  PROCEDURE
+  OTHER
+}
+
+enum ServiceStoreType {
+  NONE
+  MEDICAL
+  GENERAL
+}
+
+/// System-defined item classification (seeded). Global, not tenant-scoped.
+model ServiceItemType {
+  id        String    @id @default(uuid())
+  code      String    @unique
+  name      String
+  isSystem  Boolean   @default(false)
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  services ServiceMaster[]
+
+  @@index([isActive, deletedAt])
+  @@map("service_item_types")
+}
+
+model ServiceCategoryMaster {
+  id           String            @id @default(uuid())
+  tenantId     String
+  configType   ServiceConfigType
+  categoryName String
+  storeType    ServiceStoreType  @default(NONE)
+  abbreviation String?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
+
+  hospital      Hospital             @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  subCategories ServiceSubCategory[]
+  services      ServiceMaster[]
+
+  @@unique([tenantId, configType, categoryName])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, configType, isActive])
+  @@map("service_categories")
+}
+
+model ServiceSubCategory {
+  id              String  @id @default(uuid())
+  tenantId        String
+  categoryId      String
+  subCategoryName String
+  displayName     String?
+  printOrder      Int     @default(0)
+  abbreviation    String?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
+
+  hospital Hospital        @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  category ServiceCategoryMaster @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  services ServiceMaster[]
+
+  @@unique([categoryId, subCategoryName])
+  @@index([tenantId, categoryId, deletedAt])
+  @@index([tenantId, categoryId, printOrder])
+  @@map("service_sub_categories")
+}
+
+// ============================================
 // 1. SERVICE MASTER (Hospital ki saari services)
 // ============================================
 model ServiceMaster {
@@ -1594,7 +1706,24 @@ model ServiceMaster {
 
   serviceCode String // e.g., LAB-001
   serviceName String // e.g., "Complete Blood Count (CBC)"
-  category    ServiceCategory
+  category    ServiceCategory // legacy enum — retained for backward compat
+
+  // ─── Hierarchy (Phase 2.1) ─────────────────────────────────────
+  categoryId    String?
+  subCategoryId String?
+  itemTypeId    String?
+
+  displayName          String?
+  cptCode              String? // CPT / item code
+  isInsuranceClaimItem Boolean @default(false)
+  rateEditable         Boolean @default(true)
+  discountable         Boolean @default(true)
+  purchaseTaxPct       Decimal @default(0) @db.Decimal(5, 2)
+  saleTaxPct           Decimal @default(0) @db.Decimal(5, 2)
+  itemUom              String?
+  applicableGender     Gender?
+  minAge               Int?
+  maxAge               Int?
 
   // Hospital ka Standard/Base Rate
   baseRate Decimal @db.Decimal(10, 2)
@@ -1605,12 +1734,20 @@ model ServiceMaster {
   hospital            Hospital             @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
   panelRates          PanelServiceRate[] // Linking to tariff rates
   investigationOrders InvestigationOrder[]
+  opdBillItems        OpdBillItem[]
+
+  categoryRef    ServiceCategoryMaster? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  subCategoryRef ServiceSubCategory? @relation(fields: [subCategoryId], references: [id], onDelete: Restrict)
+  itemTypeRef    ServiceItemType?    @relation(fields: [itemTypeId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId, serviceCode])
+  @@unique([tenantId, id])
   @@index([tenantId, category])
+  @@index([tenantId, categoryId, subCategoryId])
+  @@index([tenantId, itemTypeId, isActive])
   @@map("service_masters")
 }
 
@@ -1671,4 +1808,252 @@ model PanelServiceRate {
   @@unique([tariffId, serviceId])
   @@index([tenantId, tariffId])
   @@map("panel_service_rates")
+}
+
+// ============================================
+// BASIC MASTER — GEO (Phase 1.1)
+// Aligned with DB: geo masters are GLOBAL (no tenantId), keyed by code.
+// ============================================
+
+model Country {
+  id             String  @id @default(uuid())
+  countryCode    String  @unique
+  countryName    String
+  currency       String?
+  currencySymbol String?
+  isBaseCurrency Boolean @default(false)
+  phoneCode      String?
+  isActive       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  states State[]
+
+  @@index([countryCode])
+  @@index([isActive])
+  @@map("countries")
+}
+
+model State {
+  id         String  @id @default(uuid())
+  stateCode  String
+  stateName  String
+  countryId  String
+  isActive   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  country   Country    @relation(fields: [countryId], references: [id], onDelete: Restrict)
+  districts District[]
+
+  @@unique([countryId, stateCode])
+  @@index([countryId])
+  @@index([countryId, isActive])
+  @@index([isActive])
+  @@map("states")
+}
+
+model District {
+  id           String  @id @default(uuid())
+  districtCode String
+  districtName String
+  stateId      String
+  isActive     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  state  State  @relation(fields: [stateId], references: [id], onDelete: Restrict)
+  cities City[]
+
+  @@unique([stateId, districtCode])
+  @@index([stateId])
+  @@index([stateId, isActive])
+  @@index([isActive])
+  @@map("districts")
+}
+
+model City {
+  id         String  @id @default(uuid())
+  cityCode   String
+  cityName   String
+  districtId String
+  isActive   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  district District @relation(fields: [districtId], references: [id], onDelete: Restrict)
+
+  @@unique([districtId, cityCode])
+  @@index([districtId])
+  @@index([districtId, isActive])
+  @@index([isActive])
+  @@map("cities")
+}
+
+model Bank {
+  id        String   @id @default(uuid())
+  tenantId  String
+  bankName  String
+  mdrPercent Decimal @default(0) @db.Decimal(5, 2)
+  isActive  Boolean @default(true)
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Restrict)
+
+  @@unique([tenantId, bankName])
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, isActive])
+  @@map("banks")
+}
+
+enum DocumentApplicableFor {
+  OPD
+  IPD
+  BOTH
+}
+
+model PatientDocument {
+  id               String @id @default(uuid())
+  tenantId         String
+  documentName     String
+  isMandatory      Boolean @default(false)
+  applicableFor    DocumentApplicableFor @default(BOTH)
+  allowedFileTypes String[] @default(["pdf", "jpg", "jpeg", "png"])
+  maxFileSizeMB    Int @default(5)
+  sortOrder        Int @default(0)
+  isActive         Boolean @default(true)
+  deletedAt        DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdBy        String?
+  updatedBy        String?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Restrict)
+
+  @@unique([tenantId, documentName])
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, isActive])
+  @@index([tenantId, applicableFor])
+  @@map("patient_document_types")
+}
+
+// ============================================
+// BASIC MASTER — DISCOUNT (Phase 1.2)
+// Aligned with DB design.
+// ============================================
+
+enum DiscountApplicableType {
+  OPD
+  IPD
+  BOTH
+}
+
+// ─── Discount Reason Master ──────────────────────────────────────
+model DiscountReason {
+  id       String @id @default(uuid())
+  tenantId String
+
+  code                   String
+  reason                 String
+  applicableType         DiscountApplicableType @default(BOTH)
+  defaultDiscountPct     Decimal? @db.Decimal(5, 2)
+  approvalThresholdPct   Decimal? @db.Decimal(5, 2)
+  requiresApproval       Boolean  @default(false)
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Restrict)
+
+  auditLogs DiscountAuditLog[]
+
+  @@unique([tenantId, code])
+  @@unique([tenantId, reason, deletedAt])
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, applicableType, isActive])
+  @@map("discount_reasons")
+}
+
+// ─── Discount Approval Master (authority + limits) ───────────────
+model DiscountApproval {
+  id       String @id @default(uuid())
+  tenantId String
+
+  code            String
+  authorityName   String
+  hospitalUserId  String?
+
+  applicableType   DiscountApplicableType @default(BOTH)
+  maxDiscountPct   Decimal  @db.Decimal(5, 2)
+  maxDiscountAmount Decimal? @db.Decimal(12, 2)
+  isUnlimited      Boolean  @default(false)
+  requiresReason   Boolean  @default(true)
+  priority         Int      @default(0)
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Restrict)
+  authorityUser HospitalUser? @relation("DiscountAuthorityUser", fields: [hospitalUserId], references: [id], onDelete: SetNull)
+  auditLogs     DiscountAuditLog[]
+
+  @@unique([tenantId, code])
+  @@unique([tenantId, authorityName, deletedAt])
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, applicableType, isActive])
+  @@index([tenantId, hospitalUserId])
+  @@map("discount_approval_authorities")
+}
+
+// ─── Discount Audit Log ──────────────────────────────────────────
+model DiscountAuditLog {
+  id       String @id @default(uuid())
+  tenantId String
+
+  module          DiscountApplicableType
+  referenceType   String
+  referenceId     String
+  discountReasonId String
+  approvalAuthorityId String?
+  discountPct     Decimal @db.Decimal(5, 2)
+  discountAmount  Decimal @db.Decimal(12, 2)
+  originalAmount  Decimal @db.Decimal(12, 2)
+  finalAmount     Decimal @db.Decimal(12, 2)
+  approvedByUserId String?
+  appliedByUserId  String
+  remarks          String?
+
+  createdAt DateTime @default(now())
+
+  hospital            Hospital           @relation(fields: [tenantId], references: [tenantId], onDelete: Restrict)
+  discountReason      DiscountReason     @relation(fields: [discountReasonId], references: [id], onDelete: Restrict)
+  approvalAuthority   DiscountApproval?  @relation(fields: [approvalAuthorityId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, discountReasonId])
+  @@index([tenantId, approvalAuthorityId])
+  @@index([tenantId, appliedByUserId])
+  @@index([tenantId, referenceType, referenceId])
+  @@map("discount_audit_logs")
 }

@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { seedBasicMaster, seedBanksForTenant, seedPatientDocumentsForTenant, seedDiscountsForTenant } from '../src/modules/master-config/basic-master/seed/basic-master.seed';
 
 const prisma = new PrismaClient();
 
@@ -281,6 +282,72 @@ async function main() {
       { name: 'Manage Payment Modes', code: 'MASTER_PAYMENT_MODES' },
       { name: 'Manage Templates', code: 'MASTER_TEMPLATES' },
       { name: 'Backup & Restore', code: 'MASTER_BACKUP' },
+
+      // Phase 1.1 — Basic Master (Country / State / District / City / Bank / Patient Doc)
+      { name: 'View Countries', code: 'BASIC_MASTER_COUNTRY_VIEW' },
+      { name: 'Create Country', code: 'BASIC_MASTER_COUNTRY_CREATE' },
+      { name: 'Edit Country', code: 'BASIC_MASTER_COUNTRY_EDIT' },
+      { name: 'Delete Country', code: 'BASIC_MASTER_COUNTRY_DELETE' },
+
+      { name: 'View States', code: 'BASIC_MASTER_STATE_VIEW' },
+      { name: 'Create State', code: 'BASIC_MASTER_STATE_CREATE' },
+      { name: 'Edit State', code: 'BASIC_MASTER_STATE_EDIT' },
+      { name: 'Delete State', code: 'BASIC_MASTER_STATE_DELETE' },
+
+      { name: 'View Districts', code: 'BASIC_MASTER_DISTRICT_VIEW' },
+      { name: 'Create District', code: 'BASIC_MASTER_DISTRICT_CREATE' },
+      { name: 'Edit District', code: 'BASIC_MASTER_DISTRICT_EDIT' },
+      { name: 'Delete District', code: 'BASIC_MASTER_DISTRICT_DELETE' },
+
+      { name: 'View Cities', code: 'BASIC_MASTER_CITY_VIEW' },
+      { name: 'Create City', code: 'BASIC_MASTER_CITY_CREATE' },
+      { name: 'Edit City', code: 'BASIC_MASTER_CITY_EDIT' },
+      { name: 'Delete City', code: 'BASIC_MASTER_CITY_DELETE' },
+
+      { name: 'View Banks', code: 'BASIC_MASTER_BANK_VIEW' },
+      { name: 'Create Bank', code: 'BASIC_MASTER_BANK_CREATE' },
+      { name: 'Edit Bank', code: 'BASIC_MASTER_BANK_EDIT' },
+      { name: 'Delete Bank', code: 'BASIC_MASTER_BANK_DELETE' },
+
+      { name: 'View Patient Documents', code: 'BASIC_MASTER_PATIENT_DOC_VIEW' },
+      { name: 'Create Patient Document', code: 'BASIC_MASTER_PATIENT_DOC_CREATE' },
+      { name: 'Edit Patient Document', code: 'BASIC_MASTER_PATIENT_DOC_EDIT' },
+      { name: 'Delete Patient Document', code: 'BASIC_MASTER_PATIENT_DOC_DELETE' },
+
+      // Phase 1.2 — Discount Reason / Approval
+      { name: 'View Discount Reasons', code: 'BASIC_MASTER_DISCOUNT_REASON_VIEW' },
+      { name: 'Create Discount Reason', code: 'BASIC_MASTER_DISCOUNT_REASON_CREATE' },
+      { name: 'Edit Discount Reason', code: 'BASIC_MASTER_DISCOUNT_REASON_EDIT' },
+      { name: 'Delete Discount Reason', code: 'BASIC_MASTER_DISCOUNT_REASON_DELETE' },
+
+      { name: 'View Discount Approvals', code: 'BASIC_MASTER_DISCOUNT_APPROVAL_VIEW' },
+      { name: 'Create Discount Approval', code: 'BASIC_MASTER_DISCOUNT_APPROVAL_CREATE' },
+      { name: 'Edit Discount Approval', code: 'BASIC_MASTER_DISCOUNT_APPROVAL_EDIT' },
+      { name: 'Delete Discount Approval', code: 'BASIC_MASTER_DISCOUNT_APPROVAL_DELETE' },
+
+      // Special permission — granted to roles that may approve discounts
+      { name: 'Can Approve Discount', code: 'CAN_APPROVE_DISCOUNT' },
+
+      // Phase 2.1 — Services Setup hierarchy
+      { name: 'View Service Item Types', code: 'SERVICE_ITEM_TYPE_VIEW' },
+      { name: 'Create Service Item Type', code: 'SERVICE_ITEM_TYPE_CREATE' },
+      { name: 'Edit Service Item Type', code: 'SERVICE_ITEM_TYPE_EDIT' },
+      { name: 'Delete Service Item Type', code: 'SERVICE_ITEM_TYPE_DELETE' },
+
+      { name: 'View Service Categories', code: 'SERVICE_CATEGORY_VIEW' },
+      { name: 'Create Service Category', code: 'SERVICE_CATEGORY_CREATE' },
+      { name: 'Edit Service Category', code: 'SERVICE_CATEGORY_EDIT' },
+      { name: 'Delete Service Category', code: 'SERVICE_CATEGORY_DELETE' },
+
+      { name: 'View Service Sub Categories', code: 'SERVICE_SUB_CATEGORY_VIEW' },
+      { name: 'Create Service Sub Category', code: 'SERVICE_SUB_CATEGORY_CREATE' },
+      { name: 'Edit Service Sub Category', code: 'SERVICE_SUB_CATEGORY_EDIT' },
+      { name: 'Delete Service Sub Category', code: 'SERVICE_SUB_CATEGORY_DELETE' },
+
+      { name: 'View Services', code: 'SERVICE_MASTER_VIEW' },
+      { name: 'Create Service', code: 'SERVICE_MASTER_CREATE' },
+      { name: 'Edit Service', code: 'SERVICE_MASTER_EDIT' },
+      { name: 'Delete Service', code: 'SERVICE_MASTER_DELETE' },
     ],
   };
 
@@ -610,6 +677,26 @@ async function main() {
   //     `  ⏭️  Audit logs already present (${existingAuditLogs} rows) — skipping`,
   //   );
   // }
+
+  // ========================
+  // 6. BASIC MASTER (Phase 1.1) — global geo
+  // ========================
+  await seedBasicMaster(prisma);
+
+  // ========================
+  // 7. TENANT BASIC MASTER (Phase 1.2) — per-hospital banks / docs / discounts
+  // ========================
+  const hospitals = await prisma.hospital.findMany({ select: { tenantId: true, name: true } });
+  if (hospitals.length === 0) {
+    console.log('\n📌 No hospitals yet — skipping tenant-scoped master seed.');
+  } else {
+    for (const h of hospitals) {
+      console.log(`\n📌 Seeding tenant masters for ${h.name} (${h.tenantId})...`);
+      await seedBanksForTenant(prisma, h.tenantId);
+      await seedPatientDocumentsForTenant(prisma, h.tenantId);
+      await seedDiscountsForTenant(prisma, h.tenantId);
+    }
+  }
 
   // ========================
   // SUMMARY
