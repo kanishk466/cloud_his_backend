@@ -5,19 +5,7 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import cookieParser from 'cookie-parser';
 
-async function runMigrations() {
-  const { execSync } = await import('child_process');
-  try {
-    execSync('npx prisma migrate deploy', { stdio: 'inherit' });
-    console.log('Migrations applied successfully');
-  } catch (err) {
-    console.error('Migration failed:', err);
-  }
-}
-
 async function bootstrap() {
-  await runMigrations();
-
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
 
