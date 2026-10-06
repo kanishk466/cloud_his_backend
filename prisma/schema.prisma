@@ -438,6 +438,13 @@ model Hospital {
   discountApprovals DiscountApproval[]
   discountAuditLogs DiscountAuditLog[]
 
+  // Doctor Setup (Phase 2.2)
+  clinicalDepartments  ClinicalDepartment[]
+  doctorSpecializations DoctorSpecialization[]
+  opdVisitConfigs      OpdVisitConfig[]
+  referDoctors         ReferDoctor[]
+  proMappings          ProMapping[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -602,12 +609,14 @@ model HospitalUser {
 
   // Discount approvals where this user is the authority
   discountApprovals DiscountApproval[] @relation("DiscountAuthorityUser")
+  proMappings       ProMapping[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId, username])
   @@unique([tenantId, email])
+  @@unique([tenantId, id])
   @@index([tenantId])
   @@map("hospital_users")
 }
@@ -694,6 +703,57 @@ model UserModuleFeaturePermission {
 }
 
 // ============================================
+// DOCTOR SETUP (Phase 2.2)
+// ============================================
+
+enum DoctorType {
+  FULL_TIME
+  VISITING
+  CONSULTANT
+}
+
+model ClinicalDepartment {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  code      String?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  hospital        Hospital                @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  specializations DoctorSpecialization[]
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, id])
+  @@index([tenantId, deletedAt])
+  @@map("clinical_departments")
+}
+
+model DoctorSpecialization {
+  id                   String @id @default(uuid())
+  tenantId             String
+  clinicalDepartmentId String
+  name                 String
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  hospital           Hospital           @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  clinicalDepartment ClinicalDepartment @relation(fields: [tenantId, clinicalDepartmentId], references: [tenantId, id], onDelete: Restrict)
+  doctors            DoctorProfile[]
+
+  @@unique([clinicalDepartmentId, name])
+  @@unique([tenantId, id])
+  @@index([tenantId, clinicalDepartmentId, deletedAt], map: "doctor_specializations_tenantId_clinicalDepartmentId_deletedAt_")
+  @@map("doctor_specializations")
+}
+
+// ============================================
 // DOCTOR SCHEDULING
 // ============================================
 
@@ -709,14 +769,32 @@ model DoctorProfile {
   slotDurationMins  Int     @default(15)
   bufferTimeMins    Int     @default(0)
   maxPatientsPerDay Int?
+  maxPatientsPerSlot Int?
+
+  // ─── Enhanced (Phase 2.2) ──────────────────────────────────────
+  specializationId   String?
+  title              String?
+  degree             String?
+  designation        String?
+  doctorType         DoctorType @default(FULL_TIME)
+  doctorShare        Decimal?   @db.Decimal(5, 2)
+  discountApplicable Boolean    @default(true)
+  emergencyAvailable Boolean    @default(false)
+  digitalSignatureUrl String?
+  prescriptionHeader1 String?
+  prescriptionHeader2 String?
+  taxPin              String?
 
   isActive Boolean @default(true)
 
   hospital     Hospital     @relation(fields: [tenantId], references: [tenantId])
   hospitalUser HospitalUser @relation(fields: [hospitalUserId], references: [id])
 
+  specializationRef DoctorSpecialization? @relation(fields: [tenantId, specializationId], references: [tenantId, id], onDelete: Restrict)
+
   availabilities DoctorAvailability[]
   leaveBlocks    DoctorLeaveBlock[]
+  visitConfig    OpdVisitConfig?
 
   // OPD Step 2
   appointments Appointment[]
@@ -729,8 +807,77 @@ model DoctorProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([tenantId, id])
   @@index([tenantId])
+  @@index([tenantId, specializationId])
   @@map("doctor_profiles")
+}
+
+model OpdVisitConfig {
+  id              String @id @default(uuid())
+  tenantId        String
+  doctorProfileId String @unique
+
+  freeFollowupDays         Int     @default(0)
+  maxFreeVisits            Int     @default(0)
+  revisitChargePercent     Decimal @default(100) @db.Decimal(5, 2)
+  validityAfterPrescription Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  doctorProfile DoctorProfile @relation(fields: [tenantId, doctorProfileId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, doctorProfileId])
+  @@index([tenantId, doctorProfileId])
+  @@map("opd_visit_configs")
+}
+
+model ReferDoctor {
+  id           String  @id @default(uuid())
+  tenantId     String
+  title        String?
+  name         String
+  mobile       String?
+  address      String?
+  specialty    String?
+  hospitalName String?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  hospital    Hospital     @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  proMappings ProMapping[]
+
+  @@unique([tenantId, name, mobile])
+  @@unique([tenantId, id])
+  @@index([tenantId, deletedAt, isActive])
+  @@map("refer_doctors")
+}
+
+model ProMapping {
+  id              String  @id @default(uuid())
+  tenantId        String
+  proName         String?
+  hospitalUserId  String?
+  referDoctorId   String
+  commissionPercent Decimal @default(0) @db.Decimal(5, 2)
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  hospitalUser  HospitalUser? @relation(fields: [tenantId, hospitalUserId], references: [tenantId, id], onDelete: Restrict)
+  referDoctor   ReferDoctor   @relation(fields: [tenantId, referDoctorId], references: [tenantId, id], onDelete: Restrict)
+
+  @@index([tenantId, referDoctorId, isActive])
+  @@index([tenantId, hospitalUserId])
+  @@map("pro_mappings")
 }
 
 model DoctorAvailability {

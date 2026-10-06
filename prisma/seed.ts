@@ -348,6 +348,27 @@ async function main() {
       { name: 'Create Service', code: 'SERVICE_MASTER_CREATE' },
       { name: 'Edit Service', code: 'SERVICE_MASTER_EDIT' },
       { name: 'Delete Service', code: 'SERVICE_MASTER_DELETE' },
+
+      // Phase 2.2 — Doctor Setup
+      { name: 'View Clinical Departments', code: 'CLINICAL_DEPARTMENT_VIEW' },
+      { name: 'Create Clinical Department', code: 'CLINICAL_DEPARTMENT_CREATE' },
+      { name: 'Edit Clinical Department', code: 'CLINICAL_DEPARTMENT_EDIT' },
+      { name: 'Delete Clinical Department', code: 'CLINICAL_DEPARTMENT_DELETE' },
+
+      { name: 'View Doctor Specializations', code: 'DOCTOR_SPECIALIZATION_VIEW' },
+      { name: 'Create Doctor Specialization', code: 'DOCTOR_SPECIALIZATION_CREATE' },
+      { name: 'Edit Doctor Specialization', code: 'DOCTOR_SPECIALIZATION_EDIT' },
+      { name: 'Delete Doctor Specialization', code: 'DOCTOR_SPECIALIZATION_DELETE' },
+
+      { name: 'View Refer Doctors', code: 'REFER_DOCTOR_VIEW' },
+      { name: 'Create Refer Doctor', code: 'REFER_DOCTOR_CREATE' },
+      { name: 'Edit Refer Doctor', code: 'REFER_DOCTOR_EDIT' },
+      { name: 'Delete Refer Doctor', code: 'REFER_DOCTOR_DELETE' },
+
+      { name: 'View PRO Mappings', code: 'PRO_MAPPING_VIEW' },
+      { name: 'Create PRO Mapping', code: 'PRO_MAPPING_CREATE' },
+      { name: 'Edit PRO Mapping', code: 'PRO_MAPPING_EDIT' },
+      { name: 'Delete PRO Mapping', code: 'PRO_MAPPING_DELETE' },
     ],
   };
 
