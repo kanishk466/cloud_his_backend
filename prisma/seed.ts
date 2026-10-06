@@ -369,6 +369,30 @@ async function main() {
       { name: 'Create PRO Mapping', code: 'PRO_MAPPING_CREATE' },
       { name: 'Edit PRO Mapping', code: 'PRO_MAPPING_EDIT' },
       { name: 'Delete PRO Mapping', code: 'PRO_MAPPING_DELETE' },
+
+      // Phase 2.3 — Ward / Room Setup + Bed Status
+      { name: 'View Room Types', code: 'ROOM_TYPE_VIEW' },
+      { name: 'Create Room Type', code: 'ROOM_TYPE_CREATE' },
+      { name: 'Edit Room Type', code: 'ROOM_TYPE_EDIT' },
+      { name: 'Delete Room Type', code: 'ROOM_TYPE_DELETE' },
+
+      { name: 'View Rooms', code: 'ROOM_VIEW' },
+      { name: 'Create Room', code: 'ROOM_CREATE' },
+      { name: 'Edit Room', code: 'ROOM_EDIT' },
+      { name: 'Delete Room', code: 'ROOM_DELETE' },
+
+      { name: 'View Beds', code: 'BED_VIEW' },
+      { name: 'Create Bed', code: 'BED_CREATE' },
+      { name: 'Edit Bed', code: 'BED_EDIT' },
+      { name: 'Delete Bed', code: 'BED_DELETE' },
+
+      { name: 'View Bed Amenities', code: 'BED_AMENITY_VIEW' },
+      { name: 'Create Bed Amenity', code: 'BED_AMENITY_CREATE' },
+      { name: 'Edit Bed Amenity', code: 'BED_AMENITY_EDIT' },
+      { name: 'Delete Bed Amenity', code: 'BED_AMENITY_DELETE' },
+
+      { name: 'View Bed Status', code: 'BED_STATUS_VIEW' },
+      { name: 'Change Bed Status', code: 'BED_STATUS_CHANGE' },
     ],
   };
 

@@ -445,6 +445,15 @@ model Hospital {
   referDoctors         ReferDoctor[]
   proMappings          ProMapping[]
 
+  // Ward / Room Setup + IPD (Phase 2.3)
+  roomTypes         RoomType[]
+  rooms             Room[]
+  beds              Bed[]
+  bedStatuses       BedStatus[]
+  bedAmenities      BedAmenity[]
+  bedAmenityMappings BedAmenityMapping[]
+  ipdAdmissions     IpdAdmission[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -804,6 +813,8 @@ model DoctorProfile {
 
   consultations Consultation[]
 
+  ipdAdmissions IpdAdmission[] @relation("AdmittingDoctor")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1001,6 +1012,9 @@ model Patient {
   consultations Consultation[]
 
   bills OpdBill[]
+
+  bedStatuses   BedStatus[]
+  ipdAdmissions IpdAdmission[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1882,6 +1896,7 @@ model ServiceMaster {
   panelRates          PanelServiceRate[] // Linking to tariff rates
   investigationOrders InvestigationOrder[]
   opdBillItems        OpdBillItem[]
+  roomTypeDailyCharges RoomType[]        @relation("RoomTypeDailyCharge")
 
   categoryRef    ServiceCategoryMaster? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   subCategoryRef ServiceSubCategory? @relation(fields: [subCategoryId], references: [id], onDelete: Restrict)
@@ -2203,4 +2218,237 @@ model DiscountAuditLog {
   @@index([tenantId, appliedByUserId])
   @@index([tenantId, referenceType, referenceId])
   @@map("discount_audit_logs")
+}
+
+// ============================================
+// WARD / ROOM SETUP + IPD (Phase 2.3)
+// ============================================
+
+enum WardGenderRestriction {
+  ANY
+  MALE
+  FEMALE
+  PEDIATRIC
+}
+
+enum BedCurrentStatus {
+  VACANT
+  OCCUPIED
+  CLEANING
+  RESERVED
+  MAINTENANCE
+}
+
+enum IpdAdmissionType {
+  ELECTIVE
+  EMERGENCY
+  DAYCARE
+  DIALYSIS
+}
+
+enum IpdAdmissionStatus {
+  ACTIVE
+  DISCHARGED
+  CANCELLED
+}
+
+model RoomType {
+  id       String @id @default(uuid())
+  tenantId String
+  name     String
+
+  abbreviation    String?
+  description     String?
+  selfBillingCategory Boolean @default(false)
+  billingCategory String?
+  isEmergency     Boolean @default(false)
+  isDialysis      Boolean @default(false)
+  isDaycare       Boolean @default(false)
+  isDiscountable  Boolean @default(true)
+  genderRestriction WardGenderRestriction @default(ANY)
+
+  // Daily room charge + threshold (Phase 2.3 integrations)
+  dailyChargeItemId   String?
+  thresholdLimitAmount Decimal? @db.Decimal(12, 2)
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital         Hospital          @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  dailyChargeItem  ServiceMaster?    @relation("RoomTypeDailyCharge", fields: [tenantId, dailyChargeItemId], references: [tenantId, id], onDelete: Restrict)
+  rooms            Room[]
+  ipdAdmissions    IpdAdmission[]
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, id])
+  @@index([tenantId, deletedAt, isActive])
+  @@map("room_types")
+}
+
+model Room {
+  id         String @id @default(uuid())
+  tenantId   String
+  roomTypeId String
+
+  floorName   String?
+  roomName    String
+  roomNo      String
+  description String?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  roomType RoomType @relation(fields: [tenantId, roomTypeId], references: [tenantId, id], onDelete: Restrict)
+  beds     Bed[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, floorName, roomNo])
+  @@index([tenantId, roomTypeId, deletedAt, isActive])
+  @@map("rooms")
+}
+
+model Bed {
+  id       String @id @default(uuid())
+  tenantId String
+  roomId   String
+
+  bedNo       String
+  description String?
+  isCount     Boolean @default(true)
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital        Hospital            @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  room            Room                @relation(fields: [tenantId, roomId], references: [tenantId, id], onDelete: Restrict)
+  status          BedStatus?
+  amenityMappings BedAmenityMapping[]
+  ipdAdmissions   IpdAdmission[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, roomId, bedNo])
+  @@index([tenantId, roomId, deletedAt, isActive])
+  @@map("beds")
+}
+
+model BedStatus {
+  id       String @id @default(uuid())
+  tenantId String
+  bedId    String
+
+  currentStatus   BedCurrentStatus @default(VACANT)
+  patientId       String?
+  admissionId     String?
+  statusChangedAt DateTime @default(now())
+  statusChangedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hospital  Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  bed       Bed           @relation(fields: [tenantId, bedId], references: [tenantId, id], onDelete: Cascade)
+  patient   Patient?      @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Restrict)
+  admission IpdAdmission? @relation(fields: [tenantId, admissionId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, bedId])
+  @@index([tenantId, currentStatus])
+  @@map("bed_statuses")
+}
+
+model BedAmenity {
+  id       String @id @default(uuid())
+  tenantId String
+  name     String
+
+  description String?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  hospital Hospital            @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  mappings BedAmenityMapping[]
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, id])
+  @@index([tenantId, deletedAt, isActive])
+  @@map("bed_amenities")
+}
+
+model BedAmenityMapping {
+  id        String    @id @default(uuid())
+  tenantId  String
+  bedId     String
+  amenityId String
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  hospital Hospital   @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  bed      Bed        @relation(fields: [tenantId, bedId], references: [tenantId, id], onDelete: Cascade)
+  amenity  BedAmenity @relation(fields: [tenantId, amenityId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, bedId, amenityId])
+  @@index([tenantId, amenityId, deletedAt])
+  @@map("bed_amenity_mappings")
+}
+
+model IpdAdmission {
+  id       String @id @default(uuid())
+  tenantId String
+
+  admissionNo String
+  patientId   String
+  bedId       String
+  roomTypeId  String
+
+  admissionType IpdAdmissionType
+  status        IpdAdmissionStatus @default(ACTIVE)
+  admittedAt           DateTime  @default(now())
+  expectedDischargeAt  DateTime?
+  dischargedAt         DateTime?
+
+  admittingDoctorId String?
+  reason            String?
+
+  // Snapshots (ward info at admission time)
+  roomTypeNameSnapshot String
+  roomNoSnapshot       String
+  bedNoSnapshot        String
+
+  createdBy String?
+  updatedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hospital        Hospital       @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  patient         Patient        @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Restrict)
+  bed             Bed            @relation(fields: [tenantId, bedId], references: [tenantId, id], onDelete: Restrict)
+  roomType        RoomType       @relation(fields: [tenantId, roomTypeId], references: [tenantId, id], onDelete: Restrict)
+  admittingDoctor DoctorProfile? @relation("AdmittingDoctor", fields: [tenantId, admittingDoctorId], references: [tenantId, id], onDelete: Restrict)
+  bedStatuses     BedStatus[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, admissionNo])
+  @@index([tenantId, patientId, status])
+  @@index([tenantId, bedId, status])
+  @@index([tenantId, roomTypeId, status])
+  @@map("ipd_admissions")
 }
