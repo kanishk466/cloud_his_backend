@@ -25,9 +25,7 @@ export class PatientResponseDto {
   @Expose()
   // Computed: "Ramesh Kumar"
   get fullName(): string {
-    return [this.firstName, this.lastName]
-      .filter(Boolean)
-      .join(' ');
+    return [this.firstName, this.lastName].filter(Boolean).join(' ');
   }
 
   @Expose()
@@ -77,9 +75,7 @@ export class PatientResponseDto {
 
   // NEVER expose aadhaar fully
   @Expose()
-  @Transform(({ value }) =>
-    value ? `XXXX-XXXX-${value.slice(-4)}` : null,
-  )
+  @Transform(({ value }) => (value ? `XXXX-XXXX-${value.slice(-4)}` : null))
   aadhaarNumber!: string | null;
 
   @Expose()
@@ -116,8 +112,8 @@ export class PatientResponseDto {
   registeredAt!: Date;
 
   // Excluded from response
-  tenantId!: string;        // Never expose tenant info
-  registeredBy!: string;    // Internal field
+  tenantId!: string; // Never expose tenant info
+  registeredBy!: string; // Internal field
 
   constructor(partial: Partial<PatientResponseDto>) {
     Object.assign(this, partial);

@@ -45,6 +45,30 @@ export const BILLING_ERRORS = {
   },
 } as const;
 
+// ─── PHASE 2.1B: Bill-line service validation errors ─────────────────────────
+export const SERVICE_VALIDATION_ERRORS = {
+  SERVICE_NOT_FOUND: {
+    code: 'SERVICE_NOT_FOUND',
+    message: 'Service not found or is not active',
+  },
+  SERVICE_GENDER_MISMATCH: {
+    code: 'SERVICE_GENDER_MISMATCH',
+    message: 'This service is restricted for patients of a specific gender',
+  },
+  SERVICE_AGE_MISMATCH: {
+    code: 'SERVICE_AGE_MISMATCH',
+    message: 'This service is not applicable for the patient age',
+  },
+  RATE_NOT_EDITABLE: {
+    code: 'RATE_NOT_EDITABLE',
+    message: 'Rate for this service is fixed and cannot be modified',
+  },
+  SERVICE_NOT_DISCOUNTABLE: {
+    code: 'SERVICE_NOT_DISCOUNTABLE',
+    message: 'Discount is not allowed on this service',
+  },
+} as const;
+
 export const BILL_NO_CONFIG = {
   PREFIX: 'BILL',
   SEQUENCE_LENGTH: 4,

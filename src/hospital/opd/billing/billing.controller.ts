@@ -1,8 +1,18 @@
 import {
-  Controller, Post, Get, Patch, Body, Param, Query,
-  UseGuards, HttpCode, HttpStatus, ParseUUIDPipe,
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { BillingService } from './billing.service';
+import { InvoiceBuilderService } from './services/invoice-builder.service';
 import { CreateBillDto } from './dto/create-bill.dto';
 import { CollectPaymentDto } from './dto/collect-payment.dto';
 import { ApplyDiscountDto } from './dto/apply-discount.dto';
@@ -15,7 +25,10 @@ import type { CurrentUserPayload } from '../../core/decorators/current-user.deco
 @Controller('opd/billing')
 @UseGuards(HospitalJwtAuthGuard)
 export class BillingController {
-  constructor(private readonly billingService: BillingService) {}
+  constructor(
+    private readonly billingService: BillingService,
+    private readonly invoiceBuilder: InvoiceBuilderService,
+  ) {}
 
   // POST /opd/billing — Generate bill (optionally with immediate payment)
   @Post()
@@ -112,6 +125,15 @@ export class BillingController {
     return this.billingService.findById(tenantId, id);
   }
 
+  // GET /opd/billing/:id/invoice — Print-ready grouped invoice (Phase 2.1B)
+  @Get(':id/invoice')
+  async getInvoice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.invoiceBuilder.buildInvoiceData(tenantId, id);
+  }
+
   // POST /opd/billing/:id/payments — Collect payment later
   @Post(':id/payments')
   @HttpCode(HttpStatus.CREATED)
@@ -121,12 +143,7 @@ export class BillingController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.billingService.collectPayment(
-      tenantId,
-      id,
-      user.userId,
-      dto,
-    );
+    return this.billingService.collectPayment(tenantId, id, user.userId, dto);
   }
 
   // PATCH /opd/billing/:id/discount

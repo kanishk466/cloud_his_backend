@@ -1,20 +1,27 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
   Put,
   Query,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
+import { CurrentTenant } from '../../core/decorators/current-tenant.decorator';
+import { CurrentUser } from '../../core/decorators/current-user.decorator';
 import { HospitalUserService } from '../services/hospital-user.service';
 import { CreateHospitalUserDto } from '../dto/create-hospital-user.dto';
 import { UpdateHospitalUserProfileDto } from '../dto/update-hospital-user-profile.dto';
 import { ListUsersDto } from '../dto/list-users.dto';
+import { UpdateUserStatusDto } from '../dto/update-user-status.dto';
+import { SetUserDepartmentsDto } from '../dto/set-user-departments.dto';
+import { SetUserRolesDto } from '../dto/set-user-roles.dto';
 
 @Controller('hospital/users')
 @UseGuards(HospitalJwtAuthGuard)
@@ -22,48 +29,112 @@ export class HospitalUserController {
   constructor(private readonly service: HospitalUserService) {}
 
   @Post()
-  create(@Req() req: any, @Body() dto: CreateHospitalUserDto) {
-    return this.service.create(req.user.tenantId, dto);
+  create(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser('userId') performedBy: string,
+    @Body() dto: CreateHospitalUserDto,
+  ) {
+    return this.service.create(tenantId, dto, performedBy);
   }
 
   @Get()
-  list(@Req() req: any, @Query() query: ListUsersDto) {
-    return this.service.findAll(req.user.tenantId, query);
+  list(@CurrentTenant() tenantId: string, @Query() query: ListUsersDto) {
+    return this.service.findAll(tenantId, query);
   }
 
   @Get(':id')
-  getById(@Req() req: any, @Param('id') id: string) {
-    return this.service.findByIdOrThrow(req.user.tenantId, id);
+  getById(@CurrentTenant() tenantId: string, @Param('id') id: string) {
+    return this.service.findByIdOrThrow(tenantId, id);
   }
 
   @Patch(':id/profile')
   updateProfile(
-    @Req() req: any,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser('userId') performedBy: string,
     @Param('id') id: string,
     @Body() dto: UpdateHospitalUserProfileDto,
   ) {
-    return this.service.updateProfile(req.user.tenantId, id, dto);
+    return this.service.updateProfile(tenantId, id, dto, performedBy);
   }
 
-  
+  // ─── Phase 1.3: Status toggle (INACTIVE revokes sessions + refresh token) ──
+  @Patch(':id/status')
+  updateStatus(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser('userId') performedBy: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateUserStatusDto,
+  ) {
+    return this.service.updateStatus(tenantId, id, dto.status, performedBy);
+  }
+
+  // ─── Phase 1.3: Bulk department mapping (atomic replace) ───────────────────
+  @Put(':id/departments')
+  setDepartments(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser('userId') performedBy: string,
+    @Param('id') id: string,
+    @Body() dto: SetUserDepartmentsDto,
+  ) {
+    return this.service.setDepartments(tenantId, id, dto, performedBy);
+  }
+
+  // ─── Phase 1.3: Bulk role assignment (atomic replace, exactly one primary) ──
+  @Put(':id/roles')
+  setRoles(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser('userId') performedBy: string,
+    @Param('id') id: string,
+    @Body() dto: SetUserRolesDto,
+  ) {
+    return this.service.setRoles(tenantId, id, dto, performedBy);
+  }
+
   @Get(':id/effective-permissions')
-  getEffectivePermissions(@Req() req: any, @Param('id') id: string) {
-    return this.service.getEffectivePermissions(req.user.tenantId, id);
+  getEffectivePermissions(
+    @CurrentTenant() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.getEffectivePermissions(tenantId, id);
   }
-
 
   @Post(':id/deactivate')
-  deactivate(@Req() req: any, @Param('id') id: string) {
-    return this.service.deactivate(req.user.tenantId, id);
+  @HttpCode(HttpStatus.OK)
+  deactivate(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser('userId') performedBy: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.deactivate(tenantId, id, performedBy);
   }
 
   @Post(':id/activate')
-  activate(@Req() req: any, @Param('id') id: string) {
-    return this.service.activate(req.user.tenantId, id);
+  @HttpCode(HttpStatus.OK)
+  activate(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser('userId') performedBy: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.activate(tenantId, id, performedBy);
   }
 
   @Post(':id/reset-password')
-  resetPassword(@Req() req: any, @Param('id') id: string) {
-    return this.service.resetPassword(req.user.tenantId, id);
+  @HttpCode(HttpStatus.OK)
+  resetPassword(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser('userId') performedBy: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.resetPassword(tenantId, id, performedBy);
+  }
+
+  // ─── Phase 1.3: Soft delete (revokes sessions + refresh token) ─────────────
+  @Delete(':id')
+  softDelete(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser('userId') performedBy: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.softDelete(tenantId, id, performedBy);
   }
 }

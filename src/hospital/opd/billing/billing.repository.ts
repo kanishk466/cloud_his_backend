@@ -1,8 +1,15 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { format } from 'date-fns';
-import { BILL_NO_CONFIG, RECEIPT_NO_CONFIG } from './constants/billing.constants';
+import {
+  BILL_NO_CONFIG,
+  RECEIPT_NO_CONFIG,
+} from './constants/billing.constants';
 
 const billWithRelations = {
   patient: {
@@ -99,8 +106,10 @@ export class BillingRepository {
     billNo: string;
     patientId: string;
     appointmentId?: string;
+    panelId?: string | null;
     items: Array<{
       code?: string;
+      serviceId?: string;
       description: string;
       category: string;
       quantity: number;
@@ -131,6 +140,7 @@ export class BillingRepository {
         billNo: data.billNo,
         patientId: data.patientId,
         appointmentId: data.appointmentId || undefined,
+        panelId: data.panelId ?? null,
 
         // 🛠️ FIXED: Removed legacy header fee fields (consultationFee, otherCharges)
 
@@ -153,7 +163,8 @@ export class BillingRepository {
           create: data.items.map((it) => {
             const gross = it.quantity * it.unitPrice;
             const itemDiscPercent = it.discountPercent ?? 0;
-            const itemDiscAmount = it.discountAmount ?? gross * (itemDiscPercent / 100);
+            const itemDiscAmount =
+              it.discountAmount ?? gross * (itemDiscPercent / 100);
             const taxable = gross - itemDiscAmount;
             const taxPercent = it.taxRate ?? 0;
             const itemTaxAmount = it.taxAmount ?? taxable * (taxPercent / 100);
@@ -164,6 +175,7 @@ export class BillingRepository {
               itemCode: it.code || null,
               itemName: it.description,
               category: it.category,
+              serviceId: it.serviceId || null,
               quantity: it.quantity,
               unitPrice: it.unitPrice,
               discountPercent: itemDiscPercent,
@@ -413,6 +425,39 @@ export class BillingRepository {
           select: { id: true, uhid: true, patientType: true },
         },
       },
+    });
+  }
+
+  // ─── PATIENT LOOKUP (panel inheritance for bills) ──────────────────
+  getPatient(tenantId: string, patientId: string) {
+    return this.prisma.patient.findFirst({
+      where: { id: patientId, tenantId, deletedAt: null },
+      select: { id: true, panelId: true },
+    });
+  }
+
+  // ─── PANEL VALIDATION (explicit panelId on bill) ────────────────────
+  findPanel(tenantId: string, panelId: string) {
+    return this.prisma.panel.findFirst({
+      where: { id: panelId, tenantId, deletedAt: null, isActive: true },
+      select: { id: true },
+    });
+  }
+
+  // ─── CONSULTATION SERVICE LOOKUP (Phase 2.2B) ──────────────────────
+  // The generic OPD-consultation billing head: category code CONS →
+  // sub-category code OPD (from the default seeded service tree).
+  async findConsultationService(tenantId: string) {
+    return this.prisma.serviceMaster.findFirst({
+      where: {
+        tenantId,
+        deletedAt: null,
+        isActive: true,
+        subCategoryRel: {
+          is: { code: 'OPD', category: { is: { code: 'CONS' } } },
+        },
+      },
+      select: { id: true, serviceCode: true, serviceName: true },
     });
   }
 }

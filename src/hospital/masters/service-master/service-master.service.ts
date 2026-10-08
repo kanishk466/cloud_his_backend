@@ -1,4 +1,8 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/shared/prisma/prisma.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
@@ -12,19 +16,21 @@ export class ServiceMasterService {
     const exists = await this.prisma.serviceMaster.findFirst({
       where: { tenantId, serviceCode: dto.serviceCode, deletedAt: null },
     });
-    if (exists) throw new ConflictException(`Service code '${dto.serviceCode}' already exists`);
+    if (exists)
+      throw new ConflictException(
+        `Service code '${dto.serviceCode}' already exists`,
+      );
 
     return this.prisma.serviceMaster.create({
       data: { tenantId, ...dto },
     });
   }
 
-  async list(tenantId: string, search?: string, category?: string) {
+  async list(tenantId: string, search?: string) {
     return this.prisma.serviceMaster.findMany({
       where: {
         tenantId,
         deletedAt: null,
-        ...(category && { category: category as any }),
         ...(search && {
           OR: [
             { serviceName: { contains: search, mode: 'insensitive' } },

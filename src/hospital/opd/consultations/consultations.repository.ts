@@ -359,7 +359,9 @@ export class ConsultationsRepository {
           select: {
             serviceName: true,
             serviceCode: true,
-            category: true,
+            categoryRel: {
+              select: { id: true, name: true, code: true },
+            },
           },
         },
       },

@@ -32,14 +32,18 @@ export class PatientsService {
     dto: CreatePatientDto,
     registeredByUserId: string,
   ) {
-    const existingPatient = await this.patientsRepository.findByMobile(
+    // Family members may share a mobile number. Block only when the same
+    // mobile AND the same first name (case-insensitive, trimmed) already exist.
+    const duplicate = await this.patientsRepository.findByMobileAndFirstName(
       tenantId,
       dto.mobile,
+      dto.firstName,
     );
-    if (existingPatient && existingPatient.length > 0) {
+    if (duplicate) {
       throw new ConflictException({
-        code: 'PATIENT_MOBILE_EXISTS',
-        message: 'A patient with this mobile number already exists',
+        code: 'PATIENT_DUPLICATE_RECORD',
+        message:
+          'A patient with this mobile number and first name already exists',
       });
     }
 
@@ -56,16 +60,31 @@ export class PatientsService {
       }
     }
 
+    // Phase 2.2B — referral attribution: refer doctor must be active in this tenant
+    if (dto.referDoctorId) {
+      const referDoctor = await this.prisma.referDoctor.findFirst({
+        where: {
+          id: dto.referDoctorId,
+          tenantId,
+          deletedAt: null,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      if (!referDoctor) {
+        throw new NotFoundException({
+          code: 'PATIENT_REFER_DOCTOR_NOT_FOUND',
+          message: 'Refer doctor not found or inactive in this hospital',
+        });
+      }
+    }
+
     return await this.prisma.$transaction(async (tx) => {
       const uhid = await this.patientsRepository.generateUhid(tenantId, tx);
 
       // 🛠️ FIX: Destructure date strings from dto so they don't overwrite parsed Date objects
-      const {
-        insuranceValidTill,
-        panelValidTill,
-        dateOfBirth,
-        ...restDto
-      } = dto as any;
+      const { insuranceValidTill, panelValidTill, dateOfBirth, ...restDto } =
+        dto as any;
 
       const validTillString = panelValidTill || insuranceValidTill;
 
@@ -75,8 +94,12 @@ export class PatientsService {
           tenantId,
           uhid,
           dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-          panelValidTill: validTillString ? new Date(validTillString) : undefined,
-          insuranceValidTill: validTillString ? new Date(validTillString) : undefined,
+          panelValidTill: validTillString
+            ? new Date(validTillString)
+            : undefined,
+          insuranceValidTill: validTillString
+            ? new Date(validTillString)
+            : undefined,
           registeredBy: registeredByUserId,
         },
         tx,
@@ -91,7 +114,10 @@ export class PatientsService {
     tenantId: string,
     dto: SearchPatientDto,
   ): Promise<PatientListResponseDto> {
-    const { patients, total } = await this.patientsRepository.search(tenantId, dto);
+    const { patients, total } = await this.patientsRepository.search(
+      tenantId,
+      dto,
+    );
 
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
@@ -123,7 +149,10 @@ export class PatientsService {
   }
 
   // ─── GET PATIENT BY UHID ─────────────────────────────────────────
-  async findByUhid(tenantId: string, uhid: string): Promise<PatientResponseDto> {
+  async findByUhid(
+    tenantId: string,
+    uhid: string,
+  ): Promise<PatientResponseDto> {
     const patient = await this.patientsRepository.findByUhid(tenantId, uhid);
 
     if (!patient) {
@@ -173,12 +202,8 @@ export class PatientsService {
     }
 
     // 🛠️ FIX: Extract date strings so they don't override parsed Date objects
-    const {
-      insuranceValidTill,
-      panelValidTill,
-      dateOfBirth,
-      ...restDto
-    } = dto as any;
+    const { insuranceValidTill, panelValidTill, dateOfBirth, ...restDto } =
+      dto as any;
 
     const validTillString = panelValidTill || insuranceValidTill;
 
@@ -188,7 +213,9 @@ export class PatientsService {
       ageUnit,
       dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
       panelValidTill: validTillString ? new Date(validTillString) : undefined,
-      insuranceValidTill: validTillString ? new Date(validTillString) : undefined,
+      insuranceValidTill: validTillString
+        ? new Date(validTillString)
+        : undefined,
     });
 
     return PatientResponseDto.fromEntity(updated);
@@ -207,12 +234,13 @@ export class PatientsService {
       throw new NotFoundException(PATIENT_ERRORS.NOT_FOUND);
     }
 
-    const { appointments, total } = await this.patientsRepository.getVisitHistory(
-      tenantId,
-      patientId,
-      page,
-      limit,
-    );
+    const { appointments, total } =
+      await this.patientsRepository.getVisitHistory(
+        tenantId,
+        patientId,
+        page,
+        limit,
+      );
 
     return {
       data: appointments,

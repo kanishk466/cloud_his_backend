@@ -12,6 +12,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
+import { CurrentUser } from '../../core/decorators/current-user.decorator';
 import { HospitalRoleService } from '../services/hospital-role.service';
 import { CreateHospitalRoleDto } from '../dto/create-hospital-role.dto';
 import { UpdateHospitalRoleDto } from '../dto/update-hospital-role.dto';
@@ -26,8 +27,12 @@ export class HospitalRoleController {
   constructor(private readonly service: HospitalRoleService) {}
 
   @Post()
-  create(@Req() req: any, @Body() dto: CreateHospitalRoleDto) {
-    return this.service.create(req.user.tenantId, dto);
+  create(
+    @Req() req: any,
+    @CurrentUser('userId') performedBy: string,
+    @Body() dto: CreateHospitalRoleDto,
+  ) {
+    return this.service.create(req.user.tenantId, dto, performedBy);
   }
 
   @Get()
@@ -46,7 +51,9 @@ export class HospitalRoleController {
   async getEntitledModules(@Req() req: any) {
     const userId = req.user.sub || req.user.userId;
     return this.service.getEntitledModulesForUser(
-      req.user.tenantId, userId, req.user.userType,
+      req.user.tenantId,
+      userId,
+      req.user.userType,
     );
   }
 
@@ -58,34 +65,40 @@ export class HospitalRoleController {
   @Patch(':id')
   update(
     @Req() req: any,
+    @CurrentUser('userId') performedBy: string,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateHospitalRoleDto,
   ) {
-    return this.service.update(req.user.tenantId, id, dto);
+    return this.service.update(req.user.tenantId, id, dto, performedBy);
   }
 
   @Post(':id/toggle')
   toggle(
     @Req() req: any,
+    @CurrentUser('userId') performedBy: string,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: ToggleActiveDto,
   ) {
-    return this.service.toggle(req.user.tenantId, id, dto.isActive);
+    return this.service.toggle(
+      req.user.tenantId,
+      id,
+      dto.isActive,
+      performedBy,
+    );
   }
 
   @Put(':id/permissions')
   setPermissions(
     @Req() req: any,
+    @CurrentUser('userId') performedBy: string,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: SetRolePermissionsDto,
   ) {
-    return this.service.setPermissions(req.user.tenantId, id, dto);
+    return this.service.setPermissions(req.user.tenantId, id, dto, performedBy);
   }
 
   @Get(':id/permissions')
   getPermissions(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
     return this.service.getPermissions(req.user.tenantId, id);
   }
-
- 
 }

@@ -112,8 +112,12 @@ export class BillResponseDto {
     dto.isInsurance = entity.isInsurance;
     dto.insuranceProvider = entity.insuranceProvider;
     dto.insurancePolicyNo = entity.insurancePolicyNo;
-    dto.insuranceClaimed = entity.insuranceClaimed ? Number(entity.insuranceClaimed) : null;
-    dto.insuranceApproved = entity.insuranceApproved ? Number(entity.insuranceApproved) : null;
+    dto.insuranceClaimed = entity.insuranceClaimed
+      ? Number(entity.insuranceClaimed)
+      : null;
+    dto.insuranceApproved = entity.insuranceApproved
+      ? Number(entity.insuranceApproved)
+      : null;
 
     dto.generatedBy = entity.generatedBy;
     dto.billedAt = entity.billedAt;

@@ -1,0 +1,68 @@
+﻿.
+├── .env
+├── .env.example
+├── .gitignore
+├── .prettierrc
+├── .vscode
+│   ├── launch.json
+│   └── settings.json
+├── ARCHITECTURE.md
+├── Doctor.readme.md
+├── eslint.config.mjs
+├── fix-audit-logs.sql
+├── nest-cli.json
+├── package.json
+├── package-lock.json
+├── prisma
+│   ├── migrations
+│   │   ├── 20260920095037_init_clean
+│   │   ├── 20260920101503_step2_normalization_and_redundancy
+│   │   ├── 20260920105316_step4_billing_and_audit_enhancements
+│   │   └── migration_lock.toml
+│   ├── schema.prisma
+│   ├── schema.prisma.backup
+│   └── seed.ts
+├── README.md
+├── Readme.smtp.md
+├── ROADMAP.md
+├── src
+│   ├── app.module.ts
+│   ├── common
+│   │   ├── auth
+│   │   ├── filters
+│   │   └── ids.types.ts
+│   ├── hospital
+│   │   ├── constants
+│   │   ├── core
+│   │   ├── hospital.module.ts
+│   │   ├── identity
+│   │   ├── masters
+│   │   ├── opd
+│   │   └── user-management
+│   ├── main.ts
+│   ├── Platform
+│   │   ├── audit
+│   │   ├── catalog
+│   │   ├── dashboard
+│   │   ├── identity
+│   │   ├── mail
+│   │   ├── notifications
+│   │   ├── package
+│   │   ├── platform-users
+│   │   ├── rbac
+│   │   ├── search
+│   │   └── tenant
+│   ├── shared
+│   │   ├── prisma
+│   │   └── shared.module.ts
+│   └── system
+│       ├── controllers
+│       └── system.module.ts
+├── structure.txt
+├── test
+│   ├── app.e2e-spec.ts
+│   └── jest-e2e.json
+├── tsconfig.build.json
+└── tsconfig.json
+
+34 directories, 31 files

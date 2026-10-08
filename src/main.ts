@@ -1,9 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import cookieParser from 'cookie-parser';
+import { join } from 'path';
 
 async function runMigrations() {
   const { execSync } = await import('child_process');
@@ -18,19 +20,22 @@ async function runMigrations() {
 async function bootstrap() {
   await runMigrations();
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.setGlobalPrefix('api');
 
   app.use(cookieParser());
+
+  // Phase 2.2B — serve uploaded files (doctor signatures, …) at /uploads/*
+  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
 
   app.enableCors({
     origin: [
       'http://localhost:8080',
       'http://localhost:5173',
-       'http://localhost:3000',
+      'http://localhost:3000',
       'http://localhost:8081',
       'https://ojasadmin.netlify.app',
-     'https://ojascarehis.netlify.app',
+      'https://ojascarehis.netlify.app',
       'https://mediops-admin-ui.harshalvermaaaaa.workers.dev',
     ], // frontend URL (or use '*' for all origins)
     credentials: true,

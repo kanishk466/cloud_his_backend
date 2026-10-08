@@ -8,6 +8,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { BillingRepository } from './billing.repository';
+import { BillLineValidatorService } from './services/bill-line-validator.service';
+import { ReferralCommissionsService } from '../../masters/doctor-setup/services/referral-commissions.service';
 import { CreateBillDto } from './dto/create-bill.dto';
 import { CollectPaymentDto } from './dto/collect-payment.dto';
 import { ApplyDiscountDto } from './dto/apply-discount.dto';
@@ -24,7 +26,11 @@ import { format } from 'date-fns';
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
 
-  constructor(private readonly billingRepository: BillingRepository) {}
+  constructor(
+    private readonly billingRepository: BillingRepository,
+    private readonly billLineValidator: BillLineValidatorService,
+    private readonly referralCommissions: ReferralCommissionsService,
+  ) {}
 
   // ─── GENERATE BILL ──────────────────────────────────────────────
   async generateBill(
@@ -33,12 +39,42 @@ export class BillingService {
     dto: CreateBillDto,
   ): Promise<BillResponseDto> {
     if (!dto.items || dto.items.length === 0) {
-      throw new BadRequestException('A bill must contain at least one line item.');
+      throw new BadRequestException(
+        'A bill must contain at least one line item.',
+      );
+    }
+
+    // Phase 2.1B — enforce ServiceMaster rules on every linked line item
+    await this.validateBillItems(tenantId, dto);
+
+    // Phase 3.1 — panel linkage: explicit panelId wins, else inherit patient's
+    let effectivePanelId: string | null = null;
+    if (dto.panelId) {
+      const panel = await this.billingRepository.findPanel(
+        tenantId,
+        dto.panelId,
+      );
+      if (!panel) {
+        throw new NotFoundException({
+          code: 'OPD_BIL_013',
+          message: 'Panel not found or inactive in this hospital',
+        });
+      }
+      effectivePanelId = dto.panelId;
+    } else {
+      const patient = await this.billingRepository.getPatient(
+        tenantId,
+        dto.patientId,
+      );
+      effectivePanelId = patient?.panelId ?? null;
     }
 
     // Validate appointment if provided
+    let appointment: Awaited<ReturnType<BillingRepository['getAppointment']>> =
+      null;
+
     if (dto.appointmentId) {
-      const appointment = await this.billingRepository.getAppointment(
+      appointment = await this.billingRepository.getAppointment(
         tenantId,
         dto.appointmentId,
       );
@@ -58,9 +94,40 @@ export class BillingService {
       }
     }
 
+    // Phase 2.2B — auto-add the consultation line from the appointment's
+    // fee (calculated at booking by the visit-fee engine)
+    const items = [...dto.items];
+    if (appointment) {
+      const consultationItem = await this.buildConsultationLineItem(
+        tenantId,
+        Number(appointment.consultationFee),
+      );
+
+      const alreadyPresent = consultationItem.serviceId
+        ? items.some((i) => i.serviceId === consultationItem.serviceId)
+        : false;
+
+      if (!alreadyPresent) {
+        if (consultationItem.serviceId) {
+          // System-generated line — gender/age checks run, rate check is
+          // skipped (the fee engine, not the counter, owns this rate).
+          await this.billLineValidator.validateBillLine(
+            tenantId,
+            dto.patientId,
+            consultationItem.serviceId,
+            consultationItem.unitPrice,
+            0,
+            1,
+            { skipRateCheck: true },
+          );
+        }
+        items.unshift(consultationItem);
+      }
+    }
+
     // Calculate totals from line items
     const calculated = this.calculateBillItems({
-      items: dto.items,
+      items,
       discountPercent: dto.discountPercent,
       discountAmount: dto.discountAmount,
     });
@@ -107,7 +174,8 @@ export class BillingService {
       billNo,
       patientId: dto.patientId,
       appointmentId: dto.appointmentId,
-      items: dto.items,
+      panelId: effectivePanelId,
+      items,
       subtotal: calculated.subtotal,
       discountPercent: calculated.discountPercent,
       discountAmount: calculated.discountAmount,
@@ -123,9 +191,20 @@ export class BillingService {
       billStatus,
     });
 
+    // Phase 2.2B — referral commission hook (appointment referred by an
+    // external doctor). Never throws; failure is logged inside the service.
+    await this.referralCommissions.createForBill({
+      tenantId,
+      billId: bill.id,
+      appointmentId: appointment?.id ?? dto.appointmentId ?? null,
+      patientId: dto.patientId,
+      billAmount: calculated.totalAmount,
+    });
+
     // If paid at creation → create payment receipt + update bill
     if (paymentAmount > 0 && dto.paymentMode) {
-      const receiptNo = await this.billingRepository.generateReceiptNo(tenantId);
+      const receiptNo =
+        await this.billingRepository.generateReceiptNo(tenantId);
 
       await this.billingRepository.createPayment({
         tenantId,
@@ -162,7 +241,8 @@ export class BillingService {
   async findById(tenantId: string, id: string): Promise<BillResponseDto> {
     const bill = await this.billingRepository.findById(tenantId, id);
     if (!bill) throw new NotFoundException(BILLING_ERRORS.BILL_NOT_FOUND);
-    if (bill.tenantId !== tenantId) throw new ForbiddenException(BILLING_ERRORS.CROSS_TENANT);
+    if (bill.tenantId !== tenantId)
+      throw new ForbiddenException(BILLING_ERRORS.CROSS_TENANT);
     return BillResponseDto.fromEntity(bill);
   }
 
@@ -171,7 +251,10 @@ export class BillingService {
     tenantId: string,
     appointmentId: string,
   ): Promise<BillResponseDto | null> {
-    const bill = await this.billingRepository.findByAppointmentId(tenantId, appointmentId);
+    const bill = await this.billingRepository.findByAppointmentId(
+      tenantId,
+      appointmentId,
+    );
     if (!bill) return null;
     return BillResponseDto.fromEntity(bill);
   }
@@ -188,7 +271,10 @@ export class BillingService {
       limit?: number;
     },
   ) {
-    const { bills, total } = await this.billingRepository.findMany(tenantId, filter);
+    const { bills, total } = await this.billingRepository.findMany(
+      tenantId,
+      filter,
+    );
     const page = filter.page ?? 1;
     const limit = filter.limit ?? 20;
 
@@ -313,7 +399,9 @@ export class BillingService {
       paidAt: newDueAmount <= 0 ? new Date() : undefined,
     });
 
-    this.logger.log(`Payment ${receiptNo} of ₹${dto.amount} collected for bill ${bill.billNo}`);
+    this.logger.log(
+      `Payment ${receiptNo} of ₹${dto.amount} collected for bill ${bill.billNo}`,
+    );
 
     return BillResponseDto.fromEntity(updated);
   }
@@ -362,7 +450,8 @@ export class BillingService {
       discountAuthorizedBy: dto.discountAuthorizedBy,
       totalAmount,
       dueAmount: dueAmount > 0 ? dueAmount : 0,
-      paymentStatus: dueAmount <= 0 ? 'PAID' : (paidAmount > 0 ? 'PARTIALLY_PAID' : 'PENDING'),
+      paymentStatus:
+        dueAmount <= 0 ? 'PAID' : paidAmount > 0 ? 'PARTIALLY_PAID' : 'PENDING',
       billStatus: dueAmount <= 0 ? 'PAID' : bill.billStatus,
     });
 
@@ -401,9 +490,15 @@ export class BillingService {
   }
 
   // ─── DAILY SUMMARY ──────────────────────────────────────────────
-  async getDailySummary(tenantId: string, dateStr?: string): Promise<DailySummaryDto> {
+  async getDailySummary(
+    tenantId: string,
+    dateStr?: string,
+  ): Promise<DailySummaryDto> {
     const queryDate = dateStr ? new Date(dateStr) : new Date();
-    const result = await this.billingRepository.getDailySummary(tenantId, queryDate);
+    const result = await this.billingRepository.getDailySummary(
+      tenantId,
+      queryDate,
+    );
 
     return {
       date: format(queryDate, 'yyyy-MM-dd'),
@@ -421,6 +516,68 @@ export class BillingService {
         status: s.status,
         count: s.count,
       })),
+    };
+  }
+
+  // ─── PHASE 2.1B: Bill-line service validation ─────────────────────────────
+  //
+  // Every item linked to a ServiceMaster (serviceId) is validated against
+  // service rules: active status, gender/age restriction, rate-editability,
+  // discount eligibility. Legacy free-text items (no serviceId) skip
+  // validation with a warning.
+
+  private async validateBillItems(tenantId: string, dto: CreateBillDto) {
+    for (const [index, item] of dto.items.entries()) {
+      if (!item.serviceId) {
+        this.logger.warn(
+          `Bill line #${index + 1} ("${item.description}") has no serviceId — skipping service validation`,
+        );
+        continue;
+      }
+
+      await this.billLineValidator.validateBillLine(
+        tenantId,
+        dto.patientId,
+        item.serviceId,
+        item.unitPrice,
+        item.discountPercent ?? dto.discountPercent ?? 0,
+        item.quantity,
+      );
+    }
+  }
+
+  // ─── PHASE 2.2B: Consultation line from appointment fee ───────────────────
+  //
+  // Links to the generic CONS → OPD consultation service when configured;
+  // falls back to a free-text line so billing never hard-depends on master
+  // setup. The unit price always comes from appointment.consultationFee
+  // (produced by the visit-fee engine at booking time).
+
+  private async buildConsultationLineItem(tenantId: string, fee: number) {
+    const service =
+      await this.billingRepository.findConsultationService(tenantId);
+
+    if (!service) {
+      this.logger.warn(
+        'No CONS/OPD consultation service configured — consultation added as free-text line',
+      );
+      return {
+        description: 'Consultation Fee',
+        category: 'Consultation',
+        quantity: 1,
+        unitPrice: fee,
+        taxRate: 0,
+      };
+    }
+
+    return {
+      serviceId: service.id,
+      code: service.serviceCode,
+      description: service.serviceName,
+      category: 'Consultation',
+      quantity: 1,
+      unitPrice: fee,
+      taxRate: 0,
     };
   }
 

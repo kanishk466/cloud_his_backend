@@ -73,6 +73,11 @@ export class CreateAppointmentDto {
   priority?: number = 0;
 
   // ─── REFERRAL ─────────────────────────────────────────────────
+  /** External refer doctor (ReferDoctor). Auto-inherited from patient when omitted. */
+  @IsOptional()
+  @IsUUID()
+  referDoctorId?: string;
+
   @IsOptional()
   @IsString()
   referredByDoctorName?: string;

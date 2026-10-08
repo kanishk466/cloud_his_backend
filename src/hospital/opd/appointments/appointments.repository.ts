@@ -4,7 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
-import { Prisma , Appointment } from '@prisma/client';
+import { Prisma, Appointment } from '@prisma/client';
 
 import { format } from 'date-fns';
 import { TZDate } from '@date-fns/tz';
@@ -14,7 +14,6 @@ export const APPOINTMENT_NO_CONFIG = {
   SEQUENCE_LENGTH: 4,
   DEFAULT_TIMEZONE: 'Asia/Kolkata',
 };
-
 
 export interface CreateAppointmentData {
   tenantId: string;
@@ -29,6 +28,8 @@ export interface CreateAppointmentData {
   visitType: any;
   priority: number;
   consultationFee: number;
+  referDoctorId?: string;
+  isFollowUpVisit?: boolean;
   referredByDoctorName?: string;
   referralNote?: string;
   reasonForVisit?: string;
@@ -56,9 +57,9 @@ const appointmentWithRelations = {
       firstName: true,
       lastName: true,
       mobile: true,
-    dateOfBirth: true,        // ✅ Added
-      ageAtRegistration: true,  // ✅ Replaced `age` with `ageAtRegistration`
-      ageUnit: true,      
+      dateOfBirth: true, // ✅ Added
+      ageAtRegistration: true, // ✅ Replaced `age` with `ageAtRegistration`
+      ageUnit: true,
       gender: true,
       allergies: true,
       chronicDiseases: true,
@@ -101,7 +102,7 @@ export class AppointmentsRepository {
   // Format : APT-20250610-0001
   // Resets : Daily per tenant
   // Safe   : DB transaction prevents duplicates
-   async generateAppointmentNo(
+  async generateAppointmentNo(
     tenantId: string,
     txClient?: Prisma.TransactionClient,
     timezone: string = APPOINTMENT_NO_CONFIG.DEFAULT_TIMEZONE,
@@ -152,7 +153,6 @@ export class AppointmentsRepository {
     }
   }
 
-
   // ─── CREATE APPOINTMENT ─────────────────────────────────────────
   async create(
     data: CreateAppointmentData,
@@ -172,7 +172,12 @@ export class AppointmentsRepository {
         slotEndTime: data.slotEndTime,
         appointmentType: data.appointmentType ?? 'WALK_IN',
         visitType: data.visitType ?? 'NEW_VISIT',
+        priority: data.priority,
         consultationFee: data.consultationFee,
+        referDoctorId: data.referDoctorId,
+        isFollowUpVisit: data.isFollowUpVisit ?? false,
+        referredByDoctorName: data.referredByDoctorName,
+        referralNote: data.referralNote,
         reasonForVisit: data.reasonForVisit,
         notes: data.notes,
         bookedBy: data.bookedBy,
@@ -190,10 +195,7 @@ export class AppointmentsRepository {
   }
 
   // ─── FIND BY APPOINTMENT NUMBER ─────────────────────────────────
-  async findByAppointmentNo(
-    tenantId: string,
-    appointmentNo: string,
-  ) {
+  async findByAppointmentNo(tenantId: string, appointmentNo: string) {
     return this.prisma.appointment.findFirst({
       where: { tenantId, appointmentNo },
       include: appointmentWithRelations,
@@ -254,10 +256,10 @@ export class AppointmentsRepository {
         where,
         include: appointmentWithRelations,
         orderBy: [
-          { priority: 'desc' },       // Emergency first
+          { priority: 'desc' }, // Emergency first
           { appointmentDate: 'asc' },
-          { slotStartTime: 'asc' },   // Earlier slots first
-          { bookedAt: 'asc' },        // Walk-ins: first come first
+          { slotStartTime: 'asc' }, // Earlier slots first
+          { bookedAt: 'asc' }, // Walk-ins: first come first
         ],
         skip,
         take: limit,
@@ -401,11 +403,7 @@ export class AppointmentsRepository {
   }
 
   // ─── CHECK DOCTOR LEAVE ──────────────────────────────────────────
-  async getDoctorLeave(
-    tenantId: string,
-    doctorProfileId: string,
-    date: Date,
-  ) {
+  async getDoctorLeave(tenantId: string, doctorProfileId: string, date: Date) {
     const dateOnly = new Date(date);
     dateOnly.setHours(0, 0, 0, 0);
 

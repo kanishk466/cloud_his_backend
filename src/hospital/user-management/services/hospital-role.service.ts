@@ -18,15 +18,16 @@ export class HospitalRoleService {
     private readonly entitlementRepo: EntitlementRepository,
   ) {}
 
-
-
-
-    // ─── Create Role (From Master OR Custom) ───────────────────────────────────
+  // ─── Create Role (From Master OR Custom) ───────────────────────────────────
   //
   // Scenario A: roleNameId provided → Use existing master role
   // Scenario B: roleName provided   → Create new master role + hospital role
 
-  async create(tenantId: string, dto: CreateHospitalRoleDto) {
+  async create(
+    tenantId: string,
+    dto: CreateHospitalRoleDto,
+    performedBy?: string,
+  ) {
     // Validation: At least one must be provided
     if (!dto.roleNameId && !dto.roleName) {
       throw new BadRequestException(
@@ -48,13 +49,14 @@ export class HospitalRoleService {
           roleNameId: dto.roleNameId,
           description: dto.description,
           cloneFromRoleId: dto.cloneFromRoleId,
+          performedBy,
         });
       } else {
         // ─── SCENARIO B: Create custom role (new master + hospital) ─────
         const roleCode =
           dto.roleCode ??
-          dto.roleName!
-            .trim()
+          dto
+            .roleName!.trim()
             .toUpperCase()
             .replace(/\s+/g, '_')
             .replace(/[^A-Z0-9_]/g, '');
@@ -64,6 +66,7 @@ export class HospitalRoleService {
           roleCode,
           description: dto.description,
           cloneFromRoleId: dto.cloneFromRoleId,
+          performedBy,
         });
       }
     } catch (err: unknown) {
@@ -87,9 +90,6 @@ export class HospitalRoleService {
       throw err;
     }
   }
-
-
-
 
   // ─── NEW: Master Catalog (All master roles with hospital activation flag) ──
   //
@@ -139,9 +139,14 @@ export class HospitalRoleService {
   // We catch that and surface as NotFoundException.
   // No pre-fetch round trip needed.
 
-  async update(tenantId: string, id: number, dto: UpdateHospitalRoleDto) {
+  async update(
+    tenantId: string,
+    id: number,
+    dto: UpdateHospitalRoleDto,
+    performedBy?: string,
+  ) {
     try {
-      return await this.roleRepo.update(id, tenantId, dto);
+      return await this.roleRepo.update(id, tenantId, dto, performedBy);
     } catch (err: unknown) {
       if (err instanceof Error && err.message === 'ROLE_NOT_FOUND') {
         throw new NotFoundException('Role not found');
@@ -156,9 +161,14 @@ export class HospitalRoleService {
 
   // ─── Toggle ─────────────────────────────────────────────────────────────────
 
-  async toggle(tenantId: string, id: number, isActive: boolean) {
+  async toggle(
+    tenantId: string,
+    id: number,
+    isActive: boolean,
+    performedBy?: string,
+  ) {
     try {
-      return await this.roleRepo.toggle(id, tenantId, isActive);
+      return await this.roleRepo.toggle(id, tenantId, isActive, performedBy);
     } catch (err: unknown) {
       if (err instanceof Error && err.message === 'ROLE_NOT_FOUND') {
         throw new NotFoundException('Role not found');
@@ -180,6 +190,7 @@ export class HospitalRoleService {
     tenantId: string,
     roleId: number,
     dto: SetRolePermissionsDto,
+    performedBy?: string,
   ) {
     // Entitlement check — is this module available in hospital's package?
     const entitledModuleIds =
@@ -208,6 +219,7 @@ export class HospitalRoleService {
         roleId,
         tenantId,
         dto.moduleFeatures,
+        performedBy,
       );
     } catch (err: unknown) {
       if (err instanceof Error && err.message === 'ROLE_NOT_FOUND') {
@@ -239,8 +251,7 @@ export class HospitalRoleService {
   //   return this.entitlementRepo.getEntitledModulesWithFeatures(tenantId);
   // }
 
-
-    getEntitledModulesForUser(
+  getEntitledModulesForUser(
     tenantId: string,
     userId: string,
     userType?: string,

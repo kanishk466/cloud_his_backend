@@ -1,6 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
-import { Prisma, PatientStatus, Gender, BloodGroup, MaritalStatus, RelationType } from '@prisma/client';
+import {
+  Prisma,
+  PatientStatus,
+  Gender,
+  BloodGroup,
+  MaritalStatus,
+  RelationType,
+} from '@prisma/client';
 
 export interface CreatePatientData {
   tenantId: string;
@@ -41,9 +48,12 @@ export interface CreatePatientData {
   registeredBy?: string;
   consentToShare?: boolean;
   privacyFlag?: string;
+  referDoctorId?: string; // Phase 2.2B — referral attribution
 }
 
-export interface UpdatePatientData extends Partial<Omit<CreatePatientData, 'tenantId' | 'uhid'>> {}
+export interface UpdatePatientData extends Partial<
+  Omit<CreatePatientData, 'tenantId' | 'uhid'>
+> {}
 
 @Injectable()
 export class PatientsRepository {
@@ -52,7 +62,10 @@ export class PatientsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   // ─── GENERATE UHID (Transaction-safe) ────────────────────────────
-  async generateUhid(tenantId: string, tx?: Prisma.TransactionClient): Promise<string> {
+  async generateUhid(
+    tenantId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<string> {
     const client = tx || this.prisma;
     const year = new Date().getFullYear().toString();
 
@@ -114,6 +127,7 @@ export class PatientsRepository {
         registeredBy: data.registeredBy,
         consentToShare: data.consentToShare ?? true,
         privacyFlag: data.privacyFlag,
+        referDoctorId: data.referDoctorId,
       },
       include: {
         panel: {
@@ -128,7 +142,11 @@ export class PatientsRepository {
   }
 
   // ─── FIND BY AADHAAR ──────────────────────────────────────────────
-  async findByAadhaar(tenantId: string, aadhaarNumber: string, excludePatientId?: string) {
+  async findByAadhaar(
+    tenantId: string,
+    aadhaarNumber: string,
+    excludePatientId?: string,
+  ) {
     return this.prisma.patient.findFirst({
       where: {
         tenantId,
@@ -167,6 +185,23 @@ export class PatientsRepository {
     return this.prisma.patient.findMany({
       where: { tenantId, mobile, deletedAt: null },
       orderBy: { registeredAt: 'desc' },
+    });
+  }
+
+  // ─── FIND BY MOBILE + FIRST NAME (soft duplicate check) ──────────
+  async findByMobileAndFirstName(
+    tenantId: string,
+    mobile: string,
+    firstName: string,
+  ) {
+    return this.prisma.patient.findFirst({
+      where: {
+        tenantId,
+        mobile,
+        deletedAt: null,
+        firstName: { equals: firstName.trim(), mode: 'insensitive' },
+      },
+      select: { id: true, uhid: true },
     });
   }
 
@@ -210,7 +245,12 @@ export class PatientsRepository {
 
   async findMany(tenantId: string, params: any) {
     const res = await this.search(tenantId, params);
-    return { data: res.patients, total: res.total, page: res.page, limit: res.limit };
+    return {
+      data: res.patients,
+      total: res.total,
+      page: res.page,
+      limit: res.limit,
+    };
   }
 
   // ─── UPDATE PATIENT ───────────────────────────────────────────────
@@ -258,7 +298,12 @@ export class PatientsRepository {
   }
 
   // ─── GET VISIT HISTORY ────────────────────────────────────────────
-  async getVisitHistory(tenantId: string, patientId: string, page: number = 1, limit: number = 10) {
+  async getVisitHistory(
+    tenantId: string,
+    patientId: string,
+    page: number = 1,
+    limit: number = 10,
+  ) {
     const skip = (page - 1) * limit;
 
     const [appointments, total] = await Promise.all([
@@ -277,7 +322,9 @@ export class PatientsRepository {
           department: { select: { name: true } },
         },
       }),
-      this.prisma.appointment.count({ where: { tenantId, patientId, deletedAt: null } }),
+      this.prisma.appointment.count({
+        where: { tenantId, patientId, deletedAt: null },
+      }),
     ]);
 
     return { appointments, total };

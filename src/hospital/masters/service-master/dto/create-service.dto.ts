@@ -1,20 +1,31 @@
-import { IsString, IsEnum, IsNumber, IsOptional, IsBoolean, MaxLength, Min } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  IsOptional,
+  IsBoolean,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { ServiceCategory } from '@prisma/client';
 
+// ⚠️ LEGACY: This DTO backs the old /hospital/masters/services endpoint.
+// New integrations should use /hospital/masters/service-items (Phase 2.1),
+// which supports categories, sub-categories and billing rules.
 export class CreateServiceDto {
-  @IsString() @MaxLength(50)
+  @IsString()
+  @MaxLength(50)
   serviceCode: string;
 
-  @IsString() @MaxLength(200)
+  @IsString()
+  @MaxLength(200)
   serviceName: string;
 
-  @IsEnum(ServiceCategory)
-  category: ServiceCategory;
-
-  @Type(() => Number) @IsNumber() @Min(0)
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
   baseRate: number;
 
-  @IsOptional() @IsBoolean()
+  @IsOptional()
+  @IsBoolean()
   isActive?: boolean;
 }

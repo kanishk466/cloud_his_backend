@@ -21,6 +21,12 @@ export class CreateBillItemDto {
   @IsString()
   code?: string;
 
+  /** Phase 2.1B — link to ServiceMaster. When present, the line is
+   *  validated against service rules (gender/age/rate/discount). */
+  @IsOptional()
+  @IsUUID()
+  serviceId?: string;
+
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
@@ -40,6 +46,14 @@ export class CreateBillItemDto {
   @Min(0)
   unitPrice!: number;
 
+  /** Optional line-level discount % (bill-level discountPercent applies otherwise). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  discountPercent?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
@@ -56,6 +70,11 @@ export class CreateBillDto {
   @IsOptional()
   @IsUUID()
   appointmentId?: string;
+
+  /** Panel billing — auto-filled from the patient when omitted. */
+  @IsOptional()
+  @IsUUID()
+  panelId?: string;
 
   @IsArray()
   @ArrayMinSize(1, { message: 'A bill must contain at least one line item' })

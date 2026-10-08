@@ -428,10 +428,207 @@ model Hospital {
   tariffMasters     TariffMaster[]
   panelServiceRates PanelServiceRate[]
 
+  // Phase 1.1 — Basic Masters
+  banks                Bank[]
+  patientDocumentTypes PatientDocumentType[]
+
+  // Phase 1.2 — Discount Masters
+  discountReasons             DiscountReason[]
+  discountApprovalAuthorities DiscountApprovalAuthority[]
+
+  // Phase 2.1 — Services Setup
+  serviceCategoryMasters ServiceCategoryMaster[]
+  serviceSubCategories   ServiceSubCategory[]
+
+  // Phase 2.2 — Doctor Setup
+  clinicalDepartments   ClinicalDepartment[]
+  specializations       Specialization[]
+  doctorOpdVisitConfigs DoctorOpdVisitConfig[]
+  referDoctors          ReferDoctor[]
+
+  // Phase 2.2B — Doctor Integration
+  referralCommissions ReferralCommission[]
+
+  // Phase 2.3 — Ward, Room & Bed (IPD Foundation)
+  roomTypes    RoomType[]
+  rooms        Room[]
+  beds         Bed[]
+  bedStatuses  BedStatus[]
+  bedAmenities BedAmenity[]
+
+  // Phase 1.4 + IPD
+  thresholdLimits ThresholdLimit[]
+  ipdAdmissions   IpdAdmission[]
+
+  // Phase 2.4 — Lab/Radio (LIS/RIS)
+  labDepartments  LabDepartment[]
+  investigations  Investigation[]
+  observations    Observation[]
+  referenceRanges ReferenceRange[]
+
+  // Phase 2.4 Session 2 — Templates, Interpretations, Help & Comments
+  reportTemplates              ReportTemplate[]
+  investigationInterpretations InvestigationInterpretation[]
+  observationHelps             ObservationHelp[]
+  reportComments               ReportComment[]
+
+  // Phase 2.4 Session 3 — Pre-analytical
+  sampleContainerMasters SampleContainerMaster[]
+  sampleTypes            SampleType[]
+
+  // Phase 2.4 Session 4 — Microbiology, Outsource & Sign-off
+  organismMasters       OrganismMaster[]
+  antibioticMasters     AntibioticMaster[]
+  outsourceLabMasters   OutsourceLabMaster[]
+  labSignoffAuthorities LabSignoffAuthority[]
+
+  // Phase 3.1 — Panel Enhancements
+  rateSchedules  RateSchedule[]
+  panelDocuments PanelDocument[]
+
+  // Phase 3.2 — Packages
+  packageMasters        PackageMaster[]
+  packageComponents     PackageComponent[]
+  packageDoctorConsults PackageDoctorConsult[]
+  packageExclusions     PackageExclusion[]
+  packageConsumptions   PackageConsumption[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("hospitals")
+}
+
+// ============================================
+// PHASE 1.1 — GEO MASTERS (System-level lookups)
+// ============================================
+
+model Country {
+  id        Int     @id @default(autoincrement())
+  name      String  @unique
+  isoCode   String  @unique
+  phoneCode String?
+  isActive  Boolean @default(true)
+
+  states State[]
+
+  @@map("countries")
+}
+
+model State {
+  id        Int     @id @default(autoincrement())
+  name      String
+  stateCode String?
+  countryId Int
+  isActive  Boolean @default(true)
+
+  country Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  cities  City[]
+
+  @@unique([countryId, name])
+  @@map("states")
+}
+
+model City {
+  id       Int     @id @default(autoincrement())
+  name     String
+  stateId  Int
+  isActive Boolean @default(true)
+
+  state State @relation(fields: [stateId], references: [id], onDelete: Cascade)
+
+  @@unique([stateId, name])
+  @@map("cities")
+}
+
+// ============================================
+// PHASE 1.1 — TENANT-SCOPED MASTERS
+// ============================================
+
+model Bank {
+  id            String    @id @default(uuid())
+  tenantId      String
+  bankName      String
+  branchName    String?
+  ifscCode      String?
+  accountNumber String?
+  accountType   String?
+  isActive      Boolean   @default(true)
+  deletedAt     DateTime?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, bankName, accountNumber])
+  @@index([tenantId])
+  @@map("banks")
+}
+
+model PatientDocumentType {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String
+  code        String
+  description String?
+  isRequired  Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("patient_document_types")
+}
+
+// ============================================
+// PHASE 1.2 — DISCOUNT MASTERS (Tenant-scoped)
+// ============================================
+
+model DiscountReason {
+  id                 String    @id @default(uuid())
+  tenantId           String
+  name               String // e.g., "Staff Welfare", "EWS / Poor Patient", "Doctor Discretion"
+  code               String // e.g., "STAFF", "EWS", "DOC_DISC"
+  description        String?
+  maxDiscountPercent Decimal?  @db.Decimal(5, 2) // Optional ceiling cap for this specific reason
+  isActive           Boolean   @default(true)
+  deletedAt          DateTime?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("discount_reasons")
+}
+
+model DiscountApprovalAuthority {
+  id                 String    @id @default(uuid())
+  tenantId           String
+  hospitalRoleId     Int
+  maxDiscountPercent Decimal   @db.Decimal(5, 2) // Max % this role may approve on a bill
+  maxDiscountAmount  Decimal?  @db.Decimal(12, 2) // Optional absolute cap per bill
+  description        String?
+  isActive           Boolean   @default(true)
+  deletedAt          DateTime?
+
+  hospital     Hospital     @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  hospitalRole HospitalRole @relation(fields: [hospitalRoleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, hospitalRoleId])
+  @@index([tenantId])
+  @@map("discount_approval_authorities")
 }
 
 model AssignedPackage {
@@ -484,8 +681,14 @@ model HospitalRole {
   hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
   roleName RoleName @relation(fields: [roleNameId], references: [id], onDelete: Restrict)
 
-  permissions HospitalRolePermission[]
-  users       UserRoleAssignment[]
+  permissions                 HospitalRolePermission[]
+  users                       UserRoleAssignment[]
+  discountApprovalAuthorities DiscountApprovalAuthority[]
+
+  // === PHASE 1.3: AUDIT TRACKING ===
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -590,6 +793,17 @@ model HospitalUser {
   permissions   UserModuleFeaturePermission[]
   managedStaff  StaffProfile[]                @relation("ReportingManager")
   doctorProfile DoctorProfile?
+
+  // Phase 2.2 — PRO ownership of external refer doctors
+  assignedReferDoctors ReferDoctor[] @relation("ProReferDoctors")
+
+  // Phase 2.4 Session 4 — lab sign-off matrix
+  labSignoffAuthorities LabSignoffAuthority[]
+
+  // === PHASE 1.3: AUDIT TRACKING ===
+  createdBy String?
+  updatedBy String?
+  deletedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -698,10 +912,28 @@ model DoctorProfile {
   bufferTimeMins    Int     @default(0)
   maxPatientsPerDay Int?
 
+  // === PHASE 2.2: DOCTOR SETUP ===
+  clinicalDepartmentId String?
+  specializationId     String?
+  digitalSignatureUrl  String? // S3/Cloudinary URL or static file path
+  doctorSharePercent   Decimal @default(0) @db.Decimal(5, 2)
+
   isActive Boolean @default(true)
 
   hospital     Hospital     @relation(fields: [tenantId], references: [tenantId])
   hospitalUser HospitalUser @relation(fields: [hospitalUserId], references: [id])
+
+  // Phase 2.2 linkages
+  clinicalDepartment ClinicalDepartment?     @relation(fields: [clinicalDepartmentId], references: [id], onDelete: SetNull)
+  specializationRel    Specialization?         @relation(fields: [specializationId], references: [id], onDelete: SetNull)
+  opdVisitConfigs      DoctorOpdVisitConfig[]
+
+  // IPD
+  ipdAdmissions IpdAdmission[]
+
+  // Phase 3.2 — package consults & consumption
+  packageDoctorConsults PackageDoctorConsult[]
+  packageConsumptions   PackageConsumption[]
 
   availabilities DoctorAvailability[]
   leaveBlocks    DoctorLeaveBlock[]
@@ -763,6 +995,902 @@ model DoctorLeaveBlock {
 }
 
 // ============================================
+// PHASE 2.2 — DOCTOR SETUP
+// ============================================
+
+// Clinical (medical) wings — distinct from admin `Department` (HR/Operations)
+model ClinicalDepartment {
+  id          String    @id @default(uuid())
+  tenantId    String
+  name        String    // e.g., "Cardiology", "Neurology", "Orthopaedics"
+  code        String    // e.g., "CARD", "NEUR", "ORTHO"
+  description String?
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+
+  hospital        Hospital         @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  specializations Specialization[]
+  doctorProfiles  DoctorProfile[]
+  packageDoctorConsults PackageDoctorConsult[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("clinical_departments")
+}
+
+// Sub-specialty inside a clinical department (e.g., Cardiology → Interventional)
+model Specialization {
+  id                   String    @id @default(uuid())
+  tenantId             String
+  clinicalDepartmentId String
+  name                 String    // e.g., "Interventional Cardiology", "Pediatric Cardiology"
+  code                 String    // e.g., "INT_CARD", "PED_CARD"
+  description          String?
+  isActive             Boolean   @default(true)
+  deletedAt            DateTime?
+
+  hospital           Hospital           @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  clinicalDepartment ClinicalDepartment @relation(fields: [clinicalDepartmentId], references: [id], onDelete: Cascade)
+  doctorProfiles     DoctorProfile[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId, clinicalDepartmentId])
+  @@map("specializations")
+}
+
+// Follow-up & visit fee rules per doctor (general/cash or per panel)
+model DoctorOpdVisitConfig {
+  id                 String    @id @default(uuid())
+  tenantId           String
+  doctorProfileId    String
+  panelId            String?   // null = General/Cash patients, or specific Panel
+  firstVisitFee      Decimal   @db.Decimal(10, 2)
+  followUpDays       Int       @default(7)  // Valid window for follow-up
+  followUpMaxVisits  Int       @default(1)  // Number of free/discounted visits within window
+  followUpFee        Decimal   @default(0) @db.Decimal(10, 2) // Typically ₹0 for follow-up
+  emergencyFee       Decimal?  @db.Decimal(10, 2)
+  isActive           Boolean   @default(true)
+  deletedAt          DateTime?
+
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  doctorProfile DoctorProfile @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+  panel         Panel?        @relation(fields: [panelId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, doctorProfileId, panelId])
+  @@index([tenantId, doctorProfileId])
+  @@map("doctor_opd_visit_configs")
+}
+
+// External doctors (private clinics) who refer patients + their PRO owner
+model ReferDoctor {
+  id                 String    @id @default(uuid())
+  tenantId           String
+  name               String    // Dr. Full Name
+  code               String?   // e.g., "REF-001"
+  clinicHospitalName String?   // Clinic or external hospital name
+  mobile             String
+  email              String?
+  specialization     String?
+  address            String?
+  city               String?
+  state              String?
+  pincode            String?
+  commissionPercent  Decimal   @default(0) @db.Decimal(5, 2)
+  panNumber          String?
+  bankAccountNo      String?
+  ifscCode           String?
+  proUserId          String?   // HospitalUser acting as PRO (Marketing executive)
+  isActive           Boolean   @default(true)
+  deletedAt          DateTime?
+
+  hospital Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  proUser  HospitalUser? @relation("ProReferDoctors", fields: [proUserId], references: [id], onDelete: SetNull)
+
+  // Phase 2.2B — referral attribution
+  referredPatients     Patient[]
+  referredAppointments Appointment[]
+  commissions          ReferralCommission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, mobile])
+  @@index([tenantId, proUserId])
+  @@map("refer_doctors")
+}
+
+// Phase 2.2B — referral incentive settlement tracking
+model ReferralCommission {
+  id               String    @id @default(uuid())
+  tenantId         String
+  referDoctorId    String
+  appointmentId    String?
+  patientId        String
+  billId           String?   // Link to OpdBill when generated
+  billAmount       Decimal   @db.Decimal(10, 2)  // Total bill amount
+  commissionRate   Decimal   @db.Decimal(5, 2)   // Snapshot of ReferDoctor.commissionPercent at billing time
+  commissionAmount Decimal   @db.Decimal(10, 2)  // billAmount * commissionRate / 100
+  proUserId        String?   // Snapshot of PRO assigned at billing time
+  status           String    @default("PENDING") // PENDING, APPROVED, PAID, CANCELLED
+  settledAt        DateTime?
+  settledBy        String?   // HospitalUser.id who approved payment
+  notes            String?
+
+  hospital    Hospital    @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  referDoctor ReferDoctor @relation(fields: [referDoctorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, referDoctorId])
+  @@index([tenantId, proUserId])
+  @@index([tenantId, status])
+  @@map("referral_commissions")
+}
+
+// ============================================
+// PHASE 2.3 — WARD, ROOM & BED (IPD FOUNDATION)
+// ============================================
+
+enum BedStatusType {
+  AVAILABLE
+  RESERVED
+  OCCUPIED
+  DISCHARGE_PENDING
+  HOUSEKEEPING
+  MAINTENANCE
+  OUT_OF_SERVICE
+}
+
+enum WardGender {
+  ANY
+  MALE_ONLY
+  FEMALE_ONLY
+  PEDIATRIC
+}
+
+// RoomType — category of rooms/wards ("General Ward", "ICU", "Private Deluxe")
+model RoomType {
+  id             String       @id @default(uuid())
+  tenantId       String
+  name           String       // e.g., "General Ward", "Semi-Private", "Private Deluxe", "ICU", "NICU", "Daycare"
+  code           String       // e.g., "GW", "SP", "PVT", "ICU", "NICU", "DC"
+  description    String?
+  isEmergency    Boolean      @default(false)  // true = bypass IPD admission wizard, go to ER triage
+  isDaycare      Boolean      @default(false)  // true = cap stay at 24hrs, apply daycare package
+  isDialysis     Boolean      @default(false)  // true = session-based billing, no bed rent
+  isCount        Boolean      @default(true)   // false = excluded from BOR calculation (recovery, stretchers)
+  defaultRate    Decimal      @default(0) @db.Decimal(10, 2)  // Base per-day bed charge
+  nursingCharge  Decimal      @default(0) @db.Decimal(10, 2)  // Per-day nursing charge for this room type
+  sortOrder      Int          @default(0)
+  isActive       Boolean      @default(true)
+  deletedAt      DateTime?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  rooms    Room[]
+
+  // Phase 1.4 — rate caps per room type (nullable side)
+  thresholdLimits ThresholdLimit[]
+
+  // Phase 3.2 — IPD packages valid in this room type
+  packageMasters PackageMaster[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("room_types")
+}
+
+// Room — physical room/ward ("GW-1", "ICU-2", "301")
+model Room {
+  id             String       @id @default(uuid())
+  tenantId       String
+  roomTypeId     String
+  roomNumber     String       // e.g., "GW-1", "ICU-2", "301", "302A"
+  floor          String?      // e.g., "Ground", "1st", "2nd"
+  wing           String?      // e.g., "East Wing", "Block A"
+  gender         WardGender   @default(ANY)
+  maxBeds        Int          @default(1)  // Expected capacity (informational)
+  hasAC          Boolean      @default(false)
+  hasAttachedBath Boolean     @default(false)
+  hasTV          Boolean      @default(false)
+  hasOxygen      Boolean      @default(false)
+  hasMonitor     Boolean      @default(false)
+  notes          String?
+  isActive       Boolean      @default(true)
+  deletedAt      DateTime?
+
+  hospital  Hospital         @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  roomType  RoomType         @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  beds      Bed[]
+  amenities RoomBedAmenity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, roomNumber])
+  @@index([tenantId, roomTypeId])
+  @@index([tenantId, gender])
+  @@map("rooms")
+}
+
+// Bed — individual bed within a room
+model Bed {
+  id             String    @id @default(uuid())
+  tenantId       String
+  roomId         String
+  bedNumber      String    // e.g., "01", "02", "A", "B"
+  bedIdentifier  String    // Auto-generated: "{roomNumber}/{bedNumber}" e.g., "GW-1/01"
+  isActive       Boolean   @default(true)
+  deletedAt      DateTime?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  room     Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  // 1:1 "current status" is derived via statusHistory { isCurrent: true } —
+  // a separate FK would duplicate what the flag already guarantees.
+  statusHistory BedStatus[] // Full audit trail
+
+  ipdAdmissions IpdAdmission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, bedIdentifier])
+  @@unique([roomId, bedNumber])
+  @@index([tenantId, roomId])
+  @@map("beds")
+}
+
+// BedStatus — runtime state machine + full audit trail (isCurrent marks the live row)
+model BedStatus {
+  id             String        @id @default(uuid())
+  tenantId       String
+  bedId          String
+  status         BedStatusType
+  patientId      String?       // Link to Patient when OCCUPIED or RESERVED
+  ipdAdmissionId String?       // Link to IPD Admission (future — keep as String for now)
+  reservedBy     String?       // HospitalUser.id who reserved
+  reason         String?       // e.g., "Admission via ER", "Post-surgery recovery", "Deep cleaning"
+  changedBy      String?       // HospitalUser.id who changed status
+  isCurrent      Boolean       @default(true)  // Only one record per bed should be isCurrent = true
+  effectiveFrom  DateTime      @default(now())
+  effectiveTo    DateTime?     // Null if current
+
+  hospital     Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  bed          Bed           @relation(fields: [bedId], references: [id], onDelete: Cascade)
+  ipdAdmission IpdAdmission? @relation(fields: [ipdAdmissionId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, bedId, isCurrent])
+  @@index([tenantId, status])
+  @@index([tenantId, patientId])
+  @@map("bed_statuses")
+}
+
+// BedAmenity — master list of amenities for filtering ("AC", "TV", "Fridge")
+model BedAmenity {
+  id       String    @id @default(uuid())
+  tenantId String
+  name     String    // e.g., "Air Conditioner", "Television", "Refrigerator", "Sofa for Attendant"
+  code     String    // e.g., "AC", "TV", "FRIDGE", "SOFA"
+  icon     String?   // UI icon identifier
+  isActive Boolean   @default(true)
+
+  hospital Hospital       @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  rooms    RoomBedAmenity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("bed_amenities")
+}
+
+// RoomBedAmenity — many-to-many mapping (room ⇄ amenity)
+model RoomBedAmenity {
+  roomId      String
+  amenityId   String
+  room        Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  amenity     BedAmenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, amenityId])
+  @@map("room_bed_amenities")
+}
+
+// ============================================
+// IPD — ADMISSION / DISCHARGE WORKFLOW
+// ============================================
+
+model IpdAdmission {
+  id              String    @id @default(uuid())
+  tenantId        String
+  admissionNo     String    // Auto: "IPD-{YYYY}-{00001}"
+  patientId       String
+  doctorProfileId String
+  bedId           String?
+  panelId         String?
+  referDoctorId   String?
+
+  admissionDate        DateTime  @default(now())
+  admissionType        String    @default("EMERGENCY")  // EMERGENCY, PLANNED, TRANSFER, DAYCARE
+  provisionalDiagnosis String?
+  reasonForAdmission   String?
+  expectedDischargeDate DateTime? @db.Date
+
+  dischargeDate    DateTime?
+  dischargeType    String?   // NORMAL, LAMA, TRANSFERRED, EXPIRED
+  dischargeSummary String?
+  dischargedBy     String?
+
+  advancePaid        Decimal @default(0) @db.Decimal(10, 2)
+  provisionalTotal   Decimal @default(0) @db.Decimal(15, 2)
+  thresholdBreached  Boolean @default(false)
+  thresholdAlertSent Boolean @default(false)
+
+  status   String  @default("ADMITTED")  // ADMITTED, DISCHARGE_ORDERED, DISCHARGED, CANCELLED
+  isActive Boolean @default(true)
+
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  patient       Patient       @relation(fields: [patientId], references: [id])
+  doctorProfile DoctorProfile @relation(fields: [doctorProfileId], references: [id])
+  bed           Bed?          @relation(fields: [bedId], references: [id], onDelete: SetNull)
+  panel         Panel?        @relation(fields: [panelId], references: [id], onDelete: SetNull)
+  bedStatuses   BedStatus[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, admissionNo])
+  @@index([tenantId, patientId])
+  @@index([tenantId, bedId])
+  @@index([tenantId, status])
+  @@index([tenantId, panelId])
+  @@map("ipd_admissions")
+}
+
+// ============================================
+// PHASE 2.4 — LAB / RADIO SETUP (LIS/RIS) — SESSION 1: CORE HIERARCHY
+// ============================================
+
+enum LabDepartmentType {
+  BIOCHEMISTRY
+  HEMATOLOGY
+  MICROBIOLOGY
+  PATHOLOGY
+  SEROLOGY
+  RADIOLOGY
+  CARDIOLOGY
+  NUCLEAR_MEDICINE
+  OTHER
+}
+
+enum ObservationDataType {
+  NUMERIC
+  TEXT
+  BOOLEAN
+  SELECT
+  CALCULATED
+}
+
+enum SpecimenType {
+  BLOOD
+  SERUM
+  PLASMA
+  URINE
+  STOOL
+  SPUTUM
+  CSF
+  SWAB
+  TISSUE
+  FLUID
+  OTHER
+}
+
+enum InvestigationReportStatus {
+  PENDING
+  IN_PROGRESS
+  VERIFIED
+  APPROVED
+  REJECTED
+  AMENDED
+}
+
+// LabDepartment — lab sections/wings (Biochemistry, Hematology, X-Ray…)
+model LabDepartment {
+  id              String            @id @default(uuid())
+  tenantId        String
+  name            String            // e.g., "Biochemistry", "Hematology", "Radiology X-Ray"
+  code            String            // e.g., "BIO", "HEM", "RAD_XR"
+  departmentType  LabDepartmentType
+  headUserId      String?           // HospitalUser.id — Lab in-charge
+  location        String?           // e.g., "Ground Floor, Block A"
+  turnaroundHours Int               @default(24)  // Default TAT in hours
+  allowTemplates  Boolean           @default(true) // Whether to use rich-text report templates
+  isActive        Boolean           @default(true)
+  deletedAt       DateTime?
+
+  hospital       Hospital        @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  investigations Investigation[]
+  reportTemplates ReportTemplate[]
+  reportComments  ReportComment[]
+  signoffAuthorities LabSignoffAuthority[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("lab_departments")
+}
+
+// Investigation — billable test, linked to ServiceMaster (billing link)
+model Investigation {
+  id                  String                     @id @default(uuid())
+  tenantId            String
+  labDepartmentId     String
+  serviceId           String                     // FK to ServiceMaster — this is the billing link
+  name                String                     // e.g., "Lipid Profile", "CBC", "X-Ray Chest PA"
+  code                String                     // e.g., "LIPID", "CBC", "XR_CHEST_PA"
+  shortName           String?                    // e.g., "LP", "CBC"
+  specimenType        SpecimenType               @default(BLOOD)
+  specimenVolume      String?                    // e.g., "5ml", "10ml"
+  containerColor      String?                    // e.g., "Red Top", "EDTA Purple"
+  fastingRequired     Boolean                    @default(false)
+  reportingFormat     String?                    // e.g., "NUMERIC_TABLE", "DESCRIPTIVE", "IMAGE"
+  outsourceLabName    String?                    // If sent to external lab
+  outsourceTatHours   Int?                       // External lab TAT
+  // Session 3 — pre-analytical linkage
+  sampleTypeId        String?
+  sampleContainerId   String?
+  // Session 4 — outsource reference lab
+  outsourceLabId      String?
+  isActive            Boolean                    @default(true)
+  deletedAt           DateTime?
+
+  hospital      Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  labDepartment LabDepartment @relation(fields: [labDepartmentId], references: [id], onDelete: Cascade)
+  service       ServiceMaster @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  sampleTypeRel       SampleType?            @relation(fields: [sampleTypeId], references: [id], onDelete: SetNull)
+  sampleContainerRel  SampleContainerMaster? @relation(fields: [sampleContainerId], references: [id], onDelete: SetNull)
+  outsourceLab        OutsourceLabMaster?    @relation(fields: [outsourceLabId], references: [id], onDelete: SetNull)
+
+  observations InvestigationObservationMapping[]
+  reportTemplates ReportTemplate[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId, labDepartmentId])
+  @@index([tenantId, serviceId])
+  @@map("investigations")
+}
+
+// Observation — individual test parameter (Total Cholesterol, Hemoglobin, TSH)
+model Observation {
+  id               String            @id @default(uuid())
+  tenantId         String
+  name             String            // e.g., "Total Cholesterol", "Hemoglobin", "TSH"
+  code             String            // e.g., "TCHOL", "HGB", "TSH"
+  dataType         ObservationDataType @default(NUMERIC)
+  unit             String?           // e.g., "mg/dL", "g/dL", "mIU/L"
+  decimalPlaces    Int               @default(2)
+  sortOrder        Int               @default(0)
+  isCritical       Boolean           @default(false)  // Critical value alert flag
+  selectOptions    String[]          // For dataType = SELECT: ["Negative", "Positive", "Trace"]
+  formulaExpression String?          // For dataType = CALCULATED: "TCHOL - HDL - (TRIG/5)"
+  isActive         Boolean           @default(true)
+  deletedAt        DateTime?
+
+  hospital       Hospital                          @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  investigations InvestigationObservationMapping[]
+  referenceRanges ReferenceRange[]
+  interpretations InvestigationInterpretation[]
+  helps           ObservationHelp[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("observations")
+}
+
+// InvestigationObservationMapping — many-to-many with ordering
+model InvestigationObservationMapping {
+  id              String    @id @default(uuid())
+  investigationId String
+  observationId   String
+  sortOrder       Int       @default(0)  // Display order within the investigation report
+  isMandatory     Boolean   @default(true) // Whether this observation must have a result
+  isReportable    Boolean   @default(true) // Whether to show on final report
+
+  investigation Investigation @relation(fields: [investigationId], references: [id], onDelete: Cascade)
+  observation   Observation   @relation(fields: [observationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([investigationId, observationId])
+  @@index([investigationId])
+  @@index([observationId])
+  @@map("investigation_observation_mappings")
+}
+
+// ReferenceRange — normal values by gender + age band
+model ReferenceRange {
+  id            String    @id @default(uuid())
+  tenantId      String
+  observationId String
+  gender        Gender?   // null = applies to ALL genders
+  minAgeYears   Int?      // null = no lower bound
+  maxAgeYears   Int?      // null = no upper bound
+  minValue      Decimal?  @db.Decimal(10, 4)  // Lower normal limit
+  maxValue      Decimal?  @db.Decimal(10, 4)  // Upper normal limit
+  normalText    String?   // For TEXT type observations: e.g., "Negative", "No growth"
+  criticalLow   Decimal?  @db.Decimal(10, 4)  // Below this = critical alert
+  criticalHigh  Decimal?  @db.Decimal(10, 4)  // Above this = critical alert
+  isActive      Boolean   @default(true)
+
+  hospital    Hospital    @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  observation Observation @relation(fields: [observationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, observationId])
+  @@index([observationId, gender])
+  @@map("reference_ranges")
+}
+
+// ============================================
+// PHASE 2.4 — SESSION 2: TEMPLATES, INTERPRETATIONS, HELP & COMMENTS
+// ============================================
+
+enum TemplateType {
+  NUMERIC_TABLE       // Standard lab results table (Biochemistry, Hematology)
+  DESCRIPTIVE         // Paragraph-style report (Radiology, Pathology)
+  CULTURE_SENSITIVITY // Microbiology C&S format
+  FLOW_CYTOMETRY      // Specialized format
+  CUSTOM              // Free-form HTML/Markdown
+}
+
+enum InterpretationCondition {
+  ABOVE_MAX           // value > maxValue
+  BELOW_MIN           // value < minValue
+  ABOVE_CRITICAL_HIGH // value > criticalHigh
+  BELOW_CRITICAL_LOW  // value < criticalLow
+  EQUALS              // value == specific
+  CONTAINS            // text contains keyword
+  IN_RANGE            // value within normal (for flagging normal results)
+}
+
+// ReportTemplate — report format per department/investigation (or global)
+model ReportTemplate {
+  id                String       @id @default(uuid())
+  tenantId          String
+  labDepartmentId   String?      // null = global template
+  investigationId   String?      // null = applies to all investigations in dept
+  templateType      TemplateType @default(NUMERIC_TABLE)
+  name              String       // e.g., "Biochemistry Standard", "X-Ray Report", "Culture & Sensitivity"
+  headerHtml        String?      // HTML/Markdown for report header (hospital logo, patient info block)
+  bodyHtml          String?      // HTML/Markdown for results body layout
+  footerHtml        String?      // HTML/Markdown for footer (pathologist sign, disclaimer)
+  cssStyles         String?      // Custom CSS for print layout
+  isDefault         Boolean      @default(false)  // Default template for the department
+  isActive          Boolean      @default(true)
+  deletedAt         DateTime?
+
+  hospital      Hospital       @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  labDepartment LabDepartment? @relation(fields: [labDepartmentId], references: [id], onDelete: SetNull)
+  investigation Investigation? @relation(fields: [investigationId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, labDepartmentId])
+  @@index([tenantId, investigationId])
+  @@map("report_templates")
+}
+
+// InvestigationInterpretation — auto-interpretation rules per observation
+model InvestigationInterpretation {
+  id              String                @id @default(uuid())
+  tenantId        String
+  observationId   String
+  condition       InterpretationCondition
+  thresholdValue  Decimal?              @db.Decimal(10, 4)  // For ABOVE_MAX, BELOW_MIN, etc.
+  thresholdText   String?               // For CONTAINS condition
+  interpretationText String             // e.g., "Elevated — Suggestive of Hypothyroidism"
+  severity        String                @default("INFO")    // INFO, WARNING, CRITICAL
+  sortOrder       Int                   @default(0)
+  isActive        Boolean               @default(true)
+
+  hospital    Hospital    @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  observation Observation @relation(fields: [observationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, observationId])
+  @@map("investigation_interpretations")
+}
+
+// ObservationHelp — data-entry guidance for lab technicians
+model ObservationHelp {
+  id            String    @id @default(uuid())
+  tenantId      String
+  observationId String
+  helpTitle     String    // e.g., "Sample Collection", "Interference", "Clinical Significance"
+  helpText      String    // Detailed help content
+  sortOrder     Int       @default(0)
+  isActive      Boolean   @default(true)
+
+  hospital    Hospital    @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  observation Observation @relation(fields: [observationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, observationId])
+  @@map("observation_helps")
+}
+
+// ReportComment — standard comment library (one-click attach)
+model ReportComment {
+  id              String    @id @default(uuid())
+  tenantId        String
+  labDepartmentId String?   // null = global comment, available to all departments
+  category        String    @default("GENERAL")  // GENERAL, SAMPLE_QUALITY, TECHNICAL, CLINICAL, DISCLAIMER
+  commentText     String    // e.g., "Sample hemolyzed — results may be affected", "Repeat test advised"
+  shortcut        String?   // Quick code: e.g., "HEM", "REP", "LIP"
+  isActive        Boolean   @default(true)
+  deletedAt       DateTime?
+
+  hospital      Hospital       @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  labDepartment LabDepartment? @relation(fields: [labDepartmentId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, shortcut])
+  @@index([tenantId, labDepartmentId])
+  @@index([tenantId, category])
+  @@map("report_comments")
+}
+
+// ============================================
+// PHASE 2.4 — SESSION 3: PRE-ANALYTICAL (CONTAINERS, SAMPLE TYPES, RETENTION)
+// ============================================
+
+enum StorageTemperature {
+  ROOM_TEMPERATURE // 20°C - 25°C
+  REFRIGERATED     // 2°C - 8°C
+  FROZEN           // -20°C
+  DEEP_FROZEN      // -80°C
+}
+
+// SampleContainerMaster — vacutainers, urine cups, swab tubes
+model SampleContainerMaster {
+  id              String    @id @default(uuid())
+  tenantId        String
+  name            String    // e.g., "EDTA Tube", "SST Gel Tube", "Sodium Citrate", "Fluoride Tube", "Plain Red Tube"
+  code            String    // e.g., "EDTA_PURPLE", "SST_YELLOW", "CITRATE_BLUE", "FLUORIDE_GREY", "PLAIN_RED"
+  capColor        String    // e.g., "Lavender", "Yellow/Gold", "Light Blue", "Grey", "Red", "Green"
+  hexColorCode    String?   // Hex code for UI display e.g., "#9370DB", "#FFD700", "#87CEEB"
+  additive        String?   // e.g., "K2 EDTA", "Clot Activator & Gel", "3.2% Sodium Citrate", "Sodium Fluoride + Potassium Oxalate"
+  defaultVolumeMl Decimal?  @db.Decimal(4, 2) // e.g., 2.00, 3.00, 5.00 ml
+  tubeType        String    @default("VACUTAINER") // VACUTAINER, STERILE_CUP, SWAB_TUBE, SLIDE_BOX
+  sortOrder       Int       @default(0)
+  isActive        Boolean   @default(true)
+  deletedAt       DateTime?
+
+  hospital       Hospital         @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  sampleTypes    SampleType[]
+  investigations Investigation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("sample_container_masters")
+}
+
+// SampleType — dynamic specimen master with stability + retention rules
+model SampleType {
+  id                      String              @id @default(uuid())
+  tenantId                String
+  name                    String              // e.g., "Whole Blood", "Serum", "Plasma", "Random Urine", "24hr Urine", "CSF", "Sputum"
+  code                    String              // e.g., "WB", "SER", "PLA", "24URN", "CSF", "SPT"
+  defaultContainerId      String?             // Preferred default tube
+  minVolumeMl             Decimal?            @db.Decimal(4, 2)
+  storageTemp             StorageTemperature  @default(REFRIGERATED)
+  stabilityRoomTempHours  Int?                @default(4)   // How long stable at 20-25°C
+  stabilityFridgeHours    Int?                @default(24)  // How long stable at 2-8°C
+  stabilityFrozenDays     Int?                @default(30)  // How long stable at -20°C
+  archiveDays             Int                 @default(2)   // Post-reporting retention days for re-testing
+  collectionInstructions  String?             // e.g., "Early morning mid-stream catch", "Overnight fast"
+  isActive                Boolean             @default(true)
+  deletedAt               DateTime?
+
+  hospital         Hospital               @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  defaultContainer SampleContainerMaster? @relation(fields: [defaultContainerId], references: [id], onDelete: SetNull)
+  investigations   Investigation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("sample_types")
+}
+
+// ============================================
+// PHASE 2.4 — SESSION 4: MICROBIOLOGY, OUTSOURCE LABS & SIGN-OFF AUTHORITY
+// ============================================
+
+enum OrganismType {
+  BACTERIA_GRAM_POSITIVE
+  BACTERIA_GRAM_NEGATIVE
+  BACTERIA_AFB
+  FUNGI
+  PARASITE
+  VIRUS
+  OTHER
+}
+
+enum AntibioticClass {
+  PENICILLINS
+  CEPHALOSPORINS
+  CARBAPENEMS
+  FLUOROQUINOLONES
+  AMINOGLYCOSIDES
+  MACROLIDES
+  GLYCOPEPTIDES
+  TETRACYCLINES
+  SULFONAMIDES
+  OXAZOLIDINONES
+  POLYMYXINS
+  OTHER
+}
+
+enum AstResultType {
+  SENSITIVE
+  INTERMEDIATE
+  RESISTANT
+  NOT_TESTED
+}
+
+// OrganismMaster — pathogen catalog
+model OrganismMaster {
+  id          String       @id @default(uuid())
+  tenantId    String
+  name        String       // e.g., "Escherichia coli", "Staphylococcus aureus", "Klebsiella pneumoniae"
+  code        String       // e.g., "ECOLI", "SAUR", "KPNEU"
+  organismType OrganismType @default(BACTERIA_GRAM_NEGATIVE)
+  description String?
+  isCommon    Boolean      @default(true) // Highlights common pathogens in data entry
+  isActive    Boolean      @default(true)
+  deletedAt   DateTime?
+
+  hospital       Hospital                    @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  standardPanels OrganismAntibioticMapping[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId, organismType])
+  @@map("organism_masters")
+}
+
+// AntibioticMaster — antibiotic catalog with potency details
+model AntibioticMaster {
+  id              String          @id @default(uuid())
+  tenantId        String
+  name            String          // e.g., "Amikacin", "Meropenem", "Vancomycin", "Ciprofloxacin"
+  code            String          // e.g., "AK", "MEM", "VA", "CIP"
+  antibioticClass AntibioticClass @default(OTHER)
+  standardDosage  String?         // e.g., "15mg/kg/day", "1g IV Q8H"
+  sortOrder       Int             @default(0)
+  isActive        Boolean         @default(true)
+  deletedAt       DateTime?
+
+  hospital       Hospital                    @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  organismPanels OrganismAntibioticMapping[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId, antibioticClass])
+  @@map("antibiotic_masters")
+}
+
+// OrganismAntibioticMapping — standard AST testing battery per pathogen
+model OrganismAntibioticMapping {
+  id           String    @id @default(uuid())
+  organismId   String
+  antibioticId String
+  sortOrder    Int       @default(0)
+  isFirstLine  Boolean   @default(true) // First-line testing drug vs Reserve/Second-line drug
+
+  organism   OrganismMaster   @relation(fields: [organismId], references: [id], onDelete: Cascade)
+  antibiotic AntibioticMaster @relation(fields: [antibioticId], references: [id], onDelete: Cascade)
+
+  @@unique([organismId, antibioticId])
+  @@index([organismId])
+  @@index([antibioticId])
+  @@map("organism_antibiotic_mappings")
+}
+
+// OutsourceLabMaster — external reference labs (Lal PathLabs, Agilus, Metropolis)
+model OutsourceLabMaster {
+  id            String    @id @default(uuid())
+  tenantId      String
+  labName       String    // e.g., "Dr. Lal PathLabs", "Agilus Diagnostics (SRL)", "Metropolis Healthcare"
+  code          String    // e.g., "LAL", "AGILUS", "METRO"
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  city          String?
+  portalUrl     String?   // External B2B portal login link
+  courierPickupTime String? // e.g., "14:00 daily"
+  isActive      Boolean   @default(true)
+  deletedAt     DateTime?
+
+  hospital       Hospital        @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  investigations Investigation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("outsource_lab_masters")
+}
+
+// LabSignoffAuthority — pathologist verification & digital signature matrix (NABL)
+model LabSignoffAuthority {
+  id              String         @id @default(uuid())
+  tenantId        String
+  hospitalUserId  String         // Doctor/Pathologist/Biochemist user
+  labDepartmentId String?        // null = can sign for ALL lab departments
+  designationText String         // e.g., "Consultant Pathologist (MD, DNB)", "Chief Microbiologist"
+  medicalRegNo    String?        // Registration council number to print on report
+  canVerify       Boolean        @default(true)  // Can mark status as VERIFIED
+  canApproveLock  Boolean        @default(false) // Can give final signoff & LOCK report
+  isActive        Boolean        @default(true)
+  deletedAt       DateTime?
+
+  hospital      Hospital       @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  hospitalUser  HospitalUser   @relation(fields: [hospitalUserId], references: [id], onDelete: Cascade)
+  labDepartment LabDepartment? @relation(fields: [labDepartmentId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, hospitalUserId, labDepartmentId])
+  @@index([tenantId, hospitalUserId])
+  @@map("lab_signoff_authorities")
+}
+
+// ============================================
 // OPD — STEP 1: PATIENT REGISTRATION ✅
 // ============================================
 
@@ -813,6 +1941,9 @@ model Patient {
   consultingDoctor String?
   department       String?
 
+  // Phase 2.2B — external doctor who referred this patient
+  referDoctorId String?
+
   // 🟢 ADD PANEL FOREIGN KEY (Proper Normalization)
   panelId        String?
   panelPolicyNo  String? // Insurance Card No / Corporate Emp ID
@@ -843,12 +1974,20 @@ model Patient {
 
   bills OpdBill[]
 
+  // Phase 2.2B — referral attribution
+  referDoctor ReferDoctor? @relation(fields: [referDoctorId], references: [id], onDelete: SetNull)
+
+  // IPD
+  ipdAdmissions IpdAdmission[]
+
+  // Phase 3.2 — package quota consumption
+  packageConsumptions PackageConsumption[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId, id])
   @@unique([tenantId, uhid])
-  @@unique([tenantId, mobile])
   @@index([tenantId])
   @@index([tenantId, mobile])
   @@index([tenantId, abhaId])
@@ -905,6 +2044,10 @@ model Appointment {
   referredByDoctorName String?
   referralNote         String?
 
+  // Phase 2.2B — referral attribution & follow-up flag
+  referDoctorId    String?
+  isFollowUpVisit  Boolean  @default(false)
+
   reasonForVisit String?
   notes          String?
 
@@ -924,6 +2067,7 @@ model Appointment {
   patient       Patient       @relation(fields: [patientId], references: [id])
   doctorProfile DoctorProfile @relation(fields: [doctorProfileId], references: [id])
   department    Department?   @relation(fields: [departmentId], references: [id])
+  referDoctor   ReferDoctor?  @relation(fields: [referDoctorId], references: [id], onDelete: SetNull)
 
   token        OpdToken?
   consultation Consultation?
@@ -1251,6 +2395,9 @@ model OpdBill {
   insuranceClaimed  Decimal? @db.Decimal(10, 2)
   insuranceApproved Decimal? @db.Decimal(10, 2)
 
+  // ─── PHASE 3.1: PANEL LINKAGE ───────────────────────────────────
+  panelId String?
+
   // ─── DISCOUNT AUTHORIZATION ─────────────────────────────────────
   discountReason       String?
   discountAuthorizedBy String?
@@ -1266,6 +2413,7 @@ model OpdBill {
   hospital    Hospital     @relation(fields: [tenantId], references: [tenantId])
   patient     Patient      @relation(fields: [patientId], references: [id])
   appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  panel       Panel?       @relation(fields: [panelId], references: [id], onDelete: SetNull)
 
   items    OpdBillItem[]
   payments OpdPayment[]
@@ -1278,6 +2426,7 @@ model OpdBill {
   @@index([tenantId, billStatus])
   @@index([tenantId, billedAt])
   @@index([tenantId, paymentStatus])
+  @@index([tenantId, panelId])
   @@map("opd_bills")
 }
 
@@ -1296,6 +2445,9 @@ model OpdBillItem {
   itemName String // Description of the service
   category String // 'Consultation', 'Lab', 'Pharmacy', 'Procedure'
 
+  // ─── PHASE 2.1: SERVICE MASTER LINK ─────────────────────────────
+  serviceId String?
+
   // ─── FINANCIALS ─────────────────────────────────────────────────
   discountPercent Decimal  @default(0) @db.Decimal(5, 2)
   discountAmount  Decimal  @default(0) @db.Decimal(10, 2)
@@ -1307,13 +2459,15 @@ model OpdBillItem {
   totalAmount Decimal @db.Decimal(10, 2) // quantity * unitPrice
 
   // ─── RELATIONS ──────────────────────────────────────────────────
-  hospital Hospital @relation(fields: [tenantId], references: [tenantId])
-  bill     OpdBill  @relation(fields: [billId], references: [id], onDelete: Cascade)
+  hospital Hospital       @relation(fields: [tenantId], references: [tenantId])
+  bill     OpdBill        @relation(fields: [billId], references: [id], onDelete: Cascade)
+  service  ServiceMaster? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([tenantId, billId])
+  @@index([serviceId])
   @@map("opd_bill_items")
 }
 
@@ -1548,6 +2702,24 @@ model Panel {
 
   patients Patient[]
 
+  // Phase 2.2 — panel-specific doctor visit rules
+  doctorOpdVisitConfigs DoctorOpdVisitConfig[]
+
+  // Phase 1.4 + IPD
+  thresholdLimits ThresholdLimit[]
+  ipdAdmissions   IpdAdmission[]
+
+  // Phase 3.1 — corporate/embassy & insurance workflow
+  counsellorAddress       String?   // For international/embassy patients
+  embassyAddress          String?
+  authorizationRequired   Boolean   @default(false) // Pre-approval needed before service delivery
+  preAuthRequired         Boolean   @default(false) // Cashless pre-authorization required
+  claimSubmissionDays     Int       @default(30)    // Deadline in days to submit claim post-discharge
+
+  rateSchedules  RateSchedule[]
+  panelDocuments PanelDocument[]
+  opdBills       OpdBill[]
+
   opdTariff TariffMaster? @relation("PanelOpdTariff", fields: [opdTariffId], references: [id])
   ipdTariff TariffMaster? @relation("PanelIpdTariff", fields: [ipdTariffId], references: [id])
 
@@ -1572,21 +2744,303 @@ model Panel {
 }
 
 // ============================================
-// ENUMS FOR RATE MANAGEMENT
+// PHASE 1.4 — THRESHOLD LIMIT MASTER
 // ============================================
+// Max allowed running bill for a panel (optionally per room type).
+// roomTypeId = NULL → general limit for the panel across all room types.
 
-enum ServiceCategory {
-  CONSULTATION
-  LAB
-  RADIOLOGY
-  PROCEDURE
-  PHARMACY
-  BED_CHARGE
-  OTHER
+model ThresholdLimit {
+  id             String    @id @default(uuid())
+  tenantId       String
+  panelId        String
+  roomTypeId     String?   // null = applies to ALL room types for this panel
+  maxAmount      Decimal   @db.Decimal(15, 2)
+  alertAtPercent Decimal   @default(80) @db.Decimal(5, 2)
+  actionOnBreach String    @default("SOFT")    // "SOFT" = warning, "HARD" = block charges
+  isActive       Boolean   @default(true)
+  deletedAt      DateTime?
+
+  hospital Hospital  @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  panel    Panel     @relation(fields: [panelId], references: [id], onDelete: Cascade)
+  roomType RoomType? @relation(fields: [roomTypeId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, panelId, roomTypeId])
+  @@index([tenantId, panelId])
+  @@map("threshold_limits")
 }
 
 // ============================================
-// 1. SERVICE MASTER (Hospital ki saari services)
+// PHASE 3.1 — PANEL RATE SCHEDULES & CLAIM DOCUMENTS
+// ============================================
+
+// RateSchedule — time-bound tariff rate lists (CGHS 2024 vs CGHS 2026)
+model RateSchedule {
+  id            String    @id @default(uuid())
+  tenantId      String
+  panelId       String
+  tariffId      String    // The TariffMaster rate list active during this period
+  scheduleName  String    // e.g., "CGHS Rates 2024-2025", "Star Health Revised Q1 2026"
+  effectiveFrom DateTime  @db.Date
+  effectiveTo   DateTime? @db.Date // null = indefinitely active until next revision
+  isDefault     Boolean   @default(false) // Fallback schedule if no date matches
+  notes         String?
+  isActive      Boolean   @default(true)
+  deletedAt     DateTime?
+
+  hospital Hospital     @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  panel    Panel        @relation(fields: [panelId], references: [id], onDelete: Cascade)
+  tariff   TariffMaster @relation(fields: [tariffId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, panelId, effectiveFrom])
+  @@index([tenantId, isActive])
+  @@map("rate_schedules")
+}
+
+// PanelDocument — required insurance claim documents & blank templates
+model PanelDocument {
+  id              String    @id @default(uuid())
+  tenantId        String
+  panelId         String
+  documentName    String    // e.g., "TPA Pre-Authorization Form", "Claim Form B", "Implant Barcode Sticker Sheet"
+  documentCode    String    // e.g., "PRE_AUTH_FORM", "CLAIM_FORM_B", "IMPLANT_STICKER"
+  description     String?
+  templateFileUrl String?   // S3/Cloudinary/Local URL for blank printable PDF/template
+  isMandatory     Boolean   @default(true) // Whether claim submission is blocked without this document
+  appliesToOpd    Boolean   @default(false)
+  appliesToIpd    Boolean   @default(true)
+  sortOrder       Int       @default(0)
+  isActive        Boolean   @default(true)
+  deletedAt       DateTime?
+
+  hospital Hospital @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  panel    Panel    @relation(fields: [panelId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, panelId, documentCode])
+  @@index([tenantId, panelId])
+  @@map("panel_documents")
+}
+
+// ============================================
+// PHASE 3.2 — PACKAGE SETUP (OPD HEALTH CHECKS & IPD BUNDLES)
+// ============================================
+
+enum PackageType {
+  OPD_HEALTH_CHECK
+  IPD_SURGERY
+  DAYCARE_PROCEDURE
+  CUSTOM_BUNDLE
+}
+
+enum ConsultTypeInPackage {
+  OPD_VISIT
+  IPD_DOCTOR_ROUND
+  CROSS_CONSULTATION
+}
+
+// PackageMaster — bundle definition + auto-linked billing SKU
+model PackageMaster {
+  id               String       @id @default(uuid())
+  tenantId         String
+  serviceId        String?      @unique // Auto-linked SKU in ServiceMaster for billing
+  name             String       // e.g., "Executive Health Checkup", "Laparoscopic Cholecystectomy", "Normal Delivery"
+  code             String       // e.g., "PKG-EHC", "PKG-LAP-CHOL", "PKG-NVD"
+  packageType      PackageType  @default(OPD_HEALTH_CHECK)
+  roomTypeId       String?      // Optional: For IPD packages, valid room type (e.g., General Ward)
+  includedStayDays Int?         @default(0) // Included hospitalization days (e.g., 3 days for surgery)
+  basePrice        Decimal      @db.Decimal(10, 2) // Standard hospital price
+  validityDays     Int          @default(30) // For OPD packages (validity window)
+  description      String?
+  isActive         Boolean      @default(true)
+  deletedAt        DateTime?
+
+  hospital   Hospital       @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  roomType   RoomType?      @relation(fields: [roomTypeId], references: [id], onDelete: SetNull)
+  serviceSku ServiceMaster? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  components     PackageComponent[]
+  doctorConsults PackageDoctorConsult[]
+  exclusions     PackageExclusion[]
+  consumptions   PackageConsumption[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId, packageType])
+  @@map("package_masters")
+}
+
+// PackageComponent — services/investigations included in the bundle (with quota)
+model PackageComponent {
+  id          String   @id @default(uuid())
+  tenantId    String
+  packageId   String
+  serviceId   String   // FK to ServiceMaster (Lab test, Radiology, Nursing, OT charge)
+  quantity    Int      @default(1) // Allowed quota included in package (e.g., 2 CBCs)
+  isOptional  Boolean  @default(false)
+  sortOrder   Int      @default(0)
+
+  hospital Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  package  PackageMaster @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  service  ServiceMaster @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@unique([packageId, serviceId])
+  @@index([tenantId, packageId])
+  @@map("package_components")
+}
+
+// PackageDoctorConsult — doctor visits/consultation allowance
+model PackageDoctorConsult {
+  id                   String               @id @default(uuid())
+  tenantId             String
+  packageId            String
+  clinicalDepartmentId String?              // Optional: e.g., "Cardiology"
+  doctorProfileId      String?              // Optional: Specific doctor if named package
+  consultType          ConsultTypeInPackage @default(OPD_VISIT)
+  maxVisits            Int                  @default(1) // Number of visits allowed
+
+  hospital           Hospital            @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  package            PackageMaster       @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  clinicalDepartment ClinicalDepartment? @relation(fields: [clinicalDepartmentId], references: [id], onDelete: SetNull)
+  doctorProfile      DoctorProfile?      @relation(fields: [doctorProfileId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, packageId])
+  @@map("package_doctor_consults")
+}
+
+// PackageExclusion — legal & billing exclusions printed on the package
+model PackageExclusion {
+  id            String    @id @default(uuid())
+  tenantId      String
+  packageId     String
+  exclusionText String    // e.g., "Cost of Implants, Mesh, Staplers", "High-end antibiotics (Meropenem, Colistin)"
+  sortOrder     Int       @default(0)
+
+  hospital Hospital      @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  package  PackageMaster @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, packageId])
+  @@map("package_exclusions")
+}
+
+// PackageConsumption — runtime usage tracking against quota
+model PackageConsumption {
+  id               String    @id @default(uuid())
+  tenantId         String
+  packageId        String
+  patientId        String
+  serviceId        String?   // Service consumed (if test/procedure)
+  doctorProfileId  String?   // Doctor consulted (if doctor visit)
+  consumedQuantity Int       @default(1)
+  isExtraBilled    Boolean   @default(false) // true = over-consumption, billed at standard tariff rate
+  billId           String?   // Link to OpdBill / IpdBill
+  notes            String?
+  consumedAt       DateTime  @default(now())
+
+  hospital      Hospital       @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  package       PackageMaster  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  service       ServiceMaster? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  doctorProfile DoctorProfile? @relation(fields: [doctorProfileId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, packageId, patientId])
+  @@index([tenantId, patientId])
+  @@map("package_consumptions")
+}
+
+// ============================================
+// ENUMS FOR SERVICES SETUP & RATE MANAGEMENT
+// ============================================
+
+enum ServiceStoreType {
+  NONE
+  MEDICAL
+  GENERAL
+}
+
+enum ServiceItemType {
+  OPD
+  IPD
+  DAYCARE
+  BOTH
+  PACKAGE
+}
+
+// ============================================
+// PHASE 2.1 — SERVICE CATEGORY (Tier 1)
+// ============================================
+// Broad classification: "Diagnostics / Lab", "Consultations",
+// "Procedures", "Room Charges". Replaces the old rigid ServiceCategory enum
+// with a dynamic tenant-scoped master.
+
+model ServiceCategoryMaster {
+  id          String           @id @default(uuid())
+  tenantId    String
+  name        String           // e.g. "Diagnostics / Lab", "Consultations", "Procedures", "Room Charges"
+  code        String           // e.g. "DIAG", "CONS", "PROC", "ROOM"
+  storeType   ServiceStoreType @default(NONE)
+  sortOrder   Int              @default(0)
+  isActive    Boolean          @default(true)
+  deletedAt   DateTime?
+
+  hospital       Hospital             @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  subCategories  ServiceSubCategory[]
+  services       ServiceMaster[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("service_category_masters")
+}
+
+// ============================================
+// PHASE 2.1 — SERVICE SUB-CATEGORY (Tier 2)
+// ============================================
+// Specific clinical wing: "Biochemistry", "Hematology", "Minor OT".
+// Print order + invoice grouping is controlled here.
+
+model ServiceSubCategory {
+  id          String    @id @default(uuid())
+  tenantId    String
+  categoryId  String
+  name        String    // e.g. "Biochemistry", "Hematology", "Minor OT", "Cardiology"
+  code        String    // e.g. "BIO", "HEM", "MOT", "CARD"
+  displayName String?   // Name to be printed on final bills
+  printOrder  Int       @default(0)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+
+  hospital Hospital              @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  category ServiceCategoryMaster @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  services ServiceMaster[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId, categoryId])
+  @@map("service_sub_categories")
+}
+
+// ============================================
+// 1. SERVICE MASTER (Hospital ki saari services) — Tier 3
 // ============================================
 model ServiceMaster {
   id       String @id @default(uuid())
@@ -1594,23 +3048,44 @@ model ServiceMaster {
 
   serviceCode String // e.g., LAB-001
   serviceName String // e.g., "Complete Blood Count (CBC)"
-  category    ServiceCategory
 
   // Hospital ka Standard/Base Rate
   baseRate Decimal @db.Decimal(10, 2)
 
+  // === PHASE 2.1: SERVICES SETUP ===
+  categoryId        String?
+  subCategoryId     String?
+  itemType          ServiceItemType @default(BOTH)
+  hsnSacCode        String?         // GST/Tax classification code
+  uom               String?         // Unit of measure e.g., "Per Test", "Per Hour", "Per Session"
+  rateEditable      Boolean         @default(false) // Billing counter par rate change allowed?
+  discountable      Boolean         @default(true)  // Discount allowed on this service?
+  genderRestriction Gender?         // e.g., Pap Smear = FEMALE only
+  minAgeYears       Int?            // e.g., Phototherapy = pediatric
+  maxAgeYears       Int?
+
   isActive  Boolean   @default(true)
   deletedAt DateTime?
 
-  hospital            Hospital             @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  hospital            Hospital               @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  categoryRel         ServiceCategoryMaster? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  subCategoryRel      ServiceSubCategory?    @relation(fields: [subCategoryId], references: [id], onDelete: SetNull)
   panelRates          PanelServiceRate[] // Linking to tariff rates
   investigationOrders InvestigationOrder[]
+  billItems           OpdBillItem[]
+  investigations      Investigation[] // Phase 2.4 — LIS billing link
+
+  // Phase 3.2 — package SKU linkage
+  packageMaster       PackageMaster?
+  packageComponents   PackageComponent[]
+  packageConsumptions PackageConsumption[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId, serviceCode])
-  @@index([tenantId, category])
+  @@index([tenantId, categoryId])
+  @@index([tenantId, subCategoryId])
   @@map("service_masters")
 }
 
@@ -1633,6 +3108,9 @@ model TariffMaster {
   // Relations linking back to Panel (OPD & IPD Rates)
   opdPanels Panel[] @relation("PanelOpdTariff")
   ipdPanels Panel[] @relation("PanelIpdTariff")
+
+  // Phase 3.1 — time-bound schedule usage
+  rateSchedules RateSchedule[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

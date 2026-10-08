@@ -217,6 +217,11 @@ export class CreatePatientDto {
   @MaxLength(500)
   consultingDoctor?: string;
 
+  /** External refer doctor who sent this patient (ReferDoctor). */
+  @IsOptional()
+  @IsUUID()
+  referDoctorId?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(500)

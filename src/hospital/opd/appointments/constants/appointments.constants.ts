@@ -57,14 +57,11 @@ export const APPOINTMENT_ERRORS = {
 export const APPOINTMENT_NO_CONFIG = {
   PREFIX: 'APT',
   SEQUENCE_LENGTH: 4, // APT-20250610-0001
-  RESETS: 'daily',   // Resets every day
+  RESETS: 'daily', // Resets every day
 } as const;
 
 // Cancellable statuses
-export const CANCELLABLE_STATUSES = [
-  'BOOKED',
-  'CHECKED_IN',
-] as const;
+export const CANCELLABLE_STATUSES = ['BOOKED', 'CHECKED_IN'] as const;
 
 // How many days in advance can appointment be booked
 export const MAX_ADVANCE_BOOKING_DAYS = 30;

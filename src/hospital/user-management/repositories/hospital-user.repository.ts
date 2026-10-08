@@ -51,7 +51,7 @@ export class HospitalUserRepository {
 
   findById(id: string, tenantId: string) {
     return this.prisma.hospitalUser.findUnique({
-      where: { id, tenantId },
+      where: { id, tenantId, deletedAt: null },
       include: {
         staffProfile: true,
         roles: {
@@ -79,11 +79,14 @@ export class HospitalUserRepository {
     return this.prisma.hospitalUser.findMany({
       where: {
         tenantId,
+        deletedAt: null,
         ...(filters.status ? { status: filters.status } : {}),
         ...(filters.search
           ? {
               OR: [
-                { firstName: { contains: filters.search, mode: 'insensitive' } },
+                {
+                  firstName: { contains: filters.search, mode: 'insensitive' },
+                },
                 { lastName: { contains: filters.search, mode: 'insensitive' } },
                 { email: { contains: filters.search, mode: 'insensitive' } },
               ],
@@ -112,35 +115,57 @@ export class HospitalUserRepository {
     });
   }
 
-  // ─── Effective Permissions (Role-based Resolution) ─────────────────────
+  // ─── Effective Permissions (Direct + Role-based Resolution) ────────────
+  //
+  // UNION of:
+  //   1. Direct grants  → UserModuleFeaturePermission
+  //   2. Role-based     → HospitalRolePermission of every ACTIVE role assigned
+  // Deduplicated on (moduleId, featureId).
 
   async getEffectivePermissions(userId: string, tenantId: string) {
-    const assignments = await this.prisma.userRoleAssignment.findMany({
-      where: {
-        userId,
-        hospitalRole: {
-          tenantId,
-          isActive: true,
+    const [assignments, directPermissions] = await Promise.all([
+      this.prisma.userRoleAssignment.findMany({
+        where: {
+          userId,
+          hospitalRole: {
+            tenantId,
+            isActive: true,
+            deletedAt: null,
+          },
         },
-      },
-      include: {
-        hospitalRole: {
-          include: {
-            roleName: { select: { id: true, name: true, code: true } },
-            permissions: {
-              include: {
-                moduleFeature: {
-                  include: {
-                    module: { select: { id: true, code: true, name: true } },
-                    feature: { select: { id: true, code: true, name: true } },
+        include: {
+          hospitalRole: {
+            include: {
+              roleName: { select: { id: true, name: true, code: true } },
+              permissions: {
+                include: {
+                  moduleFeature: {
+                    include: {
+                      module: { select: { id: true, code: true, name: true } },
+                      feature: { select: { id: true, code: true, name: true } },
+                    },
                   },
                 },
               },
             },
           },
         },
-      },
-    });
+      }),
+      this.prisma.userModuleFeaturePermission.findMany({
+        where: {
+          userId,
+          user: { tenantId },
+        },
+        include: {
+          moduleFeature: {
+            include: {
+              module: { select: { id: true, code: true, name: true } },
+              feature: { select: { id: true, code: true, name: true } },
+            },
+          },
+        },
+      }),
+    ]);
 
     const uniqueMap = new Map<
       string,
@@ -151,6 +176,7 @@ export class HospitalUserRepository {
         moduleName: string;
         featureCode: string;
         featureName: string;
+        isDirect: boolean;
         inheritedFromRoles: string[];
       }
     >();
@@ -169,11 +195,31 @@ export class HospitalUserRepository {
             moduleName: perm.moduleFeature.module.name,
             featureCode: perm.moduleFeature.feature.code,
             featureName: perm.moduleFeature.feature.name,
+            isDirect: false,
             inheritedFromRoles: [roleName],
           });
         } else {
           uniqueMap.get(key)!.inheritedFromRoles.push(roleName);
         }
+      }
+    }
+
+    for (const perm of directPermissions) {
+      const key = `${perm.moduleId}:${perm.featureId}`;
+
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, {
+          moduleId: perm.moduleId,
+          featureId: perm.featureId,
+          moduleCode: perm.moduleFeature.module.code,
+          moduleName: perm.moduleFeature.module.name,
+          featureCode: perm.moduleFeature.feature.code,
+          featureName: perm.moduleFeature.feature.name,
+          isDirect: true,
+          inheritedFromRoles: [],
+        });
+      } else {
+        uniqueMap.get(key)!.isDirect = true;
       }
     }
 
@@ -225,12 +271,14 @@ export class HospitalUserRepository {
     primaryRoleId: number;
     additionalRoleIds: number[];
     departmentIds: number[];
+    performedBy?: string;
   }) {
     return this.prisma.$transaction(async (tx) => {
       // Step 1: Create user
       const user = await tx.hospitalUser.create({
         data: {
           tenantId: data.tenantId,
+          createdBy: data.performedBy,
           firstName: data.userInfo.firstName,
           lastName: data.userInfo.lastName,
           email: data.userInfo.email,
@@ -343,11 +391,13 @@ export class HospitalUserRepository {
       pincode: string;
       emergencyContact: string;
     }>,
+    performedBy?: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.hospitalUser.update({
-        where: { id, tenantId },
+        where: { id, tenantId, deletedAt: null },
         data: {
+          updatedBy: performedBy,
           ...(userInfo.firstName && { firstName: userInfo.firstName }),
           ...(userInfo.lastName !== undefined && {
             lastName: userInfo.lastName,
@@ -364,7 +414,12 @@ export class HospitalUserRepository {
       });
 
       // 🛠️ Filter out doctor-specific fields from staff profile update payload
-      const { medicalRegNo, qualification, specialization, ...cleanStaffProfile } = profileInfo;
+      const {
+        medicalRegNo,
+        qualification,
+        specialization,
+        ...cleanStaffProfile
+      } = profileInfo;
 
       await tx.staffProfile.update({
         where: { userId: id },
@@ -375,24 +430,161 @@ export class HospitalUserRepository {
     });
   }
 
-  // ─── Update Status ──────────────────────────────────────────────────────────
+  // ─── Update Status (with session revocation on deactivation) ───────────────
+  //
+  // Status changes are security-sensitive:
+  //   INACTIVE → revoke all active AuthSessions + clear refreshTokenHash
+  //   ACTIVE   → plain reactivation (fresh login required)
+  // Runs in one transaction so user is never left in a half-revoked state.
 
-  updateStatus(id: string, tenantId: string, status: HospitalUserStatus) {
-    return this.prisma.hospitalUser.update({
-      where: { id, tenantId },
-      data: { status },
+  async setStatusWithSessionRevoke(
+    id: string,
+    tenantId: string,
+    status: HospitalUserStatus,
+    performedBy?: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.hospitalUser.update({
+        where: { id, tenantId, deletedAt: null },
+        data: {
+          status,
+          updatedBy: performedBy,
+          ...(status === HospitalUserStatus.INACTIVE
+            ? { refreshTokenHash: null }
+            : {}),
+        },
+      });
+
+      if (status === HospitalUserStatus.INACTIVE) {
+        await tx.authSession.updateMany({
+          where: { hospitalUserId: id, isActive: true },
+          data: { isActive: false },
+        });
+      }
+
+      return user;
+    });
+  }
+
+  // ─── Soft Delete (with session revocation) ──────────────────────────────────
+
+  async softDelete(id: string, tenantId: string, performedBy?: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.hospitalUser.update({
+        where: { id, tenantId, deletedAt: null },
+        data: {
+          deletedAt: new Date(),
+          status: HospitalUserStatus.INACTIVE,
+          refreshTokenHash: null,
+          updatedBy: performedBy,
+        },
+      });
+
+      await tx.authSession.updateMany({
+        where: { hospitalUserId: id, isActive: true },
+        data: { isActive: false },
+      });
+
+      return user;
+    });
+  }
+
+  // ─── Sync Departments (atomic replace) ─────────────────────────────────────
+
+  async syncDepartments(
+    id: string,
+    tenantId: string,
+    departmentIds: number[],
+    performedBy?: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.hospitalUser.findUnique({
+        where: { id, tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!user) throw new Error('USER_NOT_FOUND');
+
+      await tx.userDepartmentMapping.deleteMany({ where: { userId: id } });
+
+      if (departmentIds.length > 0) {
+        await tx.userDepartmentMapping.createMany({
+          data: departmentIds.map((departmentId) => ({
+            userId: id,
+            departmentId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      await tx.hospitalUser.update({
+        where: { id },
+        data: { updatedBy: performedBy },
+      });
+
+      return tx.userDepartmentMapping.findMany({
+        where: { userId: id },
+        include: {
+          department: { select: { id: true, name: true, code: true } },
+        },
+      });
+    });
+  }
+
+  // ─── Sync Roles (atomic replace) ───────────────────────────────────────────
+
+  async syncRoles(
+    id: string,
+    tenantId: string,
+    roles: { hospitalRoleId: number; isPrimary: boolean }[],
+    performedBy?: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.hospitalUser.findUnique({
+        where: { id, tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!user) throw new Error('USER_NOT_FOUND');
+
+      await tx.userRoleAssignment.deleteMany({ where: { userId: id } });
+
+      await tx.userRoleAssignment.createMany({
+        data: roles.map((role) => ({
+          userId: id,
+          hospitalRoleId: role.hospitalRoleId,
+          isPrimary: role.isPrimary,
+        })),
+      });
+
+      await tx.hospitalUser.update({
+        where: { id },
+        data: { updatedBy: performedBy },
+      });
+
+      return tx.userRoleAssignment.findMany({
+        where: { userId: id },
+        include: {
+          hospitalRole: { include: { roleName: true } },
+        },
+      });
     });
   }
 
   // ─── Reset Password ─────────────────────────────────────────────────────────
 
-  resetPassword(id: string, tenantId: string, passwordHash: string) {
+  resetPassword(
+    id: string,
+    tenantId: string,
+    passwordHash: string,
+    performedBy?: string,
+  ) {
     return this.prisma.hospitalUser.update({
-      where: { id, tenantId },
+      where: { id, tenantId, deletedAt: null },
       data: {
         passwordHash,
         isTemporaryPassword: true,
         forcePasswordChange: true,
+        refreshTokenHash: null, // 🔒 Force re-login after admin reset
+        updatedBy: performedBy,
       },
     });
   }
@@ -405,6 +597,7 @@ export class HospitalUserRepository {
         tenantId,
         userType: HospitalUserType.SUPER_ADMIN,
         status: HospitalUserStatus.ACTIVE,
+        deletedAt: null,
       },
     });
   }

@@ -5,9 +5,9 @@ import { PatientsRepository } from './patients.repository';
 import { PrismaModule } from '../../../shared/prisma/prisma.module';
 
 @Module({
-   imports: [PrismaModule],
+  imports: [PrismaModule],
   controllers: [PatientsController],
   providers: [PatientsService, PatientsRepository],
-  exports: [PatientsService , PatientsRepository], // Exported for use in Appointments module
+  exports: [PatientsService, PatientsRepository], // Exported for use in Appointments module
 })
 export class PatientsModule {}

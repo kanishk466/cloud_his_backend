@@ -25,9 +25,7 @@ import type { CurrentUserPayload } from '../../core/decorators/current-user.deco
 @Controller('opd/appointments')
 @UseGuards(HospitalJwtAuthGuard)
 export class AppointmentsController {
-  constructor(
-    private readonly appointmentsService: AppointmentsService,
-  ) {}
+  constructor(private readonly appointmentsService: AppointmentsService) {}
 
   // ─── POST /opd/appointments ─────────────────────────────────────
   // Book new appointment (walk-in or scheduled)
@@ -71,10 +69,7 @@ export class AppointmentsController {
   // Get available slots for a doctor on a date
   // Must come BEFORE /:id route
   @Get('slots')
-  async getSlots(
-    @Query() dto: GetSlotsDto,
-    @CurrentTenant() tenantId: string,
-  ) {
+  async getSlots(@Query() dto: GetSlotsDto, @CurrentTenant() tenantId: string) {
     return this.appointmentsService.getAvailableSlots(tenantId, dto);
   }
 
@@ -109,11 +104,7 @@ export class AppointmentsController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.appointmentsService.checkIn(
-      tenantId,
-      id,
-      user.userId,
-    );
+    return this.appointmentsService.checkIn(tenantId, id, user.userId);
   }
 
   // ─── PATCH /opd/appointments/:id/cancel ─────────────────────────
@@ -125,11 +116,6 @@ export class AppointmentsController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.appointmentsService.cancel(
-      tenantId,
-      id,
-      dto,
-      user.userId,
-    );
+    return this.appointmentsService.cancel(tenantId, id, dto, user.userId);
   }
 }

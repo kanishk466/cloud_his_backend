@@ -15,6 +15,9 @@ import { HospitalAdminProvisioningService } from './hospital-admin-provisioning.
 import { AuditService } from '../../audit/audit.service';
 import { AuditActor } from '../../audit/audit-actor';
 import { MailService } from '../../mail/mail.service';
+import { PrismaService } from '../../../shared/prisma/prisma.service';
+import { seedDefaultServiceTree } from '../../../shared/seeds/default-service-tree.seed';
+import { seedDefaultRoomTypes } from '../../../shared/seeds/default-ward-room.seed';
 
 /**
  * The schema models hospital state as a `status` enum (DRAFT | ACTIVE |
@@ -36,6 +39,7 @@ export class TenantService {
     private readonly hospitalAdminProvisioningService: HospitalAdminProvisioningService,
     private readonly auditService: AuditService,
     private readonly mailService: MailService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async createHospital(dto: CreateHospitalDto, actor?: AuditActor) {
@@ -95,10 +99,7 @@ export class TenantService {
       );
     }
 
-    const updated = await this.hospitalRepository.updateStatus(
-      id,
-      'SUSPENDED',
-    );
+    const updated = await this.hospitalRepository.updateStatus(id, 'SUSPENDED');
 
     if (actor) {
       await this.auditService.log({
@@ -123,10 +124,7 @@ export class TenantService {
       throw new ConflictException('Hospital is already active');
     }
 
-    const updated = await this.hospitalRepository.updateStatus(
-      id,
-      'ACTIVE',
-    );
+    const updated = await this.hospitalRepository.updateStatus(id, 'ACTIVE');
 
     if (actor) {
       await this.auditService.log({
@@ -178,7 +176,9 @@ export class TenantService {
     }
 
     const activePackage =
-      await this.assignedPackageRepository.findActiveByHospital(hospital?.packages?.[0]?.packageId);
+      await this.assignedPackageRepository.findActiveByHospital(
+        hospital?.packages?.[0]?.packageId,
+      );
     if (!activePackage) {
       throw new BadRequestException('Assign a package before activation');
     }
@@ -188,11 +188,44 @@ export class TenantService {
       'ACTIVE',
     );
 
+    // Phase 2.1B + 2.3 — give the new tenant Day-1 masters (service tree,
+    // room types, bed amenities). Idempotent + fire-and-forget: activation
+    // must never fail because of seeding.
+    seedDefaultServiceTree(hospital.tenantId, this.prisma)
+      .then((r) =>
+        r.seeded
+          ? this.logger.log(
+              `Default service tree seeded for tenant ${hospital.tenantId} (${r.categories} categories)`,
+            )
+          : null,
+      )
+      .catch((err) =>
+        this.logger.error(
+          `Default service tree seed failed for tenant ${hospital.tenantId}`,
+          err,
+        ),
+      );
+
+    seedDefaultRoomTypes(hospital.tenantId, this.prisma)
+      .then((r) =>
+        r.seeded
+          ? this.logger.log(
+              `Default ward/room setup seeded for tenant ${hospital.tenantId} (${r.roomTypes} room types, ${r.amenities} amenities)`,
+            )
+          : null,
+      )
+      .catch((err) =>
+        this.logger.error(
+          `Default ward/room seed failed for tenant ${hospital.tenantId}`,
+          err,
+        ),
+      );
+
     const provisionResult =
       await this.hospitalAdminProvisioningService.provisionIfNotExists({
         tenantId: hospital.tenantId,
         email: hospital.email,
-        code:hospital.code,
+        code: hospital.code,
         hospitalName: hospital.name,
       });
 
