@@ -1953,7 +1953,52 @@ model Patient {
   consentToShare Boolean @default(true)
   privacyFlag    String? // Useful for "VIP", "CONFIDENTIAL", "RESTRICTED" tags
 
+ // 🟢 ADD: Extended registration fields (all optional — additive, nullable)
+  title               String?
+  middleName          String?
+  barcode             String?
+  countryCode         String?
+  permanentAddress    String?
+  idProofName         String?
+  idProofNo           String?
+  nationalId          String?
+  passportNo          String?
+  kraPin              String?
+  familyNumber        String?
+  staffId             String?
+  dependentId         String?
+  pregnancyDays       Int?
+  occupation          String?
+  birthPlace          String?
+  religion            String?
+  locality            String?
+  membershipNo        String?
+  source              String?
+  employeeReferenceId String?
+  identityMark1       String?
+  identityMark2       String?
+  referenceType       String?
+  mlcType             String?
+  mlcNo               String?
+  isInternational     Boolean @default(false)
+  internationalNo     String?
+  emergencyFirstName   String?
+  emergencyLastName    String?
+  emergencyRelation    String?
+  emergencyCountryCode String?
+  emergencyMobile      String?
+  emergencyResidentNo  String?
+  emergencyAddress     String?
+  insuranceGroup      String?
+  insurance           String?
+  policyCardNo        String?
+  nameOnCard          String?
+  cardHolder          String?
+  approvalAmount      Float?
+  approvalRemark      String?
+
   mergedIntoPatientId String?
+
   mergedInto          Patient?  @relation("PatientMerge", fields: [mergedIntoPatientId], references: [id], onDelete: SetNull)
   mergedFrom          Patient[] @relation("PatientMerge")
 

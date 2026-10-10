@@ -3,7 +3,6 @@ import {
   IsEnum,
   IsOptional,
   IsEmail,
-  IsMobilePhone,
   IsDateString,
   IsInt,
   IsIn,
@@ -13,9 +12,19 @@ import {
   Max,
   Matches,
   IsBoolean,
+  IsNumber,
   IsUUID, // 👈 Added IsUUID for panelId validation
 } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { PatientType } from '@prisma/client';
+
+/**
+ * Phone guard used for all mobile fields: accepts the historical Indian
+ * inputs (9845011223 / 09845011223 / 919845011223) as well as international
+ * numbers in E.164 style (+17519148048, +919845011223). The registration
+ * screen normalises "+1 (751) 914-8048" → "+17519148048" before calling us.
+ */
+const PHONE_PATTERN = /^(\+[1-9]\d{6,14}|0?[6-9]\d{9}|91[6-9]\d{9})$/;
 
 export enum Gender {
   MALE = 'MALE',
@@ -101,11 +110,13 @@ export class CreatePatientDto {
   maritalStatus?: MaritalStatus;
 
   // ─── CONTACT ──────────────────────────────────────────────────
-  @IsMobilePhone('en-IN')
+  @Matches(PHONE_PATTERN, { message: 'mobile must be a valid phone number' })
   mobile!: string;
 
   @IsOptional()
-  @IsMobilePhone('en-IN')
+  @Matches(PHONE_PATTERN, {
+    message: 'alternateMobile must be a valid phone number',
+  })
   alternateMobile?: string;
 
   @IsOptional()
@@ -162,7 +173,9 @@ export class CreatePatientDto {
   guardianRelation?: RelationType;
 
   @IsOptional()
-  @IsMobilePhone('en-IN')
+  @Matches(PHONE_PATTERN, {
+    message: 'guardianMobile must be a valid phone number',
+  })
   guardianMobile?: string;
 
   // ─── INSURANCE & PANEL ────────────────────────────────────────
@@ -236,4 +249,220 @@ export class CreatePatientDto {
   @IsOptional()
   @IsBoolean()
   consentToShare?: boolean; // 👈 Added consentToShare
+
+  // Existing enum column (NEW | REVIEW | REFERRAL | EMERGENCY) —
+  // surfaced in the registration form as "Patient Type".
+  @IsOptional()
+  @IsEnum(PatientType)
+  patientType?: PatientType;
+
+  // ─── EXTENDED REGISTRATION FIELDS (all optional) ───────────────
+  // Personal extras
+  @IsOptional()
+  @IsString()
+  @MaxLength(15)
+  @Transform(({ value }) => value?.trim())
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  @Transform(({ value }) => value?.trim())
+  middleName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  barcode?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(400)
+  pregnancyDays?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  staffId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  dependentId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  familyNumber?: string;
+
+  // Contact / address extras
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  permanentAddress?: string;
+
+  // Identity extras
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  idProofName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  idProofNo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  nationalId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  passportNo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  kraPin?: string;
+
+  // Other details
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  occupation?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  birthPlace?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  religion?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  locality?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  membershipNo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  source?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  employeeReferenceId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  identityMark1?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  identityMark2?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  referenceType?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  mlcType?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  mlcNo?: string;
+
+  // International patient
+  @IsOptional()
+  @IsBoolean()
+  isInternational?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(25)
+  internationalNo?: string;
+
+  // Emergency contact
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  emergencyFirstName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  emergencyLastName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  emergencyRelation?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(25)
+  emergencyMobile?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  emergencyResidentNo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  emergencyAddress?: string;
+
+  // Scheme details
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  insuranceGroup?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  insurance?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  policyCardNo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  nameOnCard?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  cardHolder?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  approvalAmount?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  approvalRemark?: string;
 }

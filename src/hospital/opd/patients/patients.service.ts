@@ -24,7 +24,7 @@ export class PatientsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly patientsRepository: PatientsRepository,
-  ) {}
+  ) { }
 
   // ─── REGISTER NEW PATIENT ────────────────────────────────────────
   async register(
