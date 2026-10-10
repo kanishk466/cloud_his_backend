@@ -1,13 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
-import {
-  Prisma,
-  PatientStatus,
-  Gender,
-  BloodGroup,
-  MaritalStatus,
-  RelationType,
-} from '@prisma/client';
+import { Prisma, PatientStatus, Gender, BloodGroup, MaritalStatus, RelationType } from '@prisma/client';
 
 export interface CreatePatientData {
   tenantId: string;
@@ -48,24 +41,61 @@ export interface CreatePatientData {
   registeredBy?: string;
   consentToShare?: boolean;
   privacyFlag?: string;
-  referDoctorId?: string; // Phase 2.2B — referral attribution
+  // ── Extended registration fields (all optional) ──
+  title?: string;
+  middleName?: string;
+  barcode?: string;
+  countryCode?: string;
+  permanentAddress?: string;
+  idProofName?: string;
+  idProofNo?: string;
+  nationalId?: string;
+  passportNo?: string;
+  kraPin?: string;
+  familyNumber?: string;
+  staffId?: string;
+  dependentId?: string;
+  pregnancyDays?: number;
+  occupation?: string;
+  birthPlace?: string;
+  religion?: string;
+  locality?: string;
+  membershipNo?: string;
+  source?: string;
+  employeeReferenceId?: string;
+  identityMark1?: string;
+  identityMark2?: string;
+  referenceType?: string;
+  mlcType?: string;
+  mlcNo?: string;
+  isInternational?: boolean;
+  internationalNo?: string;
+  emergencyFirstName?: string;
+  emergencyLastName?: string;
+  emergencyRelation?: string;
+  emergencyCountryCode?: string;
+  emergencyMobile?: string;
+  emergencyResidentNo?: string;
+  emergencyAddress?: string;
+  insuranceGroup?: string;
+  insurance?: string;
+  policyCardNo?: string;
+  nameOnCard?: string;
+  cardHolder?: string;
+  approvalAmount?: number;
+  approvalRemark?: string;
 }
 
-export interface UpdatePatientData extends Partial<
-  Omit<CreatePatientData, 'tenantId' | 'uhid'>
-> {}
+export interface UpdatePatientData extends Partial<Omit<CreatePatientData, 'tenantId' | 'uhid'>> { }
 
 @Injectable()
 export class PatientsRepository {
   private readonly logger = new Logger(PatientsRepository.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   // ─── GENERATE UHID (Transaction-safe) ────────────────────────────
-  async generateUhid(
-    tenantId: string,
-    tx?: Prisma.TransactionClient,
-  ): Promise<string> {
+  async generateUhid(tenantId: string, tx?: Prisma.TransactionClient): Promise<string> {
     const client = tx || this.prisma;
     const year = new Date().getFullYear().toString();
 
@@ -127,7 +157,49 @@ export class PatientsRepository {
         registeredBy: data.registeredBy,
         consentToShare: data.consentToShare ?? true,
         privacyFlag: data.privacyFlag,
-        referDoctorId: data.referDoctorId,
+        // ── Extended registration fields (optional) ──
+        title: data.title,
+        middleName: data.middleName,
+        barcode: data.barcode,
+        countryCode: data.countryCode,
+        permanentAddress: data.permanentAddress,
+        idProofName: data.idProofName,
+        idProofNo: data.idProofNo,
+        nationalId: data.nationalId,
+        passportNo: data.passportNo,
+        kraPin: data.kraPin,
+        familyNumber: data.familyNumber,
+        staffId: data.staffId,
+        dependentId: data.dependentId,
+        pregnancyDays: data.pregnancyDays,
+        occupation: data.occupation,
+        birthPlace: data.birthPlace,
+        religion: data.religion,
+        locality: data.locality,
+        membershipNo: data.membershipNo,
+        source: data.source,
+        employeeReferenceId: data.employeeReferenceId,
+        identityMark1: data.identityMark1,
+        identityMark2: data.identityMark2,
+        referenceType: data.referenceType,
+        mlcType: data.mlcType,
+        mlcNo: data.mlcNo,
+        isInternational: data.isInternational ?? false,
+        internationalNo: data.internationalNo,
+        emergencyFirstName: data.emergencyFirstName,
+        emergencyLastName: data.emergencyLastName,
+        emergencyRelation: data.emergencyRelation,
+        emergencyCountryCode: data.emergencyCountryCode,
+        emergencyMobile: data.emergencyMobile,
+        emergencyResidentNo: data.emergencyResidentNo,
+        emergencyAddress: data.emergencyAddress,
+        insuranceGroup: data.insuranceGroup,
+        insurance: data.insurance,
+        policyCardNo: data.policyCardNo,
+        nameOnCard: data.nameOnCard,
+        cardHolder: data.cardHolder,
+        approvalAmount: data.approvalAmount,
+        approvalRemark: data.approvalRemark,
       },
       include: {
         panel: {
@@ -142,11 +214,7 @@ export class PatientsRepository {
   }
 
   // ─── FIND BY AADHAAR ──────────────────────────────────────────────
-  async findByAadhaar(
-    tenantId: string,
-    aadhaarNumber: string,
-    excludePatientId?: string,
-  ) {
+  async findByAadhaar(tenantId: string, aadhaarNumber: string, excludePatientId?: string) {
     return this.prisma.patient.findFirst({
       where: {
         tenantId,
@@ -245,12 +313,7 @@ export class PatientsRepository {
 
   async findMany(tenantId: string, params: any) {
     const res = await this.search(tenantId, params);
-    return {
-      data: res.patients,
-      total: res.total,
-      page: res.page,
-      limit: res.limit,
-    };
+    return { data: res.patients, total: res.total, page: res.page, limit: res.limit };
   }
 
   // ─── UPDATE PATIENT ───────────────────────────────────────────────
@@ -289,21 +352,60 @@ export class PatientsRepository {
         panelValidTill: data.panelValidTill ?? data.insuranceValidTill,
         allergies: data.allergies,
         chronicDiseases: data.chronicDiseases,
+        patientType: data.patientType,
         status: data.status,
         consentToShare: data.consentToShare,
         privacyFlag: data.privacyFlag,
+        // ── Extended registration fields (optional) ──
+        title: data.title,
+        middleName: data.middleName,
+        barcode: data.barcode,
+        countryCode: data.countryCode,
+        permanentAddress: data.permanentAddress,
+        idProofName: data.idProofName,
+        idProofNo: data.idProofNo,
+        nationalId: data.nationalId,
+        passportNo: data.passportNo,
+        kraPin: data.kraPin,
+        familyNumber: data.familyNumber,
+        staffId: data.staffId,
+        dependentId: data.dependentId,
+        pregnancyDays: data.pregnancyDays,
+        occupation: data.occupation,
+        birthPlace: data.birthPlace,
+        religion: data.religion,
+        locality: data.locality,
+        membershipNo: data.membershipNo,
+        source: data.source,
+        employeeReferenceId: data.employeeReferenceId,
+        identityMark1: data.identityMark1,
+        identityMark2: data.identityMark2,
+        referenceType: data.referenceType,
+        mlcType: data.mlcType,
+        mlcNo: data.mlcNo,
+        isInternational: data.isInternational,
+        internationalNo: data.internationalNo,
+        emergencyFirstName: data.emergencyFirstName,
+        emergencyLastName: data.emergencyLastName,
+        emergencyRelation: data.emergencyRelation,
+        emergencyCountryCode: data.emergencyCountryCode,
+        emergencyMobile: data.emergencyMobile,
+        emergencyResidentNo: data.emergencyResidentNo,
+        emergencyAddress: data.emergencyAddress,
+        insuranceGroup: data.insuranceGroup,
+        insurance: data.insurance,
+        policyCardNo: data.policyCardNo,
+        nameOnCard: data.nameOnCard,
+        cardHolder: data.cardHolder,
+        approvalAmount: data.approvalAmount,
+        approvalRemark: data.approvalRemark,
       },
       include: { panel: true },
     });
   }
 
   // ─── GET VISIT HISTORY ────────────────────────────────────────────
-  async getVisitHistory(
-    tenantId: string,
-    patientId: string,
-    page: number = 1,
-    limit: number = 10,
-  ) {
+  async getVisitHistory(tenantId: string, patientId: string, page: number = 1, limit: number = 10) {
     const skip = (page - 1) * limit;
 
     const [appointments, total] = await Promise.all([
@@ -322,9 +424,7 @@ export class PatientsRepository {
           department: { select: { name: true } },
         },
       }),
-      this.prisma.appointment.count({
-        where: { tenantId, patientId, deletedAt: null },
-      }),
+      this.prisma.appointment.count({ where: { tenantId, patientId, deletedAt: null } }),
     ]);
 
     return { appointments, total };
