@@ -460,6 +460,14 @@ model Hospital {
   thresholdLimits ThresholdLimit[]
   ipdAdmissions   IpdAdmission[]
 
+  // Phase 3.3 — IPD clinical records + billing
+  ipdVitals           IpdVital[]
+  ipdRounds           IpdRound[]
+  ipdMedicationOrders IpdMedicationOrder[]
+  ipdDietOrders       IpdDietOrder[]
+  ipdCharges          IpdCharge[]
+  ipdPayments         IpdPayment[]
+
   // Phase 2.4 — Lab/Radio (LIS/RIS)
   labDepartments  LabDepartment[]
   investigations  Investigation[]
@@ -1351,6 +1359,14 @@ model IpdAdmission {
   panel         Panel?        @relation(fields: [panelId], references: [id], onDelete: SetNull)
   bedStatuses   BedStatus[]
 
+  // Phase 3.3 — clinical records + billing
+  vitals           IpdVital[]
+  rounds           IpdRound[]
+  medicationOrders IpdMedicationOrder[]
+  dietOrders       IpdDietOrder[]
+  charges          IpdCharge[]
+  payments         IpdPayment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1360,6 +1376,165 @@ model IpdAdmission {
   @@index([tenantId, status])
   @@index([tenantId, panelId])
   @@map("ipd_admissions")
+}
+
+// ============================================
+// PHASE 3.3 — IPD CLINICAL RECORDS + BILLING
+// ============================================
+
+// Vital signs charted during the stay (nursing station / doctor rounds).
+model IpdVital {
+  id          String   @id @default(uuid())
+  tenantId    String
+  admissionId String
+  recordedAt  DateTime @default(now())
+  recordedBy  String?
+
+  temperature     Decimal? @db.Decimal(4, 1) // C
+  pulse           Int? // beats/min
+  respiratoryRate Int? // breaths/min
+  bpSystolic      Int? // mmHg
+  bpDiastolic     Int? // mmHg
+  spo2            Int? // %
+  painScore       Int? // 0-10
+  notes           String?
+
+  hospital  Hospital     @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  admission IpdAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, admissionId])
+  @@index([tenantId, admissionId, recordedAt])
+  @@map("ipd_vitals")
+}
+
+// Doctor round notes -- one row per round (SOAP).
+model IpdRound {
+  id              String   @id @default(uuid())
+  tenantId        String
+  admissionId     String
+  roundAt         DateTime @default(now())
+  doctorProfileId String?
+  subjective      String?
+  objective       String?
+  assessment      String?
+  plan            String?
+  nextRoundAt     DateTime?
+  recordedBy      String?
+
+  hospital  Hospital     @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  admission IpdAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, admissionId])
+  @@index([tenantId, admissionId, roundAt])
+  @@map("ipd_rounds")
+}
+
+// Medication orders (drug chart). STOPPED keeps the row as history.
+model IpdMedicationOrder {
+  id          String   @id @default(uuid())
+  tenantId    String
+  admissionId String
+  drugName    String
+  dose        String // "500 mg", "2 puffs"
+  route       String   @default("ORAL") // ORAL, IV, IM, SC, TOPICAL, INHALATION, OTHER
+  frequency   String   @default("OD") // OD, BD, TDS, QID, HS, SOS, STAT, WEEKLY
+  startDate   DateTime @default(now())
+  endDate     DateTime?
+  status      String   @default("ACTIVE") // ACTIVE, STOPPED
+  stoppedAt   DateTime?
+  stoppedBy   String?
+  stopReason  String?
+  notes       String?
+  orderedBy   String?
+
+  hospital  Hospital     @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  admission IpdAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, admissionId])
+  @@index([tenantId, admissionId, status])
+  @@map("ipd_medications")
+}
+
+// Diet orders -- exactly one ACTIVE row per admission; a change deactivates
+// the previous order and inserts the new one in one transaction.
+model IpdDietOrder {
+  id            String   @id @default(uuid())
+  tenantId      String
+  admissionId   String
+  dietType      String // NORMAL, SOFT, LIQUID, SEMI_SOLID, DIABETIC, RENAL, CARDIAC, NPO, TUBE_FEED, OTHER
+  details       String?
+  effectiveFrom DateTime @default(now())
+  isActive      Boolean  @default(true)
+  orderedBy     String?
+
+  hospital  Hospital     @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  admission IpdAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, admissionId])
+  @@index([tenantId, admissionId, isActive])
+  @@map("ipd_diet_orders")
+}
+
+// Running-bill line items. `accrualKey` makes the nightly room+nursing run
+// idempotent per admission per day per component (NULL for manual entries --
+// Postgres keeps NULLs distinct, so manual rows never collide).
+model IpdCharge {
+  id          String   @id @default(uuid())
+  tenantId    String
+  admissionId String
+  chargeDate  DateTime @default(now()) @db.Date
+  category    String   @default("OTHER") // ROOM, NURSING, SERVICE, PROCEDURE, PHARMACY, LAB, OTHER
+  description String
+  quantity    Decimal  @default(1) @db.Decimal(10, 2)
+  unitPrice   Decimal  @db.Decimal(12, 2)
+  amount      Decimal  @db.Decimal(15, 2) // server-computed: quantity x unitPrice
+  source      String   @default("MANUAL") // MANUAL, DAILY_ACCRUAL
+  accrualKey  String? // "DAILY_ACCRUAL:2026-10-13:ROOM"
+  notes       String?
+  postedBy    String?
+
+  hospital  Hospital     @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  admission IpdAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, admissionId, accrualKey])
+  @@index([tenantId, admissionId])
+  @@index([tenantId, admissionId, chargeDate])
+  @@map("ipd_charges")
+}
+
+// Receipts against the admission (deposit top-ups, part payments, settlements).
+// The admission's `advancePaid` stays the running total of this ledger.
+model IpdPayment {
+  id          String   @id @default(uuid())
+  tenantId    String
+  admissionId String
+  amount      Decimal  @db.Decimal(15, 2)
+  mode        String   @default("CASH") // CASH, CARD, UPI, NEFT, CHEQUE, INSURANCE, OTHER
+  reference   String?
+  notes       String?
+  receivedAt  DateTime @default(now())
+  receivedBy  String?
+
+  hospital  Hospital     @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  admission IpdAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, admissionId])
+  @@index([tenantId, admissionId, receivedAt])
+  @@map("ipd_payments")
 }
 
 // ============================================
