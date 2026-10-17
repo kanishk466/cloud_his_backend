@@ -36,7 +36,7 @@ const consultationWithRelations = {
           id: true,
           serviceName: true,
           serviceCode: true,
-          category: true,
+          categoryId: true,
         },
       },
     },
