@@ -12,6 +12,13 @@ const mockRepository = {
   findPanel: jest.fn(),
   getPanelCoPay: jest.fn(),
   getPatient: jest.fn(),
+  getAppointment: jest.fn(),
+  findByAppointmentId: jest.fn(),
+  findConsultationService: jest.fn(),
+  generateBillNo: jest.fn(),
+  generateReceiptNo: jest.fn(),
+  create: jest.fn(),
+  createBillWithPayment: jest.fn(),
 };
 
 const mockValidator = { validateBillLine: jest.fn() };
@@ -167,6 +174,105 @@ describe('BillingService — rate resolution hierarchy (CRITICAL)', () => {
       await expect(
         service.resolveRate(tenantId, serviceId, null, null),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('generateBill() — consultation auto-add dedup (double-charge regression)', () => {
+    const tenantId = 'tenant-uuid';
+    const patientId = 'patient-uuid';
+
+    const appointment = {
+      id: 'apt-uuid',
+      appointmentNo: 'APT-20261018-0001',
+      consultationFee: 500,
+      doctorProfileId: 'doc-uuid',
+    };
+
+    const manualConsultLine = {
+      serviceId: 'svc-cons',
+      serviceName: 'opd consultation',
+      quantity: 1,
+      unitRate: 500,
+    };
+
+    const billEntity = {
+      id: 'bill-uuid',
+      billNo: 'INV-OPD-20261018-0005',
+      items: [],
+      payments: [],
+      creditNotes: [],
+    };
+
+    const baseDto = (item: any) => ({
+      patientId,
+      appointmentId: appointment.id,
+      items: [item],
+    });
+
+    beforeEach(() => {
+      mockRepository.getAppointment.mockResolvedValue(appointment);
+      mockRepository.findByAppointmentId.mockResolvedValue(null);
+      mockRepository.getPatient.mockResolvedValue({ id: patientId, panelId: null });
+      mockRepository.findDoctor.mockResolvedValue({
+        id: 'doc-uuid',
+        consultationFee: 500,
+      });
+      mockRepository.findServiceForBilling.mockImplementation(
+        (_tenantId: string, serviceId: string) =>
+          Promise.resolve(
+            serviceId === 'svc-lab'
+              ? labService
+              : { ...consultService, subCategoryRel: null },
+          ),
+      );
+      mockRepository.findPanelServiceRate.mockResolvedValue(null);
+      // Free-text fallback: no seeded CONS/OPD consultation service
+      mockRepository.findConsultationService.mockResolvedValue(null);
+      mockRepository.generateBillNo.mockResolvedValue('INV-OPD-20261018-0005');
+      mockRepository.create.mockResolvedValue(billEntity);
+      mockValidator.validateBillLine.mockResolvedValue({ isValid: true });
+      mockReferral.createForBill.mockResolvedValue(undefined);
+    });
+
+    it('does NOT auto-add a consultation line when one was already billed manually', async () => {
+      await service.generateBill(tenantId, 'user-uuid', baseDto(manualConsultLine) as any);
+
+      const createArgs = mockRepository.create.mock.calls[0][0];
+      expect(createArgs.items).toHaveLength(1);
+      expect(createArgs.items[0].description).not.toBe('Consultation Fee');
+      // Net stays ₹500, not ₹1,000
+      expect(createArgs.totalAmount).toBe(500);
+    });
+
+    it('still auto-adds the consultation line when the counter did not bill one', async () => {
+      const labLine = {
+        serviceId: 'svc-lab',
+        serviceName: 'CBC',
+        quantity: 1,
+        unitRate: 250,
+      };
+
+      await service.generateBill(tenantId, 'user-uuid', baseDto(labLine) as any);
+
+      const createArgs = mockRepository.create.mock.calls[0][0];
+      expect(createArgs.items).toHaveLength(2);
+      expect(createArgs.items[0].description).toBe('Consultation Fee');
+      expect(createArgs.items[0].unitPrice).toBe(500);
+    });
+
+    it('dedups by serviceId when the seeded CONS/OPD service IS configured', async () => {
+      // findConsultationService returns the same service the counter used
+      mockRepository.findConsultationService.mockResolvedValue({
+        id: 'svc-cons',
+        serviceCode: 'CONS-OPD',
+        serviceName: 'OPD Consultation',
+      });
+
+      await service.generateBill(tenantId, 'user-uuid', baseDto(manualConsultLine) as any);
+
+      const createArgs = mockRepository.create.mock.calls[0][0];
+      expect(createArgs.items).toHaveLength(1);
+      expect(createArgs.totalAmount).toBe(500);
     });
   });
 
