@@ -8,12 +8,26 @@ import cookieParser from 'cookie-parser';
 import { join } from 'path';
 
 async function runMigrations() {
+  if (process.env.RUN_MIGRATIONS_ON_BOOT === 'false') {
+    console.log(
+      'RUN_MIGRATIONS_ON_BOOT=false — skipping `prisma migrate deploy`. ' +
+        'Ensure migrations are applied by the release pipeline.',
+    );
+    return;
+  }
+
   const { execSync } = await import('child_process');
   try {
     execSync('npx prisma migrate deploy', { stdio: 'inherit' });
     console.log('Migrations applied successfully');
   } catch (err) {
-    console.error('Migration failed:', err);
+    // SECURITY/RELIABILITY: a failed migration must abort boot — serving
+    // traffic against a half-migrated schema turns a bad migration into a
+    // silent production outage. Multi-replica deploys should set
+    // RUN_MIGRATIONS_ON_BOOT=false and run `prisma migrate deploy` once in
+    // the release pipeline instead.
+    console.error('Migration failed — refusing to start with an outdated schema.', err);
+    process.exit(1);
   }
 }
 

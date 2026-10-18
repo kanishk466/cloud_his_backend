@@ -1,7 +1,13 @@
 ﻿import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { randomInt } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { MailService } from '../../Platform/mail/mail.service';
+
+/** Cryptographically secure 6-digit OTP (000000-999999). Never use Math.random. */
+function generateSecureOtpCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0');
+}
 
 // === SECURITY ADDITION START ===
 @Injectable()
@@ -73,7 +79,7 @@ export class AuthSecurityService {
       throw new UnauthorizedException('Please wait 60 seconds before requesting another OTP');
     }
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = generateSecureOtpCode();
 
     const data = {
       otpHash: await bcrypt.hash(code, 10),
@@ -110,7 +116,7 @@ export class AuthSecurityService {
       throw new UnauthorizedException('Please wait 60 seconds before requesting another OTP');
     }
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = generateSecureOtpCode();
 
     const data = {
       otpHash: await bcrypt.hash(code, 10),

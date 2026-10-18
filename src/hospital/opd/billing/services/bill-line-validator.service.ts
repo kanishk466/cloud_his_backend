@@ -36,7 +36,13 @@ export class BillLineValidatorService {
     unitPrice: number,
     discountPercent: number,
     quantity: number,
-    options?: { skipRateCheck?: boolean },
+    options?: {
+      skipRateCheck?: boolean;
+      /** V2 — the rate the hierarchy resolved (panel tariff / doctor fee /
+       *  base rate). Rate-locked services must match THIS rate, not the
+       *  raw base rate. */
+      effectiveRate?: number;
+    },
   ): Promise<BillLineValidationResult> {
     // ─── 1. Service existence & active ─────────────────────────────────────
     const service = await this.prisma.serviceMaster.findFirst({
@@ -124,16 +130,19 @@ export class BillLineValidatorService {
     // ─── 4. Rate editable check ────────────────────────────────────────────
     // Skipped for system-generated lines (fee engine output is authoritative;
     // the flag guards against manual counter edits, not the engine itself).
+    // V2: when the rate hierarchy resolved a panel/doctor rate, that
+    // effective rate — not baseRate — is the locked reference.
     const baseRate = Number(service.baseRate);
+    const effectiveRate = options?.effectiveRate ?? baseRate;
     if (
       !options?.skipRateCheck &&
       !service.rateEditable &&
-      Number(unitPrice) !== baseRate
+      Number(unitPrice) !== effectiveRate
     ) {
       throw new BadRequestException({
         ...SERVICE_VALIDATION_ERRORS.RATE_NOT_EDITABLE,
-        message: `Rate for ${service.serviceName} is fixed at ₹${baseRate} and cannot be modified.`,
-        details: { serviceId, baseRate, attemptedRate: unitPrice },
+        message: `Rate for ${service.serviceName} is fixed at ₹${effectiveRate} and cannot be modified.`,
+        details: { serviceId, effectiveRate, attemptedRate: unitPrice },
       });
     }
 
