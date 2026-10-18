@@ -1,13 +1,15 @@
 import { Injectable } from '@nestjs/common';
+import { randomInt } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { HospitalUserRepository } from '../repositories/hospital-user.repository';
 
+/** Cryptographically secure temp password. Never use Math.random. */
 function generateTempPassword(length = 12) {
   const chars =
     'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#$%&*!';
   let out = '';
   for (let i = 0; i < length; i++) {
-    out += chars[Math.floor(Math.random() * chars.length)];
+    out += chars[randomInt(0, chars.length)];
   }
   return out;
 }

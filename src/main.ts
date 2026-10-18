@@ -1,36 +1,55 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import cookieParser from 'cookie-parser';
+import { join } from 'path';
 
 async function runMigrations() {
+  if (process.env.RUN_MIGRATIONS_ON_BOOT === 'false') {
+    console.log(
+      'RUN_MIGRATIONS_ON_BOOT=false — skipping `prisma migrate deploy`. ' +
+        'Ensure migrations are applied by the release pipeline.',
+    );
+    return;
+  }
+
   const { execSync } = await import('child_process');
   try {
     execSync('npx prisma migrate deploy', { stdio: 'inherit' });
     console.log('Migrations applied successfully');
   } catch (err) {
-    console.error('Migration failed:', err);
+    // SECURITY/RELIABILITY: a failed migration must abort boot — serving
+    // traffic against a half-migrated schema turns a bad migration into a
+    // silent production outage. Multi-replica deploys should set
+    // RUN_MIGRATIONS_ON_BOOT=false and run `prisma migrate deploy` once in
+    // the release pipeline instead.
+    console.error('Migration failed — refusing to start with an outdated schema.', err);
+    process.exit(1);
   }
 }
 
 async function bootstrap() {
   await runMigrations();
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.setGlobalPrefix('api');
 
   app.use(cookieParser());
+
+  // Phase 2.2B — serve uploaded files (doctor signatures, …) at /uploads/*
+  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
 
   app.enableCors({
     origin: [
       'http://localhost:8080',
       'http://localhost:5173',
-       'http://localhost:3000',
+      'http://localhost:3000',
       'http://localhost:8081',
       'https://ojasadmin.netlify.app',
-     'https://ojascarehis.netlify.app',
+      'https://ojascarehis.netlify.app',
       'https://mediops-admin-ui.harshalvermaaaaa.workers.dev',
     ], // frontend URL (or use '*' for all origins)
     credentials: true,

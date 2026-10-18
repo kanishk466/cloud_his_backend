@@ -18,17 +18,21 @@ export class TenantValidationService {
   async validateReferences(tenantId: string, refs: TenantRefs): Promise<void> {
     const errors: Array<{ field: string; ids: Array<string | number> }> = [];
 
-    const additionalRoleIds = refs.additionalRoleIds?.filter((id): id is number => Boolean(id)) ?? [];
+    const additionalRoleIds =
+      refs.additionalRoleIds?.filter((id): id is number => Boolean(id)) ?? [];
     const roleIds = [refs.primaryRoleId, ...additionalRoleIds].filter(
       (id): id is number => Boolean(id),
     );
-    const departmentIds = refs.departmentIds?.filter((id): id is number => Boolean(id)) ?? [];
+    const departmentIds =
+      refs.departmentIds?.filter((id): id is number => Boolean(id)) ?? [];
     const shiftId = refs.shiftId ? [refs.shiftId] : [];
-    const reportingManagerId = refs.reportingManagerId ? [refs.reportingManagerId] : [];
+    const reportingManagerId = refs.reportingManagerId
+      ? [refs.reportingManagerId]
+      : [];
 
     if (roleIds.length > 0) {
       const roles = await this.prisma.hospitalRole.findMany({
-        where: { id: { in: roleIds }, tenantId: tenantId },
+        where: { id: { in: roleIds }, tenantId: tenantId, deletedAt: null },
         select: { id: true },
       });
       const validRoleIds = new Set(roles.map((role) => role.id));
@@ -37,9 +41,14 @@ export class TenantValidationService {
         errors.push({ field: 'primaryRoleId', ids: [refs.primaryRoleId] });
       }
 
-      const invalidAdditionalRoleIds = additionalRoleIds.filter((id) => !validRoleIds.has(id));
+      const invalidAdditionalRoleIds = additionalRoleIds.filter(
+        (id) => !validRoleIds.has(id),
+      );
       if (invalidAdditionalRoleIds.length > 0) {
-        errors.push({ field: 'additionalRoleIds', ids: invalidAdditionalRoleIds });
+        errors.push({
+          field: 'additionalRoleIds',
+          ids: invalidAdditionalRoleIds,
+        });
       }
     }
 
@@ -48,8 +57,12 @@ export class TenantValidationService {
         where: { id: { in: departmentIds }, tenantId: tenantId },
         select: { id: true },
       });
-      const validDepartmentIds = new Set(departments.map((department) => department.id));
-      const invalidDepartmentIds = departmentIds.filter((id) => !validDepartmentIds.has(id));
+      const validDepartmentIds = new Set(
+        departments.map((department) => department.id),
+      );
+      const invalidDepartmentIds = departmentIds.filter(
+        (id) => !validDepartmentIds.has(id),
+      );
       if (invalidDepartmentIds.length > 0) {
         errors.push({ field: 'departmentIds', ids: invalidDepartmentIds });
       }
@@ -69,11 +82,17 @@ export class TenantValidationService {
 
     if (reportingManagerId.length > 0) {
       const managers = await this.prisma.hospitalUser.findMany({
-        where: { id: { in: reportingManagerId }, tenantId: tenantId },
+        where: {
+          id: { in: reportingManagerId },
+          tenantId: tenantId,
+          deletedAt: null,
+        },
         select: { id: true },
       });
       const validManagerIds = new Set(managers.map((manager) => manager.id));
-      const invalidManagerIds = reportingManagerId.filter((id) => !validManagerIds.has(id));
+      const invalidManagerIds = reportingManagerId.filter(
+        (id) => !validManagerIds.has(id),
+      );
       if (invalidManagerIds.length > 0) {
         errors.push({ field: 'reportingManagerId', ids: invalidManagerIds });
       }

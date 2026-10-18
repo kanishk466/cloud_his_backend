@@ -106,6 +106,88 @@ export class PatientResponseDto {
   @Expose()
   chronicDiseases!: string | null;
 
+  // ── Extended registration fields (all optional) ──
+  @Expose()
+  title!: string | null;
+  @Expose()
+  middleName!: string | null;
+  @Expose()
+  barcode!: string | null;
+  @Expose()
+  permanentAddress!: string | null;
+  @Expose()
+  idProofName!: string | null;
+  @Expose()
+  idProofNo!: string | null;
+  @Expose()
+  nationalId!: string | null;
+  @Expose()
+  passportNo!: string | null;
+  @Expose()
+  kraPin!: string | null;
+  @Expose()
+  familyNumber!: string | null;
+  @Expose()
+  staffId!: string | null;
+  @Expose()
+  dependentId!: string | null;
+  @Expose()
+  pregnancyDays!: number | null;
+  @Expose()
+  occupation!: string | null;
+  @Expose()
+  birthPlace!: string | null;
+  @Expose()
+  religion!: string | null;
+  @Expose()
+  locality!: string | null;
+  @Expose()
+  membershipNo!: string | null;
+  @Expose()
+  source!: string | null;
+  @Expose()
+  employeeReferenceId!: string | null;
+  @Expose()
+  identityMark1!: string | null;
+  @Expose()
+  identityMark2!: string | null;
+  @Expose()
+  referenceType!: string | null;
+  @Expose()
+  mlcType!: string | null;
+  @Expose()
+  mlcNo!: string | null;
+  @Expose()
+  isInternational!: boolean;
+  @Expose()
+  internationalNo!: string | null;
+  @Expose()
+  emergencyFirstName!: string | null;
+  @Expose()
+  emergencyLastName!: string | null;
+  @Expose()
+  emergencyRelation!: string | null;
+  @Expose()
+  emergencyMobile!: string | null;
+  @Expose()
+  emergencyResidentNo!: string | null;
+  @Expose()
+  emergencyAddress!: string | null;
+  @Expose()
+  insuranceGroup!: string | null;
+  @Expose()
+  insurance!: string | null;
+  @Expose()
+  policyCardNo!: string | null;
+  @Expose()
+  nameOnCard!: string | null;
+  @Expose()
+  cardHolder!: string | null;
+  @Expose()
+  approvalAmount!: number | null;
+  @Expose()
+  approvalRemark!: string | null;
+
   @Expose()
   patientType!: string;
 

@@ -1,12 +1,23 @@
 import {
-  Controller, Post, Get, Patch, Body, Param, Query,
-  UseGuards, HttpCode, HttpStatus, ParseUUIDPipe,
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { BillingService } from './billing.service';
+import { InvoiceBuilderService } from './services/invoice-builder.service';
 import { CreateBillDto } from './dto/create-bill.dto';
 import { CollectPaymentDto } from './dto/collect-payment.dto';
 import { ApplyDiscountDto } from './dto/apply-discount.dto';
 import { CancelBillDto } from './dto/cancel-bill.dto';
+import { RefundBillDto } from './dto/refund-bill.dto';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
 import { CurrentTenant } from '../../core/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../core/decorators/current-user.decorator';
@@ -15,7 +26,10 @@ import type { CurrentUserPayload } from '../../core/decorators/current-user.deco
 @Controller('opd/billing')
 @UseGuards(HospitalJwtAuthGuard)
 export class BillingController {
-  constructor(private readonly billingService: BillingService) {}
+  constructor(
+    private readonly billingService: BillingService,
+    private readonly invoiceBuilder: InvoiceBuilderService,
+  ) {}
 
   // POST /opd/billing — Generate bill (optionally with immediate payment)
   @Post()
@@ -28,12 +42,14 @@ export class BillingController {
     return this.billingService.generateBill(tenantId, user.userId, dto);
   }
 
-  // GET /opd/billing — List bills
+  // GET /opd/billing — List bills (date or fromDate/toDate range)
   @Get()
   async findMany(
     @CurrentTenant() tenantId: string,
     @Query('patientId') patientId?: string,
     @Query('date') date?: string,
+    @Query('fromDate') fromDate?: string,
+    @Query('toDate') toDate?: string,
     @Query('billStatus') billStatus?: string,
     @Query('paymentStatus') paymentStatus?: string,
     @Query('page') page?: string,
@@ -42,6 +58,8 @@ export class BillingController {
     return this.billingService.findMany(tenantId, {
       patientId,
       date,
+      fromDate,
+      toDate,
       billStatus,
       paymentStatus,
       page: page ? parseInt(page, 10) : 1,
@@ -112,6 +130,38 @@ export class BillingController {
     return this.billingService.findById(tenantId, id);
   }
 
+  // GET /opd/billing/:id/invoice — Print-ready grouped invoice (Phase 2.1B)
+  @Get(':id/invoice')
+  async getInvoice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.invoiceBuilder.buildInvoiceData(tenantId, id);
+  }
+
+  // GET /opd/billing/:id/receipt — Printable counter receipt (Spec V2:
+  // hospital header, patient, doctor, items, totals, payments)
+  @Get(':id/receipt')
+  async getReceipt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.invoiceBuilder.buildReceiptData(tenantId, id);
+  }
+
+  // POST /opd/billing/:id/refund — Credit note (Spec V2). The original
+  // bill is audit-locked: never deleted, only reversed via credit note.
+  @Post(':id/refund')
+  @HttpCode(HttpStatus.CREATED)
+  async refundBill(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RefundBillDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.billingService.refundBill(tenantId, id, user.userId, dto);
+  }
+
   // POST /opd/billing/:id/payments — Collect payment later
   @Post(':id/payments')
   @HttpCode(HttpStatus.CREATED)
@@ -121,12 +171,7 @@ export class BillingController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.billingService.collectPayment(
-      tenantId,
-      id,
-      user.userId,
-      dto,
-    );
+    return this.billingService.collectPayment(tenantId, id, user.userId, dto);
   }
 
   // PATCH /opd/billing/:id/discount

@@ -17,6 +17,7 @@ export class HospitalRoleRepository {
       roleNameId: number;
       description?: string;
       cloneFromRoleId?: number;
+      performedBy?: string;
     },
   ) {
     return this.prisma.$transaction(async (tx) => {
@@ -47,10 +48,11 @@ export class HospitalRoleRepository {
       const hospitalRole = await tx.hospitalRole.create({
         data: {
           tenantId,
-          roleNameId: data.roleNameId,  // ← Existing master ID
+          roleNameId: data.roleNameId, // ← Existing master ID
           description: data.description,
           isSystem: false,
           isActive: true,
+          createdBy: data.performedBy,
         },
         include: {
           roleName: true,
@@ -61,7 +63,10 @@ export class HospitalRoleRepository {
       // Step 4: Clone permissions if requested
       if (data.cloneFromRoleId) {
         await this.clonePermissionsInTransaction(
-          tx, tenantId, data.cloneFromRoleId, hospitalRole.id,
+          tx,
+          tenantId,
+          data.cloneFromRoleId,
+          hospitalRole.id,
         );
       }
 
@@ -95,6 +100,7 @@ export class HospitalRoleRepository {
       roleCode: string;
       description?: string;
       cloneFromRoleId?: number;
+      performedBy?: string;
     },
   ) {
     return this.prisma.$transaction(async (tx) => {
@@ -141,6 +147,7 @@ export class HospitalRoleRepository {
           description: data.description,
           isSystem: false,
           isActive: true,
+          createdBy: data.performedBy,
         },
         include: {
           roleName: true,
@@ -151,7 +158,10 @@ export class HospitalRoleRepository {
       // Step 5: Clone permissions if requested
       if (data.cloneFromRoleId) {
         await this.clonePermissionsInTransaction(
-          tx, tenantId, data.cloneFromRoleId, hospitalRole.id,
+          tx,
+          tenantId,
+          data.cloneFromRoleId,
+          hospitalRole.id,
         );
       }
 
@@ -190,11 +200,13 @@ export class HospitalRoleRepository {
 
     // Get which ones are already in this hospital
     const hospitalRoles = await this.prisma.hospitalRole.findMany({
-      where: { tenantId },
+      where: { tenantId, deletedAt: null },
       select: { roleNameId: true },
     });
 
-    const activatedRoleNameIds = new Set(hospitalRoles.map((r) => r.roleNameId));
+    const activatedRoleNameIds = new Set(
+      hospitalRoles.map((r) => r.roleNameId),
+    );
 
     // Combine
     return allMasterRoles.map((master) => ({
@@ -240,7 +252,7 @@ export class HospitalRoleRepository {
 
   findAll(tenantId: string) {
     return this.prisma.hospitalRole.findMany({
-      where: { tenantId },
+      where: { tenantId, deletedAt: null },
       include: {
         roleName: true,
         _count: { select: { permissions: true } },
@@ -251,7 +263,7 @@ export class HospitalRoleRepository {
 
   findById(id: number, tenantId: string) {
     return this.prisma.hospitalRole.findUnique({
-      where: { id, tenantId },
+      where: { id, tenantId, deletedAt: null },
       include: {
         roleName: true,
         _count: { select: { permissions: true } },
@@ -266,17 +278,27 @@ export class HospitalRoleRepository {
     });
   }
 
-  update(id: number, tenantId: string, data: { description?: string }) {
+  update(
+    id: number,
+    tenantId: string,
+    data: { description?: string },
+    performedBy?: string,
+  ) {
     return this.prisma.hospitalRole.update({
-      where: { id, tenantId },
-      data,
+      where: { id, tenantId, deletedAt: null },
+      data: { ...data, updatedBy: performedBy },
     });
   }
 
-  toggle(id: number, tenantId: string, isActive: boolean) {
+  toggle(
+    id: number,
+    tenantId: string,
+    isActive: boolean,
+    performedBy?: string,
+  ) {
     return this.prisma.hospitalRole.update({
-      where: { id, tenantId },
-      data: { isActive },
+      where: { id, tenantId, deletedAt: null },
+      data: { isActive, updatedBy: performedBy },
     });
   }
 
@@ -284,10 +306,11 @@ export class HospitalRoleRepository {
     roleId: number,
     tenantId: string,
     moduleFeatures: { moduleId: number; featureId: number }[],
+    performedBy?: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
       const role = await tx.hospitalRole.findUnique({
-        where: { id: roleId, tenantId },
+        where: { id: roleId, tenantId, deletedAt: null },
         select: { id: true },
       });
       if (!role) throw new Error('ROLE_NOT_FOUND');
@@ -305,6 +328,11 @@ export class HospitalRoleRepository {
           })),
         });
       }
+
+      await tx.hospitalRole.update({
+        where: { id: roleId },
+        data: { updatedBy: performedBy },
+      });
 
       return tx.hospitalRole.findUnique({
         where: { id: roleId },
@@ -324,7 +352,10 @@ export class HospitalRoleRepository {
 
   getPermissions(roleId: number, tenantId: string) {
     return this.prisma.hospitalRolePermission.findMany({
-      where: { hospitalRoleId: roleId, hospitalRole: { tenantId } },
+      where: {
+        hospitalRoleId: roleId,
+        hospitalRole: { tenantId, deletedAt: null },
+      },
       include: {
         moduleFeature: {
           include: { module: true, feature: true },
@@ -349,7 +380,8 @@ export class HospitalRoleRepository {
       const count = await tx.hospitalRole.count({
         where: { id: { in: targetRoleIds }, tenantId },
       });
-      if (count !== targetRoleIds.length) throw new Error('SOME_TARGET_ROLES_NOT_FOUND');
+      if (count !== targetRoleIds.length)
+        throw new Error('SOME_TARGET_ROLES_NOT_FOUND');
 
       for (const targetId of targetRoleIds) {
         await tx.hospitalRolePermission.deleteMany({

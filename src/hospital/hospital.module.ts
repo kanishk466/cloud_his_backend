@@ -3,6 +3,7 @@ import { HospitalIdentityModule } from './identity/identity.module';
 import { MastersModule } from './masters/masters.module';
 import { UserManagementModule } from './user-management/user-management.module';
 import { OpdModule } from './opd/opd.module';
+import { IpdModule } from './ipd/ipd.module';
 
 
 @Module({
@@ -11,6 +12,7 @@ import { OpdModule } from './opd/opd.module';
     MastersModule,
     UserManagementModule,
     OpdModule,
+    IpdModule,
   ],
 })
 export class HospitalModule {}

@@ -7,7 +7,12 @@ import {
 } from '@nestjs/common';
 import { AppointmentsRepository } from './appointments.repository';
 import { PatientsRepository } from '../patients/patients.repository';
-import { CreateAppointmentDto, AppointmentType } from './dto/create-appointment.dto';
+import { VisitFeeCalculatorService } from './services/visit-fee-calculator.service';
+import { PrismaService } from '../../../shared/prisma/prisma.service';
+import {
+  CreateAppointmentDto,
+  AppointmentType,
+} from './dto/create-appointment.dto';
 import { CancelAppointmentDto } from './dto/cancel-appointment.dto';
 import { GetSlotsDto } from './dto/get-slots.dto';
 import {
@@ -21,7 +26,14 @@ import {
   CANCELLABLE_STATUSES,
   MAX_ADVANCE_BOOKING_DAYS,
 } from './constants/appointments.constants';
-import { addMinutes, format, getDay, isBefore, startOfDay, addDays } from 'date-fns';
+import {
+  addMinutes,
+  format,
+  getDay,
+  isBefore,
+  startOfDay,
+  addDays,
+} from 'date-fns';
 
 @Injectable()
 export class AppointmentsService {
@@ -30,6 +42,8 @@ export class AppointmentsService {
   constructor(
     private readonly appointmentsRepository: AppointmentsRepository,
     private readonly patientsRepository: PatientsRepository,
+    private readonly visitFeeCalculator: VisitFeeCalculatorService,
+    private readonly prisma: PrismaService,
   ) {}
 
   // ─── BOOK APPOINTMENT ───────────────────────────────────────────
@@ -82,9 +96,7 @@ export class AppointmentsService {
         dto.departmentId,
       );
       if (!dept) {
-        throw new NotFoundException(
-          APPOINTMENT_ERRORS.DEPARTMENT_NOT_FOUND,
-        );
+        throw new NotFoundException(APPOINTMENT_ERRORS.DEPARTMENT_NOT_FOUND);
       }
     }
 
@@ -107,12 +119,11 @@ export class AppointmentsService {
     }
 
     // ── Rule 7: Check doctor leave ─────────────────────────────────
-    const leaveBlock =
-      await this.appointmentsRepository.getDoctorLeave(
-        tenantId,
-        dto.doctorProfileId,
-        appointmentDate,
-      );
+    const leaveBlock = await this.appointmentsRepository.getDoctorLeave(
+      tenantId,
+      dto.doctorProfileId,
+      appointmentDate,
+    );
 
     if (leaveBlock) {
       // Full day leave
@@ -145,12 +156,11 @@ export class AppointmentsService {
 
     // ── Rule 8: Check max patients per day ─────────────────────────
     if (doctor.maxPatientsPerDay) {
-      const count =
-        await this.appointmentsRepository.countTodayAppointments(
-          tenantId,
-          dto.doctorProfileId,
-          appointmentDate,
-        );
+      const count = await this.appointmentsRepository.countTodayAppointments(
+        tenantId,
+        dto.doctorProfileId,
+        appointmentDate,
+      );
 
       if (count >= doctor.maxPatientsPerDay) {
         throw new BadRequestException({
@@ -190,18 +200,15 @@ export class AppointmentsService {
       }
 
       // Check if slot is already taken
-      const slotTaken =
-        await this.appointmentsRepository.isSlotTaken(
-          tenantId,
-          dto.doctorProfileId,
-          appointmentDate,
-          slotStartTime,
-        );
+      const slotTaken = await this.appointmentsRepository.isSlotTaken(
+        tenantId,
+        dto.doctorProfileId,
+        appointmentDate,
+        slotStartTime,
+      );
 
       if (slotTaken) {
-        throw new BadRequestException(
-          APPOINTMENT_ERRORS.SLOT_ALREADY_BOOKED,
-        );
+        throw new BadRequestException(APPOINTMENT_ERRORS.SLOT_ALREADY_BOOKED);
       }
 
       // Calculate slot end time
@@ -211,15 +218,47 @@ export class AppointmentsService {
       );
     }
 
-    // ── Rule 10: Snapshot consultation fee at booking time ─────────
-    // Store fee as it was when appointment was made
-    const consultationFee = Number(doctor.consultationFee);
+    // ── Rule 10: Auto-calculate consultation fee (Phase 2.2B) ──────
+    // Panel config → general config → doctor profile fee, with
+    // follow-up detection (free/discounted visits inside the window).
+    const feeResult = await this.visitFeeCalculator.calculateFee(
+      tenantId,
+      dto.doctorProfileId,
+      dto.patientId,
+      patient.panelId ?? undefined,
+      dto.appointmentType,
+      appointmentDate,
+    );
+    const consultationFee = feeResult.fee;
+    const isFollowUpVisit = feeResult.isFollowUp;
+
+    this.logger.log(
+      `Fee for doctor ${dto.doctorProfileId}: ${feeResult.breakdown}`,
+    );
+
+    // ── Rule 11: Referral attribution (explicit → inherited from patient) ──
+    const referDoctorId =
+      dto.referDoctorId ?? patient.referDoctorId ?? undefined;
+    let referredByDoctorName = dto.referredByDoctorName;
+
+    if (referDoctorId) {
+      const referDoctor = await this.prisma.referDoctor.findFirst({
+        where: { id: referDoctorId, tenantId, deletedAt: null, isActive: true },
+        select: { id: true, name: true },
+      });
+      if (!referDoctor) {
+        throw new NotFoundException({
+          code: 'OPD_APT_016',
+          message: 'Refer doctor not found or inactive in this hospital',
+        });
+      }
+      // Auto-copy the doctor's name for print/display when not provided
+      referredByDoctorName ??= referDoctor.name;
+    }
 
     // ── Generate appointment number ────────────────────────────────
     const appointmentNo =
-      await this.appointmentsRepository.generateAppointmentNo(
-        tenantId,
-      );
+      await this.appointmentsRepository.generateAppointmentNo(tenantId);
 
     this.logger.log(
       `Booking appointment ${appointmentNo} for patient ${patient.uhid}`,
@@ -239,7 +278,9 @@ export class AppointmentsService {
       visitType: dto.visitType,
       priority: dto.priority ?? 0,
       consultationFee,
-      referredByDoctorName: dto.referredByDoctorName,
+      referDoctorId,
+      isFollowUpVisit,
+      referredByDoctorName,
       referralNote: dto.referralNote,
       reasonForVisit: dto.reasonForVisit,
       notes: dto.notes,
@@ -263,16 +304,16 @@ export class AppointmentsService {
       limit?: number;
     },
   ): Promise<AppointmentListResponseDto> {
-    const { appointments, total } =
-      await this.appointmentsRepository.findMany(tenantId, filter);
+    const { appointments, total } = await this.appointmentsRepository.findMany(
+      tenantId,
+      filter,
+    );
 
     const page = filter.page ?? 1;
     const limit = filter.limit ?? 20;
 
     return {
-      data: appointments.map((a) =>
-        AppointmentResponseDto.fromEntity(a),
-      ),
+      data: appointments.map((a) => AppointmentResponseDto.fromEntity(a)),
       meta: {
         total,
         page,
@@ -287,8 +328,10 @@ export class AppointmentsService {
     tenantId: string,
     id: string,
   ): Promise<AppointmentResponseDto> {
-    const appointment =
-      await this.appointmentsRepository.findById(tenantId, id);
+    const appointment = await this.appointmentsRepository.findById(
+      tenantId,
+      id,
+    );
 
     if (!appointment) {
       throw new NotFoundException(APPOINTMENT_ERRORS.NOT_FOUND);
@@ -303,44 +346,46 @@ export class AppointmentsService {
 
   // ─── CHECK-IN PATIENT ───────────────────────────────────────────
 
-
   async checkIn(
-  tenantId: string,
-  id: string,
-  checkedInBy: string,
-): Promise<AppointmentResponseDto> {
-  const appointment =
-    await this.appointmentsRepository.findById(tenantId, id);
+    tenantId: string,
+    id: string,
+    checkedInBy: string,
+  ): Promise<AppointmentResponseDto> {
+    const appointment = await this.appointmentsRepository.findById(
+      tenantId,
+      id,
+    );
 
-  if (!appointment) {
-    throw new NotFoundException(APPOINTMENT_ERRORS.NOT_FOUND);
+    if (!appointment) {
+      throw new NotFoundException(APPOINTMENT_ERRORS.NOT_FOUND);
+    }
+
+    // ✅ FIX: Patient must have a token (IN_QUEUE) before nurse can check-in
+    if (appointment.status !== 'IN_QUEUE') {
+      throw new BadRequestException({
+        code: 'OPD_APT_020',
+        message:
+          'Patient must be in queue before check-in. Generate token first.',
+        details: { currentStatus: appointment.status },
+      });
+    }
+
+    const updated = await this.appointmentsRepository.updateStatus(
+      tenantId,
+      id,
+      'CHECKED_IN',
+      {
+        checkedInAt: new Date(),
+        checkedInBy,
+      },
+    );
+
+    this.logger.log(
+      `Patient checked in for appointment ${appointment.appointmentNo}`,
+    );
+
+    return AppointmentResponseDto.fromEntity(updated);
   }
-
-  // ✅ FIX: Patient must have a token (IN_QUEUE) before nurse can check-in
-  if (appointment.status !== 'IN_QUEUE') {
-    throw new BadRequestException({
-      code: 'OPD_APT_020',
-      message: 'Patient must be in queue before check-in. Generate token first.',
-      details: { currentStatus: appointment.status },
-    });
-  }
-
-  const updated = await this.appointmentsRepository.updateStatus(
-    tenantId,
-    id,
-    'CHECKED_IN',
-    {
-      checkedInAt: new Date(),
-      checkedInBy,
-    },
-  );
-
-  this.logger.log(
-    `Patient checked in for appointment ${appointment.appointmentNo}`,
-  );
-
-  return AppointmentResponseDto.fromEntity(updated);
-}
 
   // ─── CANCEL APPOINTMENT ─────────────────────────────────────────
   async cancel(
@@ -349,17 +394,17 @@ export class AppointmentsService {
     dto: CancelAppointmentDto,
     cancelledBy: string,
   ): Promise<AppointmentResponseDto> {
-    const appointment =
-      await this.appointmentsRepository.findById(tenantId, id);
+    const appointment = await this.appointmentsRepository.findById(
+      tenantId,
+      id,
+    );
 
     if (!appointment) {
       throw new NotFoundException(APPOINTMENT_ERRORS.NOT_FOUND);
     }
 
     // Only BOOKED or CHECKED_IN can be cancelled
-    const canCancel = CANCELLABLE_STATUSES.includes(
-      appointment.status as any,
-    );
+    const canCancel = CANCELLABLE_STATUSES.includes(appointment.status as any);
 
     if (!canCancel) {
       throw new BadRequestException({
@@ -390,11 +435,10 @@ export class AppointmentsService {
     const date = new Date(dto.date);
 
     // Get doctor profile
-    const doctor =
-      await this.appointmentsRepository.getDoctorProfile(
-        tenantId,
-        dto.doctorProfileId,
-      );
+    const doctor = await this.appointmentsRepository.getDoctorProfile(
+      tenantId,
+      dto.doctorProfileId,
+    );
 
     if (!doctor) {
       throw new NotFoundException(APPOINTMENT_ERRORS.DOCTOR_NOT_FOUND);
@@ -421,12 +465,11 @@ export class AppointmentsService {
     }
 
     // Check full-day leave
-    const leaveBlock =
-      await this.appointmentsRepository.getDoctorLeave(
-        tenantId,
-        dto.doctorProfileId,
-        date,
-      );
+    const leaveBlock = await this.appointmentsRepository.getDoctorLeave(
+      tenantId,
+      dto.doctorProfileId,
+      date,
+    );
 
     if (leaveBlock && !leaveBlock.startTime) {
       return {
@@ -444,16 +487,15 @@ export class AppointmentsService {
       availability.startTime,
       availability.endTime,
       doctor.slotDurationMins,
-      doctor.bufferTimeMins
+      doctor.bufferTimeMins,
     );
 
     // Get booked slots
-    const bookedSlots =
-      await this.appointmentsRepository.getBookedSlots(
-        tenantId,
-        dto.doctorProfileId,
-        date,
-      );
+    const bookedSlots = await this.appointmentsRepository.getBookedSlots(
+      tenantId,
+      dto.doctorProfileId,
+      date,
+    );
 
     // Map slots with availability
     const slots: SlotDto[] = allSlots.map((slot) => {
@@ -470,9 +512,7 @@ export class AppointmentsService {
       return {
         startTime: slot.startTime,
         endTime: slot.endTime,
-        isAvailable:
-          !bookedSlots.includes(slot.startTime) &&
-          !blockedByLeave,
+        isAvailable: !bookedSlots.includes(slot.startTime) && !blockedByLeave,
       };
     });
 
@@ -508,44 +548,42 @@ export class AppointmentsService {
 
   // Generate time slots between start and end
 
-
-
   // Replace generateSlots in appointments.service.ts:
-private generateSlots(
-  startTime: string,
-  endTime: string,
-  durationMins: number,
-  bufferMins: number,
-): { startTime: string; endTime: string }[] {
-  const slots: { startTime: string; endTime: string }[] = [];
+  private generateSlots(
+    startTime: string,
+    endTime: string,
+    durationMins: number,
+    bufferMins: number,
+  ): { startTime: string; endTime: string }[] {
+    const slots: { startTime: string; endTime: string }[] = [];
 
-  const toMins = (t: string) => {
-    const [h, m] = t.split(':').map(Number);
-    return h * 60 + m;
-  };
+    const toMins = (t: string) => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    };
 
-  const startTotalMins = toMins(startTime);
-  const endTotalMins = toMins(endTime);
-  const slotInterval = durationMins + bufferMins;
+    const startTotalMins = toMins(startTime);
+    const endTotalMins = toMins(endTime);
+    const slotInterval = durationMins + bufferMins;
 
-  let currentMins = startTotalMins;
+    let currentMins = startTotalMins;
 
-  while (currentMins + durationMins <= endTotalMins) {
-    const slotEndMins = currentMins + durationMins;
-    slots.push({
-      startTime: this.minsToTime(currentMins),
-      endTime: this.minsToTime(slotEndMins),
-    });
-    currentMins += slotInterval;
+    while (currentMins + durationMins <= endTotalMins) {
+      const slotEndMins = currentMins + durationMins;
+      slots.push({
+        startTime: this.minsToTime(currentMins),
+        endTime: this.minsToTime(slotEndMins),
+      });
+      currentMins += slotInterval;
+    }
+
+    return slots;
   }
-
-  return slots;
-}
   // Check if a time falls within a range
   private isTimeInRange(
-    time: string,      // "10:30"
+    time: string, // "10:30"
     rangeStart: string, // "10:00"
-    rangeEnd: string,   // "13:00"
+    rangeEnd: string, // "13:00"
   ): boolean {
     const toMins = (t: string) => {
       const [h, m] = t.split(':').map(Number);
@@ -553,15 +591,14 @@ private generateSlots(
     };
 
     return (
-      toMins(time) >= toMins(rangeStart) &&
-      toMins(time) < toMins(rangeEnd)
+      toMins(time) >= toMins(rangeStart) && toMins(time) < toMins(rangeEnd)
     );
   }
 
   // Add minutes to a time string
   private addMinutesToTime(
-    time: string,     // "10:30"
-    minutes: number,  // 15
+    time: string, // "10:30"
+    minutes: number, // 15
   ): string {
     const [h, m] = time.split(':').map(Number);
     const totalMins = h * 60 + m + minutes;

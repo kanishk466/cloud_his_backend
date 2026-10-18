@@ -11,7 +11,9 @@ import { HospitalUserRepository } from '../repositories/hospital-user.repository
 import { CreateHospitalUserDto } from '../dto/create-hospital-user.dto';
 import { UpdateHospitalUserProfileDto } from '../dto/update-hospital-user-profile.dto';
 import { ListUsersDto } from '../dto/list-users.dto';
-import { HospitalUserType } from '@prisma/client';
+import { SetUserDepartmentsDto } from '../dto/set-user-departments.dto';
+import { SetUserRolesDto } from '../dto/set-user-roles.dto';
+import { HospitalUserStatus, HospitalUserType } from '@prisma/client';
 import { TenantValidationService } from './tenant-validation.service';
 import { isPrismaError } from '../../../shared/prisma/prisma-error.util';
 
@@ -27,7 +29,11 @@ export class HospitalUserService {
 
   // ─── Create User ────────────────────────────────────────────────────────────
 
-  async create(tenantId: string, dto: CreateHospitalUserDto) {
+  async create(
+    tenantId: string,
+    dto: CreateHospitalUserDto,
+    performedBy?: string,
+  ) {
     if (dto.userInfo.userType === HospitalUserType.SUPER_ADMIN) {
       throw new ForbiddenException(
         'SUPER_ADMIN cannot be created via this endpoint',
@@ -116,7 +122,8 @@ export class HospitalUserService {
       },
       primaryRoleId: dto.roles.primaryRoleId,
       additionalRoleIds,
-      departmentIds: dto.departmentIds ?? []
+      departmentIds: dto.departmentIds ?? [],
+      performedBy,
     });
 
     return {
@@ -165,6 +172,7 @@ export class HospitalUserService {
     tenantId: string,
     id: string,
     dto: UpdateHospitalUserProfileDto,
+    performedBy?: string,
   ) {
     if (dto.userInfo?.email) {
       const existing = await this.userRepo.findByEmailWithHospital(
@@ -201,6 +209,7 @@ export class HospitalUserService {
         tenantId,
         dto.userInfo ?? {},
         staffProfileData,
+        performedBy,
       );
     } catch (err: unknown) {
       if (isPrismaError(err, 'P2025')) {
@@ -210,26 +219,39 @@ export class HospitalUserService {
     }
   }
 
-  // ─── Deactivate ─────────────────────────────────────────────────────────────
+  // ─── Status Toggle (PATCH /:id/status) ─────────────────────────────────────
+  //
+  // Deactivation is security-sensitive: when a user goes INACTIVE, all their
+  // active AuthSessions are revoked and refreshTokenHash is cleared inside the
+  // same transaction (repo handles it), so they are logged out everywhere.
 
-  async deactivate(tenantId: string, userId: string) {
+  async updateStatus(
+    tenantId: string,
+    userId: string,
+    status: HospitalUserStatus,
+    performedBy?: string,
+  ) {
     const user = await this.userRepo.findById(userId, tenantId);
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    if (user.userType === HospitalUserType.SUPER_ADMIN) {
-      const activeSuperAdmins =
-        await this.userRepo.countActiveSuperAdmins(tenantId);
-      if (activeSuperAdmins <= 1) {
-        throw new BadRequestException(
-          'Cannot deactivate the last active admin of this hospital',
-        );
-      }
+    if (status === HospitalUserStatus.INACTIVE) {
+      await this.assertNotLastActiveSuperAdmin(tenantId, user.userType);
     }
 
     try {
-      return await this.userRepo.updateStatus(userId, tenantId, 'INACTIVE');
+      await this.userRepo.setStatusWithSessionRevoke(
+        userId,
+        tenantId,
+        status,
+        performedBy,
+      );
+      return {
+        message: `User ${status === HospitalUserStatus.ACTIVE ? 'activated' : 'deactivated'} successfully`,
+        userId,
+        status,
+      };
     } catch (err: unknown) {
       if (isPrismaError(err, 'P2025')) {
         throw new NotFoundException('User not found');
@@ -238,13 +260,138 @@ export class HospitalUserService {
     }
   }
 
-  // ─── Activate ───────────────────────────────────────────────────────────────
+  // ─── Deactivate / Activate (legacy wrappers) ────────────────────────────────
 
-  async activate(tenantId: string, userId: string) {
+  deactivate(tenantId: string, userId: string, performedBy?: string) {
+    return this.updateStatus(
+      tenantId,
+      userId,
+      HospitalUserStatus.INACTIVE,
+      performedBy,
+    );
+  }
+
+  activate(tenantId: string, userId: string, performedBy?: string) {
+    return this.updateStatus(
+      tenantId,
+      userId,
+      HospitalUserStatus.ACTIVE,
+      performedBy,
+    );
+  }
+
+  // ─── Soft Delete ────────────────────────────────────────────────────────────
+  //
+  // Sets deletedAt + INACTIVE, clears refreshTokenHash and revokes all active
+  // sessions atomically. Soft-deleted users are hidden from list/get queries.
+
+  async softDelete(tenantId: string, userId: string, performedBy?: string) {
+    const user = await this.userRepo.findById(userId, tenantId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.assertNotLastActiveSuperAdmin(tenantId, user.userType);
+
     try {
-      return await this.userRepo.updateStatus(userId, tenantId, 'ACTIVE');
+      await this.userRepo.softDelete(userId, tenantId, performedBy);
+      return { message: 'User deleted successfully', userId };
     } catch (err: unknown) {
       if (isPrismaError(err, 'P2025')) {
+        throw new NotFoundException('User not found');
+      }
+      throw err;
+    }
+  }
+
+  // ─── Bulk Department Mapping (PUT /:id/departments) ────────────────────────
+
+  async setDepartments(
+    tenantId: string,
+    userId: string,
+    dto: SetUserDepartmentsDto,
+    performedBy?: string,
+  ) {
+    await this.findByIdOrThrow(tenantId, userId);
+
+    await this.tenantValidationService.validateReferences(tenantId, {
+      departmentIds: dto.departmentIds,
+    });
+
+    try {
+      const mappings = await this.userRepo.syncDepartments(
+        userId,
+        tenantId,
+        dto.departmentIds,
+        performedBy,
+      );
+      return {
+        message: 'User departments updated successfully',
+        departments: mappings.map((m) => m.department),
+      };
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message === 'USER_NOT_FOUND') {
+        throw new NotFoundException('User not found');
+      }
+      throw err;
+    }
+  }
+
+  // ─── Bulk Role Assignment (PUT /:id/roles) ─────────────────────────────────
+  //
+  // Atomically replaces the user's role assignments.
+  // Rules:
+  //   - At least one role (enforced by DTO)
+  //   - Exactly one role must be flagged isPrimary: true
+  //   - No duplicate hospitalRoleIds
+  //   - Every role must belong to this tenant
+
+  async setRoles(
+    tenantId: string,
+    userId: string,
+    dto: SetUserRolesDto,
+    performedBy?: string,
+  ) {
+    await this.findByIdOrThrow(tenantId, userId);
+
+    const primaryRoles = dto.roles.filter((r) => r.isPrimary);
+    if (primaryRoles.length !== 1) {
+      throw new BadRequestException(
+        'Exactly one role must be marked as primary (isPrimary: true)',
+      );
+    }
+
+    const roleIds = dto.roles.map((r) => r.hospitalRoleId);
+    if (new Set(roleIds).size !== roleIds.length) {
+      throw new BadRequestException(
+        'Duplicate hospitalRoleId values are not allowed',
+      );
+    }
+
+    await this.tenantValidationService.validateReferences(tenantId, {
+      primaryRoleId: primaryRoles[0].hospitalRoleId,
+      additionalRoleIds: dto.roles
+        .filter((r) => !r.isPrimary)
+        .map((r) => r.hospitalRoleId),
+    });
+
+    try {
+      const assignments = await this.userRepo.syncRoles(
+        userId,
+        tenantId,
+        dto.roles,
+        performedBy,
+      );
+      return {
+        message: 'User roles updated successfully',
+        roles: assignments.map((a) => ({
+          hospitalRoleId: a.hospitalRoleId,
+          isPrimary: a.isPrimary,
+          name: a.hospitalRole.roleName.name,
+        })),
+      };
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message === 'USER_NOT_FOUND') {
         throw new NotFoundException('User not found');
       }
       throw err;
@@ -253,12 +400,17 @@ export class HospitalUserService {
 
   // ─── Reset Password ─────────────────────────────────────────────────────────
 
-  async resetPassword(tenantId: string, userId: string) {
+  async resetPassword(tenantId: string, userId: string, performedBy?: string) {
     const tempPassword = this.generateTempPassword();
     const passwordHash = await bcrypt.hash(tempPassword, 10);
 
     try {
-      await this.userRepo.resetPassword(userId, tenantId, passwordHash);
+      await this.userRepo.resetPassword(
+        userId,
+        tenantId,
+        passwordHash,
+        performedBy,
+      );
       return {
         message: 'Password reset successfully',
         temporaryPassword: tempPassword,
@@ -268,6 +420,23 @@ export class HospitalUserService {
         throw new NotFoundException('User not found');
       }
       throw err;
+    }
+  }
+
+  // ─── Guards ─────────────────────────────────────────────────────────────────
+
+  private async assertNotLastActiveSuperAdmin(
+    tenantId: string,
+    userType: HospitalUserType,
+  ) {
+    if (userType !== HospitalUserType.SUPER_ADMIN) return;
+
+    const activeSuperAdmins =
+      await this.userRepo.countActiveSuperAdmins(tenantId);
+    if (activeSuperAdmins <= 1) {
+      throw new BadRequestException(
+        'Cannot deactivate the last active admin of this hospital',
+      );
     }
   }
 

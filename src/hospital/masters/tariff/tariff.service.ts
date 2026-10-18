@@ -43,7 +43,7 @@ export class TariffService {
         rates: {
           where: { isActive: true },
           include: {
-            service: { select: { id: true, serviceCode: true, serviceName: true, baseRate: true, category: true } },
+            service: { select: { id: true, serviceCode: true, serviceName: true, baseRate: true, categoryRel: { select: { id: true, name: true, code: true } } } },
           },
         },
       },

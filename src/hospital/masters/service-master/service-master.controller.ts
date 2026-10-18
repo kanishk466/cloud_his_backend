@@ -1,10 +1,20 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, ParseUUIDPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  UseGuards,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { ServiceMasterService } from './service-master.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 import { HospitalJwtAuthGuard } from '../../identity/guards/hospital-jwt-auth/hospital-jwt-auth.guard';
 import { CurrentTenant } from '../../core/decorators/current-tenant.decorator';
-
 
 @Controller('hospital/masters/services')
 @UseGuards(HospitalJwtAuthGuard)
@@ -17,16 +27,15 @@ export class ServiceMasterController {
   }
 
   @Get()
-  list(
-    @CurrentTenant() tenantId: string,
-    @Query('search') search?: string,
-    @Query('category') category?: string,
-  ) {
-    return this.service.list(tenantId, search, category);
+  list(@CurrentTenant() tenantId: string, @Query('search') search?: string) {
+    return this.service.list(tenantId, search);
   }
 
   @Get(':id')
-  findOne(@CurrentTenant() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
+  findOne(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.service.findOne(tenantId, id);
   }
 
@@ -40,7 +49,10 @@ export class ServiceMasterController {
   }
 
   @Delete(':id')
-  remove(@CurrentTenant() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
+  remove(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.service.remove(tenantId, id);
   }
 }

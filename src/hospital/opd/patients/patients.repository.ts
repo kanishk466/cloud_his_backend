@@ -41,15 +41,58 @@ export interface CreatePatientData {
   registeredBy?: string;
   consentToShare?: boolean;
   privacyFlag?: string;
+  // ── Extended registration fields (all optional) ──
+  title?: string;
+  middleName?: string;
+  barcode?: string;
+  countryCode?: string;
+  permanentAddress?: string;
+  idProofName?: string;
+  idProofNo?: string;
+  nationalId?: string;
+  passportNo?: string;
+  kraPin?: string;
+  familyNumber?: string;
+  staffId?: string;
+  dependentId?: string;
+  pregnancyDays?: number;
+  occupation?: string;
+  birthPlace?: string;
+  religion?: string;
+  locality?: string;
+  membershipNo?: string;
+  source?: string;
+  employeeReferenceId?: string;
+  identityMark1?: string;
+  identityMark2?: string;
+  referenceType?: string;
+  mlcType?: string;
+  mlcNo?: string;
+  isInternational?: boolean;
+  internationalNo?: string;
+  emergencyFirstName?: string;
+  emergencyLastName?: string;
+  emergencyRelation?: string;
+  emergencyCountryCode?: string;
+  emergencyMobile?: string;
+  emergencyResidentNo?: string;
+  emergencyAddress?: string;
+  insuranceGroup?: string;
+  insurance?: string;
+  policyCardNo?: string;
+  nameOnCard?: string;
+  cardHolder?: string;
+  approvalAmount?: number;
+  approvalRemark?: string;
 }
 
-export interface UpdatePatientData extends Partial<Omit<CreatePatientData, 'tenantId' | 'uhid'>> {}
+export interface UpdatePatientData extends Partial<Omit<CreatePatientData, 'tenantId' | 'uhid'>> { }
 
 @Injectable()
 export class PatientsRepository {
   private readonly logger = new Logger(PatientsRepository.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   // ─── GENERATE UHID (Transaction-safe) ────────────────────────────
   async generateUhid(tenantId: string, tx?: Prisma.TransactionClient): Promise<string> {
@@ -114,6 +157,49 @@ export class PatientsRepository {
         registeredBy: data.registeredBy,
         consentToShare: data.consentToShare ?? true,
         privacyFlag: data.privacyFlag,
+        // ── Extended registration fields (optional) ──
+        title: data.title,
+        middleName: data.middleName,
+        barcode: data.barcode,
+        countryCode: data.countryCode,
+        permanentAddress: data.permanentAddress,
+        idProofName: data.idProofName,
+        idProofNo: data.idProofNo,
+        nationalId: data.nationalId,
+        passportNo: data.passportNo,
+        kraPin: data.kraPin,
+        familyNumber: data.familyNumber,
+        staffId: data.staffId,
+        dependentId: data.dependentId,
+        pregnancyDays: data.pregnancyDays,
+        occupation: data.occupation,
+        birthPlace: data.birthPlace,
+        religion: data.religion,
+        locality: data.locality,
+        membershipNo: data.membershipNo,
+        source: data.source,
+        employeeReferenceId: data.employeeReferenceId,
+        identityMark1: data.identityMark1,
+        identityMark2: data.identityMark2,
+        referenceType: data.referenceType,
+        mlcType: data.mlcType,
+        mlcNo: data.mlcNo,
+        isInternational: data.isInternational ?? false,
+        internationalNo: data.internationalNo,
+        emergencyFirstName: data.emergencyFirstName,
+        emergencyLastName: data.emergencyLastName,
+        emergencyRelation: data.emergencyRelation,
+        emergencyCountryCode: data.emergencyCountryCode,
+        emergencyMobile: data.emergencyMobile,
+        emergencyResidentNo: data.emergencyResidentNo,
+        emergencyAddress: data.emergencyAddress,
+        insuranceGroup: data.insuranceGroup,
+        insurance: data.insurance,
+        policyCardNo: data.policyCardNo,
+        nameOnCard: data.nameOnCard,
+        cardHolder: data.cardHolder,
+        approvalAmount: data.approvalAmount,
+        approvalRemark: data.approvalRemark,
       },
       include: {
         panel: {
@@ -167,6 +253,23 @@ export class PatientsRepository {
     return this.prisma.patient.findMany({
       where: { tenantId, mobile, deletedAt: null },
       orderBy: { registeredAt: 'desc' },
+    });
+  }
+
+  // ─── FIND BY MOBILE + FIRST NAME (soft duplicate check) ──────────
+  async findByMobileAndFirstName(
+    tenantId: string,
+    mobile: string,
+    firstName: string,
+  ) {
+    return this.prisma.patient.findFirst({
+      where: {
+        tenantId,
+        mobile,
+        deletedAt: null,
+        firstName: { equals: firstName.trim(), mode: 'insensitive' },
+      },
+      select: { id: true, uhid: true },
     });
   }
 
@@ -249,9 +352,53 @@ export class PatientsRepository {
         panelValidTill: data.panelValidTill ?? data.insuranceValidTill,
         allergies: data.allergies,
         chronicDiseases: data.chronicDiseases,
+        patientType: data.patientType,
         status: data.status,
         consentToShare: data.consentToShare,
         privacyFlag: data.privacyFlag,
+        // ── Extended registration fields (optional) ──
+        title: data.title,
+        middleName: data.middleName,
+        barcode: data.barcode,
+        countryCode: data.countryCode,
+        permanentAddress: data.permanentAddress,
+        idProofName: data.idProofName,
+        idProofNo: data.idProofNo,
+        nationalId: data.nationalId,
+        passportNo: data.passportNo,
+        kraPin: data.kraPin,
+        familyNumber: data.familyNumber,
+        staffId: data.staffId,
+        dependentId: data.dependentId,
+        pregnancyDays: data.pregnancyDays,
+        occupation: data.occupation,
+        birthPlace: data.birthPlace,
+        religion: data.religion,
+        locality: data.locality,
+        membershipNo: data.membershipNo,
+        source: data.source,
+        employeeReferenceId: data.employeeReferenceId,
+        identityMark1: data.identityMark1,
+        identityMark2: data.identityMark2,
+        referenceType: data.referenceType,
+        mlcType: data.mlcType,
+        mlcNo: data.mlcNo,
+        isInternational: data.isInternational,
+        internationalNo: data.internationalNo,
+        emergencyFirstName: data.emergencyFirstName,
+        emergencyLastName: data.emergencyLastName,
+        emergencyRelation: data.emergencyRelation,
+        emergencyCountryCode: data.emergencyCountryCode,
+        emergencyMobile: data.emergencyMobile,
+        emergencyResidentNo: data.emergencyResidentNo,
+        emergencyAddress: data.emergencyAddress,
+        insuranceGroup: data.insuranceGroup,
+        insurance: data.insurance,
+        policyCardNo: data.policyCardNo,
+        nameOnCard: data.nameOnCard,
+        cardHolder: data.cardHolder,
+        approvalAmount: data.approvalAmount,
+        approvalRemark: data.approvalRemark,
       },
       include: { panel: true },
     });

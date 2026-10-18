@@ -1,8 +1,4 @@
-import {
-  IsDateString,
-  IsUUID,
-  IsNotEmpty,
-} from 'class-validator';
+import { IsDateString, IsUUID, IsNotEmpty } from 'class-validator';
 
 export class GetSlotsDto {
   @IsUUID()

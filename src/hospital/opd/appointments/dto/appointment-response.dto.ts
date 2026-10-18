@@ -46,16 +46,15 @@ export class AppointmentResponseDto {
   notes!: string | null;
   referredByDoctorName!: string | null;
   referralNote!: string | null;
+  referDoctorId!: string | null;
+  isFollowUpVisit!: boolean;
   checkedInAt!: Date | null;
   bookedAt!: Date;
   cancelledAt!: Date | null;
   cancelReason!: string | null;
   token!: TokenSummaryDto | null;
 
-  static fromEntity(
-    appointment: any,
-    token?: any,
-  ): AppointmentResponseDto {
+  static fromEntity(appointment: any, token?: any): AppointmentResponseDto {
     const dto = new AppointmentResponseDto();
 
     dto.id = appointment.id;
@@ -74,6 +73,8 @@ export class AppointmentResponseDto {
     dto.notes = appointment.notes;
     dto.referredByDoctorName = appointment.referredByDoctorName;
     dto.referralNote = appointment.referralNote;
+    dto.referDoctorId = appointment.referDoctorId ?? null;
+    dto.isFollowUpVisit = appointment.isFollowUpVisit ?? false;
     dto.checkedInAt = appointment.checkedInAt;
     dto.bookedAt = appointment.bookedAt;
     dto.cancelledAt = appointment.cancelledAt;
@@ -104,17 +105,13 @@ export class AppointmentResponseDto {
         firstName: user?.firstName,
         lastName: user?.lastName,
         specialization: appointment.doctorProfile.specialization,
-        consultationFee: Number(
-          appointment.doctorProfile.consultationFee,
-        ),
-        slotDurationMins:
-          appointment.doctorProfile.slotDurationMins,
+        consultationFee: Number(appointment.doctorProfile.consultationFee),
+        slotDurationMins: appointment.doctorProfile.slotDurationMins,
       };
     }
 
     // Department name
-    dto.departmentName =
-      appointment.department?.name ?? null;
+    dto.departmentName = appointment.department?.name ?? null;
 
     // Token summary
     if (appointment.token) {
@@ -134,8 +131,8 @@ export class AppointmentResponseDto {
 
 // Available slot response
 export class SlotDto {
-  startTime!: string;  // "09:00"
-  endTime!: string;    // "09:15"
+  startTime!: string; // "09:00"
+  endTime!: string; // "09:15"
   isAvailable!: boolean;
 }
 
