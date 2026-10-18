@@ -11,6 +11,10 @@ import { Request, Response } from 'express';
 interface ErrorResponseBody {
   statusCode: number;
   message: string | string[];
+  /** Business error code (e.g. OPD_BIL_003) when the exception provides one. */
+  code?: string;
+  /** Structured context (e.g. { billNo }) when the exception provides one. */
+  details?: unknown;
   timestamp: string;
   path: string;
 }
@@ -26,6 +30,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string | string[] = 'Internal server error';
+    let code: string | undefined;
+    let details: unknown;
 
     if (exception instanceof HttpException) {
       statusCode = exception.getStatus();
@@ -36,9 +42,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
       if (typeof payload === 'string') {
         message = payload;
       } else if (payload && typeof payload === 'object') {
-        const inner = (payload as Record<string, unknown>).message;
-        message =
-          (inner as string | string[] | undefined) ?? exception.message;
+        const obj = payload as Record<string, unknown>;
+        message = (obj.message as string | string[] | undefined) ?? exception.message;
+        // Spec contract: { code, message, details } — forward the business
+        // error code and its structured context to the client (FRONTEND_GUIDE §6.4).
+        if (typeof obj.code === 'string') code = obj.code;
+        if (obj.details !== undefined) details = obj.details;
       } else {
         message = exception.message;
       }
@@ -54,6 +63,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const body: ErrorResponseBody = {
       statusCode,
       message,
+      ...(code ? { code } : {}),
+      ...(details !== undefined ? { details } : {}),
       timestamp: new Date().toISOString(),
       path: request.url,
     };

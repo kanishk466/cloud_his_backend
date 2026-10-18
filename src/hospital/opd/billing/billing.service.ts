@@ -38,6 +38,7 @@ export interface ResolvedRate {
     baseRate: number;
     rateEditable: boolean;
     category: string | null;
+    categoryCode: string | null;
   };
 }
 
@@ -50,6 +51,9 @@ interface NormalizedBillItem {
   quantity: number;
   unitPrice: number;
   rateSource?: RateSource;
+  /** CONS-category line — used to dedupe the auto-added appointment
+   *  consultation so it can never double-bill. */
+  isConsultation?: boolean;
   discountPercent?: number;
   discountAmount?: number;
   taxRate?: number;
@@ -138,9 +142,17 @@ export class BillingService {
         Number(appointment.consultationFee),
       );
 
-      const alreadyPresent = consultationItem.serviceId
-        ? items.some((i) => i.serviceId === consultationItem.serviceId)
-        : false;
+      // Dedup guard: skip when the counter already billed a consultation —
+      // either the exact same service OR ANY CONS-category line. Comparing
+      // serviceId alone was not enough: the free-text fallback line has no
+      // serviceId, so it used to double-bill every manually added
+      // consultation (e.g. "Consultation Fee" + "opd consultation").
+      const alreadyPresent = items.some(
+        (i) =>
+          (consultationItem.serviceId != null &&
+            i.serviceId === consultationItem.serviceId) ||
+          i.isConsultation === true,
+      );
 
       if (!alreadyPresent) {
         if (consultationItem.serviceId) {
@@ -328,6 +340,7 @@ export class BillingService {
       baseRate,
       rateEditable: service.rateEditable,
       category: service.categoryRel?.name ?? null,
+      categoryCode: service.categoryRel?.code ?? null,
     };
 
     // 1. Panel tariff
@@ -459,6 +472,7 @@ export class BillingService {
         quantity,
         unitPrice,
         rateSource: resolved.source,
+        isConsultation: resolved.service.categoryCode === 'CONS',
         discountPercent: raw.discountPercent,
         discountAmount: raw.discountAmount,
         taxRate: raw.taxRate,
@@ -473,6 +487,13 @@ export class BillingService {
     tenantId: string,
     dto: CreateBillDto,
   ): Promise<string | null> {
+    // Spec: the counter screen maps "GENERAL / Cash" to an explicit
+    // `panelId: null` — that must stay cash, never the patient's panel.
+    // Only a genuinely OMITTED field inherits the patient's panel.
+    if ('panelId' in dto && !dto.panelId) {
+      return null;
+    }
+
     if (dto.panelId) {
       const panel = await this.billingRepository.findPanel(
         tenantId,
@@ -964,6 +985,7 @@ export class BillingService {
         category: 'Consultation',
         quantity: 1,
         unitPrice: fee,
+        isConsultation: true,
         taxRate: 0,
       };
     }
@@ -976,6 +998,7 @@ export class BillingService {
       quantity: 1,
       unitPrice: fee,
       rateSource: 'DOCTOR',
+      isConsultation: true,
       taxRate: 0,
     };
   }
