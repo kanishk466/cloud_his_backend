@@ -1,0 +1,210 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
+import { BillingService } from '../billing.service';
+import { BillingRepository } from '../billing.repository';
+import { BillLineValidatorService } from '../services/bill-line-validator.service';
+import { ReferralCommissionsService } from '../../../masters/doctor-setup/services/referral-commissions.service';
+
+const mockRepository = {
+  findServiceForBilling: jest.fn(),
+  findPanelServiceRate: jest.fn(),
+  findDoctor: jest.fn(),
+  findPanel: jest.fn(),
+  getPanelCoPay: jest.fn(),
+  getPatient: jest.fn(),
+};
+
+const mockValidator = { validateBillLine: jest.fn() };
+const mockReferral = { createForBill: jest.fn() };
+
+describe('BillingService — rate resolution hierarchy (CRITICAL)', () => {
+  let service: BillingService;
+
+  const tenantId = 'tenant-uuid';
+  const serviceId = 'service-uuid';
+  const panelId = 'panel-uuid';
+  const doctorId = 'doctor-uuid';
+
+  const consultService = {
+    id: serviceId,
+    serviceCode: 'CONS-OPD',
+    serviceName: 'OPD Consultation',
+    baseRate: 300,
+    rateEditable: false,
+    discountable: true,
+    isActive: true,
+    categoryRel: { id: 'c1', name: 'Consultation', code: 'CONS' },
+  };
+
+  const labService = {
+    ...consultService,
+    serviceCode: 'LAB-CBC',
+    serviceName: 'Complete Blood Count',
+    baseRate: 250,
+    categoryRel: { id: 'c2', name: 'Diagnostics / Lab', code: 'DIAG' },
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        BillingService,
+        { provide: BillingRepository, useValue: mockRepository },
+        { provide: BillLineValidatorService, useValue: mockValidator },
+        { provide: ReferralCommissionsService, useValue: mockReferral },
+      ],
+    }).compile();
+
+    service = module.get<BillingService>(BillingService);
+    jest.clearAllMocks();
+  });
+
+  describe('resolveRate()', () => {
+    it('priority 1 — uses the panel tariff rate when one exists', async () => {
+      mockRepository.findServiceForBilling.mockResolvedValue(consultService);
+      mockRepository.findPanelServiceRate.mockResolvedValue({ rate: 500 });
+      mockRepository.findDoctor.mockResolvedValue({
+        id: doctorId,
+        consultationFee: 400,
+      });
+
+      const result = await service.resolveRate(
+        tenantId,
+        serviceId,
+        panelId,
+        doctorId,
+      );
+
+      // Panel rate (500) beats both the doctor fee (400) and base (300)
+      expect(result.rate).toBe(500);
+      expect(result.source).toBe('PANEL');
+      expect(mockRepository.findPanelServiceRate).toHaveBeenCalledWith(
+        tenantId,
+        panelId,
+        serviceId,
+      );
+    });
+
+    it('priority 2 — uses the doctor consultationFee for CONS services without a panel rate', async () => {
+      mockRepository.findServiceForBilling.mockResolvedValue(consultService);
+      mockRepository.findPanelServiceRate.mockResolvedValue(null);
+      mockRepository.findDoctor.mockResolvedValue({
+        id: doctorId,
+        consultationFee: 400,
+      });
+
+      const result = await service.resolveRate(
+        tenantId,
+        serviceId,
+        panelId,
+        doctorId,
+      );
+
+      expect(result.rate).toBe(400);
+      expect(result.source).toBe('DOCTOR');
+    });
+
+    it('priority 2 — works with no panel at all (doctor fee still wins)', async () => {
+      mockRepository.findServiceForBilling.mockResolvedValue(consultService);
+      mockRepository.findDoctor.mockResolvedValue({
+        id: doctorId,
+        consultationFee: 450,
+      });
+
+      const result = await service.resolveRate(
+        tenantId,
+        serviceId,
+        null,
+        doctorId,
+      );
+
+      expect(mockRepository.findPanelServiceRate).not.toHaveBeenCalled();
+      expect(result.rate).toBe(450);
+      expect(result.source).toBe('DOCTOR');
+    });
+
+    it('priority 3 — falls back to baseRate for non-CONS services even with a doctor', async () => {
+      mockRepository.findServiceForBilling.mockResolvedValue(labService);
+      mockRepository.findPanelServiceRate.mockResolvedValue(null);
+
+      const result = await service.resolveRate(
+        tenantId,
+        serviceId,
+        panelId,
+        doctorId,
+      );
+
+      // Lab service: doctor fee must NOT apply
+      expect(result.rate).toBe(250);
+      expect(result.source).toBe('BASE');
+      expect(mockRepository.findDoctor).not.toHaveBeenCalled();
+    });
+
+    it('priority 3 — falls back to baseRate when the doctor has no fee configured', async () => {
+      mockRepository.findServiceForBilling.mockResolvedValue(consultService);
+      mockRepository.findPanelServiceRate.mockResolvedValue(null);
+      mockRepository.findDoctor.mockResolvedValue({
+        id: doctorId,
+        consultationFee: 0,
+      });
+
+      const result = await service.resolveRate(
+        tenantId,
+        serviceId,
+        null,
+        doctorId,
+      );
+
+      expect(result.rate).toBe(300);
+      expect(result.source).toBe('BASE');
+    });
+
+    it('rejects unknown or inactive services', async () => {
+      mockRepository.findServiceForBilling.mockResolvedValue({
+        ...consultService,
+        isActive: false,
+      });
+
+      await expect(
+        service.resolveRate(tenantId, serviceId, null, null),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('calculateBillItems() — spec V2 totals', () => {
+    const calc = (input: any) =>
+      (service as any).calculateBillItems(input);
+
+    it('computes the spec example: 1 × ₹500 consultation, no discount → net ₹500', () => {
+      const result = calc({
+        items: [{ quantity: 1, unitPrice: 500 }],
+        discountAmount: 0,
+      });
+
+      expect(result.subtotal).toBe(500);
+      expect(result.totalAmount).toBe(500);
+    });
+
+    it('subtracts line-level discounts from the net total', () => {
+      const result = calc({
+        items: [
+          { quantity: 1, unitPrice: 500, discountAmount: 50 },
+          { quantity: 2, unitPrice: 100, discountPercent: 10 },
+        ],
+      });
+
+      expect(result.subtotal).toBe(700); // gross
+      expect(result.itemDiscountTotal).toBe(70); // 50 + 20
+      expect(result.totalAmount).toBe(630); // net after line discounts
+    });
+
+    it('applies bill-level discount after line discounts', () => {
+      const result = calc({
+        items: [{ quantity: 1, unitPrice: 1000, discountAmount: 100 }],
+        discountPercent: 10, // 10% of (1000 − 100) = 90
+      });
+
+      expect(result.totalAmount).toBe(810); // 1000 − 100 − 90
+      expect(result.discountAmount).toBe(90);
+    });
+  });
+});

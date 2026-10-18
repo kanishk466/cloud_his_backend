@@ -104,11 +104,7 @@ export class MailService implements OnModuleInit {
   /* 3. 2FA LOGIN OTP                                                          */
   /* ========================================================================= */
   async sendOtpMail(to: string, otpCode: string): Promise<void> {
-    // 🔍 OTP Console Log for Debugging
-    console.log('====================================================');
-    console.log(`🔑 [DEBUG 2FA OTP] To: ${to} | OTP Code: >>> ${otpCode} <<<`);
-    console.log('====================================================');
-
+    // SECURITY: never log OTP codes — console/log output is an OTP leak.
     const html = `
       <!DOCTYPE html>
       <html>
@@ -162,10 +158,7 @@ export class MailService implements OnModuleInit {
   /* 4. OTP EMAIL (Hospital / Password Reset)                                  */
   /* ========================================================================= */
   async sendOtpMailHospital(to: string, otpCode: string, purpose: 'login' | 'password-reset' = 'login'): Promise<void> {
-    // 🔍 OTP Console Log for Debugging
-    console.log('====================================================');
-    console.log(`🔑 [DEBUG OTP HOSPITAL - ${purpose.toUpperCase()}] To: ${to} | OTP Code: >>> ${otpCode} <<<`);
-    console.log('====================================================');
+    // SECURITY: never log OTP codes — console/log output is an OTP leak.
 
     const copy =
       purpose === 'password-reset'

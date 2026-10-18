@@ -45,6 +45,167 @@ const FALLBACK_SUB_GROUP = {
 export class InvoiceBuilderService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Spec V2 — GET /opd/billing/:billId/receipt
+   *
+   * Printable counter receipt: hospital header, patient, doctor, all line
+   * items with resolved rates, totals including the panel/co-pay split and
+   * every payment receipt against the bill.
+   */
+  async buildReceiptData(tenantId: string, billId: string) {
+    const [hospital, bill] = await Promise.all([
+      this.prisma.hospital.findUnique({
+        where: { tenantId },
+        select: {
+          name: true,
+          address: true,
+          city: true,
+          state: true,
+          pincode: true,
+          phone: true,
+          email: true,
+          logoUrl: true,
+        },
+      }),
+      this.prisma.opdBill.findFirst({
+        where: { id: billId, tenantId },
+        include: {
+          patient: {
+            select: {
+              id: true,
+              uhid: true,
+              firstName: true,
+              lastName: true,
+              mobile: true,
+              gender: true,
+              dateOfBirth: true,
+            },
+          },
+          appointment: { select: { id: true, appointmentNo: true } },
+          panel: { select: { id: true, panelName: true } },
+          doctorProfile: {
+            select: {
+              id: true,
+              specialization: true,
+              hospitalUser: { select: { firstName: true, lastName: true } },
+            },
+          },
+          payments: { orderBy: { paidAt: 'asc' as const } },
+          creditNotes: {
+            orderBy: { issuedAt: 'asc' as const },
+            select: {
+              id: true,
+              creditNoteNo: true,
+              refundAmount: true,
+              refundMode: true,
+              issuedAt: true,
+            },
+          },
+          items: {
+            orderBy: { createdAt: 'asc' as const },
+            include: { service: { select: { serviceCode: true } } },
+          },
+        },
+      }),
+    ]);
+
+    if (!bill) throw new NotFoundException(BILLING_ERRORS.BILL_NOT_FOUND);
+
+    const fullName = (first?: string | null, last?: string | null) =>
+      [first, last].filter(Boolean).join(' ');
+
+    return {
+      hospital: hospital
+        ? {
+            name: hospital.name,
+            address: hospital.address,
+            city: hospital.city,
+            state: hospital.state,
+            pincode: hospital.pincode,
+            phone: hospital.phone,
+            email: hospital.email,
+            logoUrl: hospital.logoUrl,
+          }
+        : null,
+      bill: {
+        id: bill.id,
+        billNo: bill.billNo,
+        visitNo: bill.visitNo,
+        billedAt: bill.billedAt,
+        paymentStatus: bill.paymentStatus,
+        billStatus: bill.billStatus,
+        paymentMode: bill.paymentMode,
+        remarks: bill.remarks,
+        appointmentNo: bill.appointment?.appointmentNo ?? null,
+      },
+      patient: {
+        id: bill.patient.id,
+        uhid: bill.patient.uhid,
+        name: fullName(bill.patient.firstName, bill.patient.lastName),
+        mobile: bill.patient.mobile,
+        gender: bill.patient.gender,
+        dateOfBirth: bill.patient.dateOfBirth,
+      },
+      panel: bill.panel
+        ? { id: bill.panel.id, name: bill.panel.panelName }
+        : null,
+      doctor: bill.doctorProfile
+        ? {
+            id: bill.doctorProfile.id,
+            name: fullName(
+              bill.doctorProfile.hospitalUser?.firstName,
+              bill.doctorProfile.hospitalUser?.lastName,
+            ),
+            specialization: bill.doctorProfile.specialization,
+          }
+        : null,
+      items: bill.items.map((item) => ({
+        id: item.id,
+        serviceCode: item.itemCode ?? item.service?.serviceCode ?? null,
+        itemName: item.itemName,
+        category: item.category,
+        quantity: item.quantity,
+        unitPrice: Number(item.unitPrice),
+        discountPercent: Number(item.discountPercent),
+        discountAmount: Number(item.discountAmount),
+        taxPercent: Number(item.taxPercent),
+        totalAmount: Number(item.totalAmount),
+      })),
+      totals: {
+        grossAmount: Number(bill.subtotal),
+        discountAmount: Number(bill.discountAmount),
+        discountPercent: Number(bill.discountPercent),
+        discountReason: bill.discountReason,
+        taxAmount: Number(bill.taxAmount),
+        netAmount: Number(bill.totalAmount),
+        coPayPercent: Number(bill.coPayPercent),
+        coPayAmount: Number(bill.coPayAmount),
+        patientPayable:
+          bill.patientPayable != null ? Number(bill.patientPayable) : null,
+        panelPayable:
+          bill.panelPayable != null ? Number(bill.panelPayable) : null,
+        paidAmount: Number(bill.paidAmount),
+        changeAmount: Number(bill.changeAmount),
+        dueAmount: Number(bill.dueAmount),
+      },
+      payments: bill.payments.map((p) => ({
+        id: p.id,
+        receiptNo: p.receiptNo,
+        amount: Number(p.amount),
+        paymentMode: p.paymentMode,
+        transactionId: p.transactionId,
+        paidAt: p.paidAt,
+      })),
+      creditNotes: bill.creditNotes.map((cn) => ({
+        id: cn.id,
+        creditNoteNo: cn.creditNoteNo,
+        refundAmount: Number(cn.refundAmount),
+        refundMode: cn.refundMode,
+        issuedAt: cn.issuedAt,
+      })),
+    };
+  }
+
   async buildInvoiceData(tenantId: string, billId: string) {
     const bill = await this.prisma.opdBill.findFirst({
       where: { id: billId, tenantId },

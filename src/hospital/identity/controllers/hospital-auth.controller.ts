@@ -138,11 +138,8 @@ async refresh(
   // 1. Pehle Cookie check karo, agar cookie nahi mili toh Body check karo
   const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME] || body?.refreshToken;
 
-  // Debug log (Console me check karne ke liye)
   if (!refreshToken) {
-    console.log('❌ [Refresh Debug] Cookies received:', req.cookies);
-    console.log('❌ [Refresh Debug] Cookie Header:', req.headers.cookie);
-    console.log('❌ [Refresh Debug] Body received:', body);
+    // SECURITY: never log cookies/headers — they can carry live tokens.
     throw new UnauthorizedException('Refresh token missing');
   }
 

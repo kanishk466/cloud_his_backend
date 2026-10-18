@@ -10,10 +10,11 @@ import {
 import { BillingRepository } from './billing.repository';
 import { BillLineValidatorService } from './services/bill-line-validator.service';
 import { ReferralCommissionsService } from '../../masters/doctor-setup/services/referral-commissions.service';
-import { CreateBillDto } from './dto/create-bill.dto';
+import { CreateBillDto, CreateBillItemDto } from './dto/create-bill.dto';
 import { CollectPaymentDto } from './dto/collect-payment.dto';
 import { ApplyDiscountDto } from './dto/apply-discount.dto';
 import { CancelBillDto } from './dto/cancel-bill.dto';
+import { RefundBillDto } from './dto/refund-bill.dto';
 import { BillResponseDto, DailySummaryDto } from './dto/billing-response.dto';
 import {
   BILLING_ERRORS,
@@ -21,6 +22,38 @@ import {
   CANCELLABLE_STATUSES,
 } from './constants/billing.constants';
 import { format } from 'date-fns';
+
+const money = (value: number) => Math.round(value * 100) / 100;
+
+/** Where a line item's unit rate came from (rate hierarchy audit trail). */
+export type RateSource = 'PANEL' | 'DOCTOR' | 'BASE';
+
+export interface ResolvedRate {
+  rate: number;
+  source: RateSource;
+  service: {
+    id: string;
+    serviceCode: string;
+    serviceName: string;
+    baseRate: number;
+    rateEditable: boolean;
+    category: string | null;
+  };
+}
+
+/** Internal, normalized bill line after DTO normalization + rate resolution. */
+interface NormalizedBillItem {
+  serviceId?: string;
+  code?: string;
+  description: string;
+  category: string;
+  quantity: number;
+  unitPrice: number;
+  rateSource?: RateSource;
+  discountPercent?: number;
+  discountAmount?: number;
+  taxRate?: number;
+}
 
 @Injectable()
 export class BillingService {
@@ -44,32 +77,7 @@ export class BillingService {
       );
     }
 
-    // Phase 2.1B — enforce ServiceMaster rules on every linked line item
-    await this.validateBillItems(tenantId, dto);
-
-    // Phase 3.1 — panel linkage: explicit panelId wins, else inherit patient's
-    let effectivePanelId: string | null = null;
-    if (dto.panelId) {
-      const panel = await this.billingRepository.findPanel(
-        tenantId,
-        dto.panelId,
-      );
-      if (!panel) {
-        throw new NotFoundException({
-          code: 'OPD_BIL_013',
-          message: 'Panel not found or inactive in this hospital',
-        });
-      }
-      effectivePanelId = dto.panelId;
-    } else {
-      const patient = await this.billingRepository.getPatient(
-        tenantId,
-        dto.patientId,
-      );
-      effectivePanelId = patient?.panelId ?? null;
-    }
-
-    // Validate appointment if provided
+    // Appointment validation + duplicate-bill guard
     let appointment: Awaited<ReturnType<BillingRepository['getAppointment']>> =
       null;
 
@@ -94,9 +102,36 @@ export class BillingService {
       }
     }
 
-    // Phase 2.2B — auto-add the consultation line from the appointment's
-    // fee (calculated at booking by the visit-fee engine)
-    const items = [...dto.items];
+    // Panel linkage: explicit panelId wins, else inherit patient's
+    const effectivePanelId = await this.resolvePanelId(tenantId, dto);
+
+    // Doctor attribution: explicit doctorProfileId wins, else the
+    // appointment's consulting doctor.
+    const doctorProfileId = dto.doctorProfileId ?? appointment?.doctorProfileId ?? null;
+    if (doctorProfileId) {
+      const doctor = await this.billingRepository.findDoctor(
+        tenantId,
+        doctorProfileId,
+      );
+      if (!doctor) {
+        throw new NotFoundException(BILLING_ERRORS.DOCTOR_NOT_FOUND);
+      }
+    }
+
+    // Visit number: explicit visitNo wins, else the appointment number.
+    const visitNo = dto.visitNo ?? appointment?.appointmentNo ?? null;
+
+    // ── Items: normalize both DTO shapes, resolve rates (CRITICAL),
+    //    validate against ServiceMaster rules, per-line discounts. ──
+    const items = await this.normalizeAndResolveItems(
+      tenantId,
+      dto,
+      effectivePanelId,
+      doctorProfileId,
+    );
+
+    // Auto-add the consultation line from the appointment's fee
+    // (calculated at booking by the visit-fee engine)
     if (appointment) {
       const consultationItem = await this.buildConsultationLineItem(
         tenantId,
@@ -125,116 +160,387 @@ export class BillingService {
       }
     }
 
-    // Calculate totals from line items
+    // Totals from normalized line items (item + bill discounts, taxes)
     const calculated = this.calculateBillItems({
       items,
       discountPercent: dto.discountPercent,
       discountAmount: dto.discountAmount,
     });
+    const netAmount = calculated.totalAmount;
 
-    // Validate optional immediate payment
-    const paymentAmount = Number(dto.paymentAmount ?? 0);
-    if (paymentAmount > 0) {
+    // Co-payment + patient/panel payable split
+    const split = await this.resolvePayableSplit(
+      tenantId,
+      effectivePanelId,
+      netAmount,
+      dto,
+    );
+
+    // ── Payment at creation: paidAmount (spec) or paymentAmount (legacy) ──
+    const rawPaid = Number(dto.paidAmount ?? dto.paymentAmount ?? 0);
+    const changeAmount = money(
+      dto.changeAmount ?? (rawPaid > netAmount ? rawPaid - netAmount : 0),
+    );
+    const collectedAmount = money(rawPaid - changeAmount);
+
+    if (collectedAmount < 0) {
+      throw new BadRequestException(BILLING_ERRORS.INVALID_PAYABLE_SPLIT);
+    }
+    if (collectedAmount > 0) {
       if (!dto.paymentMode) {
         throw new BadRequestException(
-          'paymentMode is required when paymentAmount is provided',
+          'paymentMode is required when a payment is collected',
         );
       }
-      if (paymentAmount > calculated.totalAmount) {
+      if (collectedAmount > netAmount) {
         throw new BadRequestException({
           ...BILLING_ERRORS.PAYMENT_EXCEEDS_DUE,
-          details: {
-            totalAmount: calculated.totalAmount,
-            paymentAmount,
-          },
+          details: { totalAmount: netAmount, paymentAmount: collectedAmount },
         });
       }
     }
+    if (dto.paymentMode === 'CREDIT' && collectedAmount > 0) {
+      throw new BadRequestException(
+        'CREDIT bills cannot collect payment at generation — the amount stays due',
+      );
+    }
 
-    const billNo = await this.billingRepository.generateBillNo(tenantId);
-
-    // Initial paid / due / status
-    const paidAmount = paymentAmount > 0 ? paymentAmount : 0;
-    const dueAmount = calculated.totalAmount - paidAmount;
-
+    // Statuses
+    const dueAmount = money(netAmount - collectedAmount);
     let paymentStatus = 'PENDING';
     let billStatus = 'GENERATED';
 
-    if (paidAmount > 0 && dueAmount <= 0) {
+    if (collectedAmount > 0 && dueAmount <= 0) {
       paymentStatus = 'PAID';
       billStatus = 'PAID';
-    } else if (paidAmount > 0 && dueAmount > 0) {
+    } else if (collectedAmount > 0 && dueAmount > 0) {
       paymentStatus = 'PARTIALLY_PAID';
       billStatus = 'PARTIALLY_PAID';
     }
 
-    // Create bill + line items
-    const bill = await this.billingRepository.create({
+    const billNo = await this.billingRepository.generateBillNo(tenantId);
+
+    const billData = {
       tenantId,
       billNo,
       patientId: dto.patientId,
       appointmentId: dto.appointmentId,
       panelId: effectivePanelId,
+      doctorProfileId,
+      visitNo,
       items,
       subtotal: calculated.subtotal,
       discountPercent: calculated.discountPercent,
       discountAmount: calculated.discountAmount,
       discountReason: dto.discountReason,
-      discountAuthorizedBy: dto.discountAuthorizedBy,
+      discountAuthorizedBy: dto.discountAuthorityId ?? dto.discountAuthorizedBy,
       taxAmount: calculated.taxAmount,
-      totalAmount: calculated.totalAmount,
+      totalAmount: netAmount,
+      coPayPercent: split.coPayPercent,
+      coPayAmount: split.coPayAmount,
+      patientPayable: split.patientPayable,
+      panelPayable: split.panelPayable,
+      changeAmount,
+      remarks: dto.remarks,
       dueAmount: dueAmount > 0 ? dueAmount : 0,
       isInsurance: dto.isInsurance ?? false,
       insuranceProvider: dto.insuranceProvider,
       insurancePolicyNo: dto.insurancePolicyNo,
       generatedBy,
       billStatus,
-    });
+      paymentMode: dto.paymentMode,
+    };
 
-    // Phase 2.2B — referral commission hook (appointment referred by an
-    // external doctor). Never throws; failure is logged inside the service.
+    // Create bill (+payment atomically when money is collected)
+    let bill;
+    if (collectedAmount > 0 && dto.paymentMode) {
+      const receiptNo =
+        await this.billingRepository.generateReceiptNo(tenantId);
+
+      bill = await this.billingRepository.createBillWithPayment({
+        ...billData,
+        paidAmount: collectedAmount,
+        paymentStatus,
+        payment: {
+          receiptNo,
+          amount: collectedAmount,
+          paymentMode: dto.paymentMode,
+          transactionId: dto.paymentTransactionId,
+          receivedBy: generatedBy,
+          notes: dto.paymentNotes ?? 'Payment collected at bill creation',
+        },
+      });
+
+      this.logger.log(
+        `Bill ${billNo} generated with immediate payment ₹${collectedAmount} (${receiptNo})`,
+      );
+    } else {
+      bill = await this.billingRepository.create(billData);
+
+      this.logger.log(`Bill ${billNo} generated for patient ${dto.patientId}`);
+    }
+
+    // Referral commission hook (appointment referred by an external
+    // doctor). Never throws; failure is logged inside the service.
     await this.referralCommissions.createForBill({
       tenantId,
       billId: bill.id,
       appointmentId: appointment?.id ?? dto.appointmentId ?? null,
       patientId: dto.patientId,
-      billAmount: calculated.totalAmount,
+      billAmount: netAmount,
     });
 
-    // If paid at creation → create payment receipt + update bill
-    if (paymentAmount > 0 && dto.paymentMode) {
-      const receiptNo =
-        await this.billingRepository.generateReceiptNo(tenantId);
+    return BillResponseDto.fromEntity(bill);
+  }
 
-      await this.billingRepository.createPayment({
-        tenantId,
-        billId: bill.id,
-        receiptNo,
-        amount: paymentAmount,
-        paymentMode: dto.paymentMode,
-        transactionId: dto.paymentTransactionId,
-        receivedBy: generatedBy,
-        notes: dto.paymentNotes ?? 'Payment collected at bill creation',
+  // ─── RATE RESOLUTION (CRITICAL — spec rate hierarchy) ────────────
+  //
+  // Priority:
+  //   1. Panel tariff (time-bound RateSchedule in force today wins,
+  //      else the panel's default OPD tariff) → PanelServiceRate
+  //   2. Consultation service (categoryCode 'CONS') + doctor → the
+  //      doctor's consultationFee
+  //   3. Fallback → ServiceMaster.baseRate
+  async resolveRate(
+    tenantId: string,
+    serviceId: string,
+    panelId: string | null,
+    doctorProfileId: string | null,
+  ): Promise<ResolvedRate> {
+    const service = await this.billingRepository.findServiceForBilling(
+      tenantId,
+      serviceId,
+    );
+
+    if (!service || !service.isActive) {
+      throw new BadRequestException({
+        code: 'SERVICE_NOT_FOUND',
+        message: 'Service not found or is not active',
+        details: { serviceId },
       });
-
-      const updated = await this.billingRepository.update(bill.id, {
-        paidAmount,
-        dueAmount: dueAmount > 0 ? dueAmount : 0,
-        paymentStatus,
-        billStatus,
-        paymentMode: dto.paymentMode,
-        paidAt: dueAmount <= 0 ? new Date() : undefined,
-      });
-
-      this.logger.log(
-        `Bill ${billNo} generated with immediate payment ₹${paymentAmount} (${receiptNo})`,
-      );
-
-      return BillResponseDto.fromEntity(updated);
     }
 
-    this.logger.log(`Bill ${billNo} generated for patient ${dto.patientId}`);
-    return BillResponseDto.fromEntity(bill);
+    const baseRate = Number(service.baseRate);
+    const serviceInfo = {
+      id: service.id,
+      serviceCode: service.serviceCode,
+      serviceName: service.serviceName,
+      baseRate,
+      rateEditable: service.rateEditable,
+      category: service.categoryRel?.name ?? null,
+    };
+
+    // 1. Panel tariff
+    if (panelId) {
+      const panelRate = await this.billingRepository.findPanelServiceRate(
+        tenantId,
+        panelId,
+        serviceId,
+      );
+      if (panelRate) {
+        return {
+          rate: Number(panelRate.rate),
+          source: 'PANEL',
+          service: serviceInfo,
+        };
+      }
+    }
+
+    // 2. Doctor's consultation fee for CONS-category services
+    if (service.categoryRel?.code === 'CONS' && doctorProfileId) {
+      const doctor = await this.billingRepository.findDoctor(
+        tenantId,
+        doctorProfileId,
+      );
+      if (doctor?.consultationFee != null && Number(doctor.consultationFee) > 0) {
+        return {
+          rate: Number(doctor.consultationFee),
+          source: 'DOCTOR',
+          service: serviceInfo,
+        };
+      }
+    }
+
+    // 3. Base rate fallback
+    return { rate: baseRate, source: 'BASE', service: serviceInfo };
+  }
+
+  // ─── ITEM NORMALIZATION + VALIDATION ─────────────────────────────
+  // Accepts BOTH DTO shapes:
+  //   Legacy: { description, category, unitPrice, discountPercent? }
+  //   Spec V2: { serviceName, unitRate, discountAmount?, totalAmount? }
+  // Every service-linked line gets its rate from resolveRate(); the
+  // client-sent rate only wins for rate-editable services.
+  private async normalizeAndResolveItems(
+    tenantId: string,
+    dto: CreateBillDto,
+    panelId: string | null,
+    doctorProfileId: string | null,
+  ): Promise<NormalizedBillItem[]> {
+    const normalized: NormalizedBillItem[] = [];
+
+    for (const [index, raw] of dto.items.entries()) {
+      const description = raw.serviceName ?? raw.description;
+      if (!description) {
+        throw new BadRequestException({
+          ...BILLING_ERRORS.BILL_LINE_INVALID,
+          message: `Bill line #${index + 1} needs a serviceName or description`,
+        });
+      }
+
+      const clientRate = raw.unitPrice ?? raw.unitRate;
+      const quantity = raw.quantity ?? 1;
+      const discountPercent = raw.discountPercent ?? dto.discountPercent ?? 0;
+
+      // Legacy free-text line — no service link, no validation
+      if (!raw.serviceId) {
+        this.logger.warn(
+          `Bill line #${index + 1} ("${description}") has no serviceId — skipping service validation`,
+        );
+        if (clientRate == null) {
+          throw new BadRequestException({
+            ...BILLING_ERRORS.BILL_LINE_INVALID,
+            message: `Bill line #${index + 1} needs a unitPrice/unitRate when no serviceId is provided`,
+          });
+        }
+        normalized.push({
+          description,
+          category: raw.category ?? 'General',
+          quantity,
+          unitPrice: clientRate,
+          discountPercent: raw.discountPercent,
+          discountAmount: raw.discountAmount,
+          taxRate: raw.taxRate,
+          code: raw.code,
+        });
+        continue;
+      }
+
+      // ── Rate hierarchy: panel tariff → doctor fee → base rate ──
+      const resolved = await this.resolveRate(
+        tenantId,
+        raw.serviceId,
+        panelId,
+        doctorProfileId,
+      );
+
+      const rateEditable = resolved.service.rateEditable;
+      let unitPrice = resolved.rate;
+
+      if (rateEditable && clientRate != null) {
+        unitPrice = clientRate;
+      } else if (
+        clientRate != null &&
+        money(clientRate) !== money(resolved.rate)
+      ) {
+        // Rate-locked service: server-resolved rate wins (audited override)
+        this.logger.warn(
+          `Bill line #${index + 1} (${resolved.service.serviceName}): client rate ₹${clientRate} overridden by ${resolved.source} rate ₹${resolved.rate}`,
+        );
+      }
+
+      // ServiceMaster rules: gender/age/discountability + rate lock vs
+      // the RESOLVED rate (not the raw base rate)
+      await this.billLineValidator.validateBillLine(
+        tenantId,
+        dto.patientId,
+        raw.serviceId,
+        unitPrice,
+        raw.discountPercent ?? dto.discountPercent ?? 0,
+        quantity,
+        { effectiveRate: resolved.rate },
+      );
+
+      normalized.push({
+        serviceId: raw.serviceId,
+        code: raw.code ?? resolved.service.serviceCode,
+        description: resolved.service.serviceName,
+        category: resolved.service.category ?? raw.category ?? 'General',
+        quantity,
+        unitPrice,
+        rateSource: resolved.source,
+        discountPercent: raw.discountPercent,
+        discountAmount: raw.discountAmount,
+        taxRate: raw.taxRate,
+      });
+    }
+
+    return normalized;
+  }
+
+  // ─── PANEL RESOLUTION ────────────────────────────────────────────
+  private async resolvePanelId(
+    tenantId: string,
+    dto: CreateBillDto,
+  ): Promise<string | null> {
+    if (dto.panelId) {
+      const panel = await this.billingRepository.findPanel(
+        tenantId,
+        dto.panelId,
+      );
+      if (!panel) {
+        throw new NotFoundException(BILLING_ERRORS.PANEL_NOT_FOUND);
+      }
+      return dto.panelId;
+    }
+
+    const patient = await this.billingRepository.getPatient(
+      tenantId,
+      dto.patientId,
+    );
+    return patient?.panelId ?? null;
+  }
+
+  // ─── CO-PAY & PAYABLE SPLIT ──────────────────────────────────────
+  private async resolvePayableSplit(
+    tenantId: string,
+    panelId: string | null,
+    netAmount: number,
+    dto: CreateBillDto,
+  ): Promise<{
+    coPayPercent: number;
+    coPayAmount: number;
+    patientPayable: number;
+    panelPayable: number;
+  }> {
+    // Co-pay: explicit DTO values win, else the panel's configured percent
+    let coPayPercent = dto.coPayPercent ?? 0;
+    if (panelId && coPayPercent === 0) {
+      const panelCoPay = await this.billingRepository.getPanelCoPay(
+        tenantId,
+        panelId,
+      );
+      coPayPercent = panelCoPay ?? 0;
+    }
+    const coPayAmount = money(
+      dto.coPayAmount ?? (netAmount * coPayPercent) / 100,
+    );
+
+    // Payable split
+    let patientPayable: number;
+    let panelPayable: number;
+
+    if (dto.patientPayable != null || dto.panelPayable != null) {
+      patientPayable = dto.patientPayable ?? money(netAmount - (dto.panelPayable ?? 0));
+      panelPayable = dto.panelPayable ?? money(netAmount - patientPayable);
+    } else if (panelId) {
+      // Panel patient: panel carries the net, patient owes the co-pay
+      panelPayable = money(netAmount - coPayAmount);
+      patientPayable = money(netAmount - panelPayable);
+    } else {
+      patientPayable = netAmount;
+      panelPayable = 0;
+    }
+
+    const sum = money(patientPayable + panelPayable);
+    if (Math.abs(sum - netAmount) > 0.01) {
+      throw new BadRequestException({
+        ...BILLING_ERRORS.INVALID_PAYABLE_SPLIT,
+        details: { netAmount, patientPayable, panelPayable, sum },
+      });
+    }
+
+    return { coPayPercent, coPayAmount, patientPayable, panelPayable };
   }
 
   // ─── GET BILL BY ID ─────────────────────────────────────────────
@@ -265,6 +571,8 @@ export class BillingService {
     filter: {
       patientId?: string;
       date?: string;
+      fromDate?: string;
+      toDate?: string;
       billStatus?: string;
       paymentStatus?: string;
       page?: number;
@@ -376,8 +684,8 @@ export class BillingService {
       notes: dto.notes,
     });
 
-    const newPaidAmount = Number(bill.paidAmount) + dto.amount;
-    const newDueAmount = Number(bill.totalAmount) - newPaidAmount;
+    const newPaidAmount = money(Number(bill.paidAmount) + dto.amount);
+    const newDueAmount = money(Number(bill.totalAmount) - newPaidAmount);
 
     let paymentStatus: string;
     let billStatus: string;
@@ -404,6 +712,114 @@ export class BillingService {
     );
 
     return BillResponseDto.fromEntity(updated);
+  }
+
+  // ─── REFUND / CREDIT NOTE (V2 — audit lock) ──────────────────────
+  // Creates a Credit Note against the bill. The original bill is never
+  // deleted; only its paid/due counters and status flip, atomically with
+  // the credit note record.
+  async refundBill(
+    tenantId: string,
+    billId: string,
+    issuedBy: string,
+    dto: RefundBillDto,
+  ) {
+    const bill = await this.billingRepository.findById(tenantId, billId);
+    if (!bill) throw new NotFoundException(BILLING_ERRORS.BILL_NOT_FOUND);
+
+    const paidAmount = Number(bill.paidAmount);
+    const alreadyRefunded = await this.billingRepository.getRefundedTotal(
+      tenantId,
+      billId,
+    );
+    const refundable = money(paidAmount - alreadyRefunded);
+
+    if (paidAmount <= 0) {
+      throw new BadRequestException(BILLING_ERRORS.REFUND_NOT_ALLOWED);
+    }
+    if (refundable <= 0) {
+      throw new BadRequestException(BILLING_ERRORS.BILL_ALREADY_REFUNDED);
+    }
+
+    const refundAmount = money(dto.amount ?? refundable);
+    if (refundAmount <= 0 || refundAmount > refundable) {
+      throw new BadRequestException({
+        ...BILLING_ERRORS.REFUND_EXCEEDS_REMAINING,
+        details: { paidAmount, alreadyRefunded, refundable, requested: refundAmount },
+      });
+    }
+
+    const refundMode =
+      dto.refundMode ?? (bill.paymentMode as string) ?? 'CASH';
+    const allowedModes = ['CASH', 'CARD', 'UPI', 'CREDIT', 'INSURANCE', 'ONLINE', 'MIXED'];
+    if (!allowedModes.includes(refundMode)) {
+      throw new BadRequestException({
+        code: 'OPD_BIL_020',
+        message: `Invalid refund mode: ${refundMode}`,
+      });
+    }
+
+    const newPaidAmount = money(paidAmount - refundAmount);
+    const fullyRefunded = newPaidAmount <= 0;
+
+    const creditNoteNo =
+      await this.billingRepository.generateCreditNoteNo(tenantId);
+
+    const originalReceiptNos = (bill.payments ?? [])
+      .map((p) => p.receiptNo)
+      .join(',');
+
+    const result = await this.billingRepository.createCreditNote({
+      tenantId,
+      billId,
+      creditNoteNo,
+      refundAmount,
+      refundMode,
+      reason: dto.reason,
+      originalReceiptNos: originalReceiptNos || undefined,
+      issuedBy,
+      items: [
+        // Header-level refund (no per-line split yet) — one audit row
+        {
+          billItemId: null,
+          quantity: 1,
+          unitPrice: refundAmount,
+          refundAmount,
+          reason: dto.notes ?? dto.reason,
+        },
+      ],
+      billUpdate: {
+        paidAmount: newPaidAmount,
+        dueAmount: 0,
+        paymentStatus: fullyRefunded ? 'REFUNDED' : 'PARTIALLY_PAID',
+        billStatus: fullyRefunded ? 'REFUNDED' : bill.billStatus,
+      },
+    });
+
+    this.logger.log(
+      `Credit note ${creditNoteNo} of ₹${refundAmount} issued against bill ${bill.billNo}`,
+    );
+
+    return {
+      creditNote: {
+        id: result.id,
+        creditNoteNo: result.creditNoteNo,
+        billId: result.billId,
+        refundAmount: Number(result.refundAmount),
+        refundMode: result.refundMode,
+        reason: result.reason,
+        originalReceiptNos: result.originalReceiptNos,
+        issuedAt: result.issuedAt,
+        items: result.items.map((it) => ({
+          id: it.id,
+          billItemId: it.billItemId,
+          quantity: it.quantity,
+          unitPrice: Number(it.unitPrice),
+          refundAmount: Number(it.refundAmount),
+        })),
+      },
+      bill: BillResponseDto.fromEntity(result.bill),
+    };
   }
 
   // ─── APPLY DISCOUNT ─────────────────────────────────────────────
@@ -437,15 +853,21 @@ export class BillingService {
       throw new BadRequestException(BILLING_ERRORS.INVALID_DISCOUNT);
     }
 
+    // Line-level discounts already reduce the net — keep totals consistent
+    // with what calculateBillItems produced at creation time.
+    const itemDiscountTotal = (bill.items ?? []).reduce(
+      (sum, it) => sum + Number(it.discountAmount ?? 0),
+      0,
+    );
+
     const taxAmount = Number(bill.taxAmount);
-    const afterDiscount = subtotal - discountAmount;
-    const totalAmount = afterDiscount + taxAmount;
+    const totalAmount = money(subtotal - itemDiscountTotal - discountAmount + taxAmount);
     const paidAmount = Number(bill.paidAmount);
-    const dueAmount = totalAmount - paidAmount;
+    const dueAmount = money(totalAmount - paidAmount);
 
     const updated = await this.billingRepository.update(billId, {
-      discountPercent,
-      discountAmount,
+      discountPercent: money(discountPercent),
+      discountAmount: money(discountAmount),
       discountReason: dto.discountReason,
       discountAuthorizedBy: dto.discountAuthorizedBy,
       totalAmount,
@@ -519,41 +941,17 @@ export class BillingService {
     };
   }
 
-  // ─── PHASE 2.1B: Bill-line service validation ─────────────────────────────
-  //
-  // Every item linked to a ServiceMaster (serviceId) is validated against
-  // service rules: active status, gender/age restriction, rate-editability,
-  // discount eligibility. Legacy free-text items (no serviceId) skip
-  // validation with a warning.
-
-  private async validateBillItems(tenantId: string, dto: CreateBillDto) {
-    for (const [index, item] of dto.items.entries()) {
-      if (!item.serviceId) {
-        this.logger.warn(
-          `Bill line #${index + 1} ("${item.description}") has no serviceId — skipping service validation`,
-        );
-        continue;
-      }
-
-      await this.billLineValidator.validateBillLine(
-        tenantId,
-        dto.patientId,
-        item.serviceId,
-        item.unitPrice,
-        item.discountPercent ?? dto.discountPercent ?? 0,
-        item.quantity,
-      );
-    }
-  }
-
-  // ─── PHASE 2.2B: Consultation line from appointment fee ───────────────────
+  // ─── CONSULTATION LINE FROM APPOINTMENT FEE (Phase 2.2B) ────────────
   //
   // Links to the generic CONS → OPD consultation service when configured;
   // falls back to a free-text line so billing never hard-depends on master
   // setup. The unit price always comes from appointment.consultationFee
   // (produced by the visit-fee engine at booking time).
 
-  private async buildConsultationLineItem(tenantId: string, fee: number) {
+  private async buildConsultationLineItem(
+    tenantId: string,
+    fee: number,
+  ): Promise<NormalizedBillItem> {
     const service =
       await this.billingRepository.findConsultationService(tenantId);
 
@@ -577,49 +975,63 @@ export class BillingService {
       category: 'Consultation',
       quantity: 1,
       unitPrice: fee,
+      rateSource: 'DOCTOR',
       taxRate: 0,
     };
   }
 
   // ─── PRIVATE CALCULATION ENGINE ─────────────────────────────────
+  // subtotal = Σ (qty × unitPrice) — gross, pre-discount.
+  // totalAmount = subtotal − line discounts − bill discount + tax.
   private calculateBillItems(input: {
     items: Array<{
       quantity: number;
       unitPrice: number;
       taxRate?: number;
+      discountPercent?: number;
+      discountAmount?: number;
     }>;
     discountPercent?: number;
     discountAmount?: number;
   }) {
     let subtotal = 0;
     let taxAmount = 0;
+    let itemDiscountTotal = 0;
 
     for (const item of input.items) {
-      const lineTotal = item.quantity * item.unitPrice;
-      subtotal += lineTotal;
+      const lineGross = item.quantity * item.unitPrice;
+      subtotal += lineGross;
 
+      const lineDiscount =
+        item.discountAmount ??
+        lineGross * ((item.discountPercent ?? 0) / 100);
+      itemDiscountTotal += lineDiscount;
+
+      const taxable = lineGross - lineDiscount;
       const rate = item.taxRate || 0;
-      taxAmount += lineTotal * (rate / 100);
+      taxAmount += taxable * (rate / 100);
     }
 
     let discountAmount = input.discountAmount ?? 0;
     let discountPercent = input.discountPercent ?? 0;
 
     if (discountPercent > 0 && discountAmount === 0) {
-      discountAmount = (subtotal * discountPercent) / 100;
+      discountAmount = ((subtotal - itemDiscountTotal) * discountPercent) / 100;
     } else if (discountAmount > 0 && discountPercent === 0) {
       discountPercent = (discountAmount / subtotal) * 100;
     }
 
-    discountAmount = Math.round(discountAmount * 100) / 100;
-    discountPercent = Math.round(discountPercent * 100) / 100;
-    taxAmount = Math.round(taxAmount * 100) / 100;
+    itemDiscountTotal = money(itemDiscountTotal);
+    discountAmount = money(discountAmount);
+    discountPercent = money(discountPercent);
+    taxAmount = money(taxAmount);
 
-    const afterDiscount = subtotal - discountAmount;
-    const totalAmount = Math.round((afterDiscount + taxAmount) * 100) / 100;
+    const afterDiscount = subtotal - itemDiscountTotal - discountAmount;
+    const totalAmount = money(afterDiscount + taxAmount);
 
     return {
       subtotal,
+      itemDiscountTotal,
       discountPercent,
       discountAmount,
       taxAmount,
