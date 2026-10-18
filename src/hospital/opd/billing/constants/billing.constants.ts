@@ -43,6 +43,35 @@ export const BILLING_ERRORS = {
     code: 'OPD_BIL_011',
     message: 'Discount cannot exceed subtotal amount',
   },
+  PANEL_NOT_FOUND: {
+    code: 'OPD_BIL_013',
+    message: 'Panel not found or inactive in this hospital',
+  },
+  DOCTOR_NOT_FOUND: {
+    code: 'OPD_BIL_014',
+    message: 'Doctor profile not found or inactive in this hospital',
+  },
+  INVALID_PAYABLE_SPLIT: {
+    code: 'OPD_BIL_015',
+    message:
+      'patientPayable + panelPayable must equal netAmount, and paidAmount cannot be less than patientPayable',
+  },
+  REFUND_NOT_ALLOWED: {
+    code: 'OPD_BIL_016',
+    message: 'Only bills with collected payments can be refunded',
+  },
+  REFUND_EXCEEDS_REMAINING: {
+    code: 'OPD_BIL_017',
+    message: 'Refund amount exceeds the refundable balance of this bill',
+  },
+  BILL_ALREADY_REFUNDED: {
+    code: 'OPD_BIL_018',
+    message: 'This bill has already been fully refunded',
+  },
+  BILL_LINE_INVALID: {
+    code: 'OPD_BIL_019',
+    message: 'Bill line item is missing required fields',
+  },
 } as const;
 
 // ─── PHASE 2.1B: Bill-line service validation errors ─────────────────────────
@@ -69,13 +98,20 @@ export const SERVICE_VALIDATION_ERRORS = {
   },
 } as const;
 
+// Bill numbers: INV-OPD-{YYYYMMDD}-{0001}
 export const BILL_NO_CONFIG = {
-  PREFIX: 'BILL',
+  PREFIX: 'INV-OPD',
   SEQUENCE_LENGTH: 4,
 } as const;
 
 export const RECEIPT_NO_CONFIG = {
   PREFIX: 'RCP',
+  SEQUENCE_LENGTH: 4,
+} as const;
+
+// Credit notes (refunds): CN-OPD-{YYYYMMDD}-{0001}
+export const CREDIT_NOTE_NO_CONFIG = {
+  PREFIX: 'CN-OPD',
   SEQUENCE_LENGTH: 4,
 } as const;
 

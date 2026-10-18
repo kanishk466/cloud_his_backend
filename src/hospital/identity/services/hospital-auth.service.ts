@@ -309,9 +309,8 @@ export class HospitalAuthService {
 
       // TODO: Replace with actual email dispatch
       // await this.mailService.sendPasswordReset(user.email, resetToken);
-      this.logger.log(
-        `[DEV] Password reset token for ${user.email}: ${resetToken}`,
-      );
+      // SECURITY: never log reset tokens — a leaked log entry is a full
+      // account takeover vector for anyone with log access.
     }
 
     // Always return the same message (prevents email enumeration)

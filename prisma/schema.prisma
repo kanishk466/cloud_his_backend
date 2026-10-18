@@ -231,6 +231,7 @@ enum PaymentMode {
   CASH
   CARD
   UPI
+  CREDIT
   INSURANCE
   ONLINE
   MIXED
@@ -416,6 +417,10 @@ model Hospital {
   opdBills     OpdBill[]
   opdBillItems OpdBillItem[]
   opdPayments  OpdPayment[]
+
+  // OPD Billing V2 — refunds
+  opdCreditNotes     OpdCreditNote[]
+  opdCreditNoteItems OpdCreditNoteItem[]
 
   patientVitals       PatientVitals[]
   consultations       Consultation[]
@@ -940,6 +945,9 @@ model DoctorProfile {
 
   // OPD Step 2
   appointments Appointment[]
+
+  // OPD Billing V2 — bills raised against this doctor
+  opdBills OpdBill[]
 
   // OPD Step 3
   opdTokens OpdToken[]
@@ -2443,6 +2451,16 @@ model OpdBill {
   // ─── PHASE 3.1: PANEL LINKAGE ───────────────────────────────────
   panelId String?
 
+  // ─── PHASE 3.3: OPD BILLING V2 (counter + panel split) ──────────
+  doctorProfileId String?   // Consulting doctor at billing time
+  visitNo         String?   // e.g. APT-20261018-0001 (appointmentNo / walk-in visit no)
+  coPayPercent    Decimal   @default(0) @db.Decimal(5, 2)
+  coPayAmount     Decimal   @default(0) @db.Decimal(10, 2)
+  patientPayable  Decimal?  @db.Decimal(10, 2) // net − panel share
+  panelPayable    Decimal?  @db.Decimal(10, 2) // corporate/panel liability
+  changeAmount    Decimal   @default(0) @db.Decimal(10, 2)
+  remarks         String?
+
   // ─── DISCOUNT AUTHORIZATION ─────────────────────────────────────
   discountReason       String?
   discountAuthorizedBy String?
@@ -2459,9 +2477,11 @@ model OpdBill {
   patient     Patient      @relation(fields: [patientId], references: [id])
   appointment Appointment? @relation(fields: [appointmentId], references: [id])
   panel       Panel?       @relation(fields: [panelId], references: [id], onDelete: SetNull)
+  doctorProfile DoctorProfile? @relation(fields: [doctorProfileId], references: [id], onDelete: SetNull)
 
-  items    OpdBillItem[]
-  payments OpdPayment[]
+  items       OpdBillItem[]
+  payments    OpdPayment[]
+  creditNotes OpdCreditNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2472,6 +2492,8 @@ model OpdBill {
   @@index([tenantId, billedAt])
   @@index([tenantId, paymentStatus])
   @@index([tenantId, panelId])
+  @@index([tenantId, doctorProfileId])
+  @@index([tenantId, visitNo])
   @@map("opd_bills")
 }
 
@@ -2507,6 +2529,8 @@ model OpdBillItem {
   hospital Hospital       @relation(fields: [tenantId], references: [tenantId])
   bill     OpdBill        @relation(fields: [billId], references: [id], onDelete: Cascade)
   service  ServiceMaster? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  creditNoteItems OpdCreditNoteItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2546,6 +2570,68 @@ model OpdPayment {
   @@unique([tenantId, receiptNo])
   @@index([tenantId, billId])
   @@map("opd_payments")
+}
+
+// ============================================
+// OPD BILLING V2 — CREDIT NOTES / REFUNDS ✅
+// ============================================
+// Audit-locked refund document. The original OpdBill is NEVER deleted;
+// every rupee returned to the patient is recorded here with its own
+// sequential number and full line-item breakdown.
+
+model OpdCreditNote {
+  id       String @id @default(uuid())
+  tenantId String
+
+  billId String
+
+  // Format : CN-OPD-{YYYYMMDD}-{0001}
+  creditNoteNo String
+
+  refundAmount Decimal       @db.Decimal(10, 2)
+  refundMode   PaymentMode   @default(CASH)
+  reason       String
+
+  // Comma-joined receipt numbers settled by this credit note (audit trail)
+  originalReceiptNos String?
+
+  issuedBy String?
+  issuedAt DateTime @default(now())
+
+  // ─── RELATIONS ──────────────────────────────────────────────────
+  hospital Hospital       @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  bill     OpdBill        @relation(fields: [billId], references: [id])
+
+  items OpdCreditNoteItem[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, creditNoteNo])
+  @@index([tenantId, billId])
+  @@map("opd_credit_notes")
+}
+
+model OpdCreditNoteItem {
+  id       String @id @default(uuid())
+  tenantId String
+
+  creditNoteId String
+  billItemId   String? // nullable: header-level refunds may not map to one line
+
+  quantity     Int     @default(1)
+  unitPrice    Decimal @db.Decimal(10, 2)
+  refundAmount Decimal @db.Decimal(10, 2)
+  reason       String?
+
+  // ─── RELATIONS ──────────────────────────────────────────────────
+  hospital   Hospital        @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  creditNote OpdCreditNote   @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+  billItem   OpdBillItem?    @relation(fields: [billItemId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, creditNoteId])
+  @@map("opd_credit_note_items")
 }
 
 // ============================================

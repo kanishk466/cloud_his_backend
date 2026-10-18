@@ -91,9 +91,17 @@ export class AuthService {
   // === SECURITY ADDITION START ===
   async verifyOtp(otpToken: string, code: string) {
     const payload = await this.jwtService.verifyAsync(otpToken, { secret: process.env.JWT_ACCESS_SECRET! });
+
+    // SECURITY: purpose binding — an access/refresh/reset JWT must never
+    // satisfy an OTP challenge.
+    if ((payload as { purpose?: string }).purpose !== 'login-otp') {
+      throw new UnauthorizedException('Invalid OTP token');
+    }
+
     const otp = await this.authSecurityService.verifyOtp(payload.otpId, code);
     const user = await this.userRepository.findById(otp.platformUserId!);
     if (!user) throw new UnauthorizedException('Invalid OTP user');
+    if (user.status !== 'ACTIVE') throw new UnauthorizedException('Account is inactive');
     const session = securityFlag(SECURITY_FLAGS.sessionManagement)
       ? await this.authSecurityService.createSession({ platformUserId: user.id })
       : undefined;
@@ -107,7 +115,11 @@ export class AuthService {
       detail: 'Platform login OTP verified',
     });
     await this.refreshTokenRepository.create({ userId: user.id, token: tokens.refreshToken, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) });
-    return { ...tokens, user };
+
+    // SECURITY: never leak passwordHash / account-lock internals to API responses.
+    const { passwordHash, failedLoginAttempts, lockedUntil, ...safeUser } = user;
+    void passwordHash; void failedLoginAttempts; void lockedUntil;
+    return { ...tokens, user: safeUser };
   }
   // === SECURITY ADDITION END ===
 
@@ -146,23 +158,45 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string) {
+    // 1. Verify signature first (cheap) so we know whose token it claims to be.
+    let payload: { sub?: string };
+    try {
+      payload = await this.jwtService.verifyAsync(refreshToken, {
+        secret: process.env.JWT_REFRESH_SECRET!,
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    // 2. Rotation + reuse detection: the stored row is the single live copy.
+    //    A cryptographically valid JWT with NO stored row means the token was
+    //    already consumed (rotated) and is being replayed → revoke everything.
     const storedToken = await this.refreshTokenRepository.findByToken(refreshToken);
 
     if (!storedToken) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    try {
-      await this.jwtService.verifyAsync(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET!,
-      });
-
-      // storedToken.user access karte waqt dhyan dein ki 
-      // RefreshTokenRepository ne user ko fetch kiya ho
-      return this.generateTokens(storedToken.user);
-    } catch (e) {
+      if (payload.sub) {
+        await this.refreshTokenRepository.revokeAllForUser(payload.sub);
+      }
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
+
+    // 3. Account status check (an INACTIVE user cannot refresh a session).
+    const user = storedToken.user;
+    if (!user || user.status !== 'ACTIVE') {
+      await this.refreshTokenRepository.delete(refreshToken);
+      throw new UnauthorizedException('Account is inactive');
+    }
+
+    // 4. Consume the old token and issue a fresh pair (rotation).
+    const tokens = await this.generateTokens(user);
+    await this.refreshTokenRepository.delete(refreshToken);
+    await this.refreshTokenRepository.create({
+      userId: user.id,
+      token: tokens.refreshToken,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+
+    return tokens;
   }
 
   async logout(refreshToken: string) {
