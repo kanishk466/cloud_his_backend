@@ -51,6 +51,7 @@ async function bootstrap() {
       'https://ojasadmin.netlify.app',
       'https://ojascarehis.netlify.app',
       'https://mediops-admin-ui.harshalvermaaaaa.workers.dev',
+      'https://hims-version2.onrender.com'
     ], // frontend URL (or use '*' for all origins)
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
